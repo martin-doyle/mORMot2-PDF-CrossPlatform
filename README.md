@@ -1,29 +1,29 @@
 # mORMot2 PDF Engine — Cross-Platform
 
-Cross-platform PDF-Generierung für Windows, Linux und macOS, basierend auf der [mORMot2](https://github.com/synopse/mORMot2) PDF-Engine (`mormot.ui.pdf.pas`). Das Original ist Windows/GDI-only; dieses Projekt abstrahiert alle Plattformaufrufe hinter Interfaces und liefert ein FreeType2-Backend für Unix/macOS.
+Cross-platform PDF generation for Windows, Linux and macOS, based on the [mORMot2](https://github.com/synopse/mORMot2) PDF engine (`mormot.ui.pdf.pas`). The original implementation is Windows/GDI-only; this project abstracts all platform calls behind interfaces and provides a FreeType2 backend for Unix/macOS.
 
-## Plattformen
+## Platforms
 
-| Plattform | Compiler | Backend | Status |
+| Platform | Compiler | Backend | Status |
 |---|---|---|---|
-| Windows | Delphi 7+ | GDI (Original) | Produktiv |
-| Windows | FreePascal/Lazarus | GDI via Interfaces | Produktiv |
-| Linux | FreePascal/Lazarus | FreeType2 | Produktiv |
-| macOS | FreePascal/Lazarus | FreeType2 | Produktiv |
+| Windows | Delphi 7+ | GDI (original) | Production |
+| Windows | FreePascal/Lazarus | GDI via interfaces | Production |
+| Linux | FreePascal/Lazarus | FreeType2 | Production |
+| macOS | FreePascal/Lazarus | FreeType2 | Production |
 
-## Architektur (3 Ebenen)
+## Architecture (3 layers)
 
 ```
-TGDIPages           mormot.ui.report     Dokument-Layout, Tabellen, H1-H6
-TPdfDocumentVcl     mormot.ui.pdfcanvas  TCanvas-kompatibler Wrapper
-TPdfDocument        mormot.ui.pdf        Direkte PDF-API (kein LCL nötig)
+TGDIPages           mormot.ui.report     Document layout, tables, H1-H6
+TPdfDocumentVcl     mormot.ui.pdfcanvas  TCanvas-compatible wrapper
+TPdfDocument        mormot.ui.pdf        Direct PDF API (no LCL required)
 ```
 
 ---
 
-## Schnellstart
+## Quick start
 
-### Ebene 1 — Direkte PDF-API (kein LCL)
+### Layer 1 — Direct PDF API (no LCL)
 
 ```pascal
 uses mormot.ui.pdf;
@@ -39,9 +39,9 @@ Doc.SaveToFile('hello.pdf');
 Doc.Free;
 ```
 
-Koordinaten in PDF-Points (72 DPI), Y=0 unten-links.
+Coordinates are in PDF points (72 DPI), Y = 0 at the lower-left corner.
 
-### Ebene 2 — TCanvas-API (mit LCL)
+### Layer 2 — TCanvas API (with LCL)
 
 ```pascal
 uses mormot.ui.pdf, mormot.ui.pdfcanvas;
@@ -58,9 +58,9 @@ C.Rectangle(40, 80, 200, 140);
 Doc.SaveToFile('output.pdf');
 ```
 
-Koordinaten in Pixel (96 DPI), Y=0 oben-links. Vollständige Methoden-Referenz: [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
+Coordinates are in pixels (96 DPI), Y = 0 at the upper-left corner. Full method reference: [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
 
-### Ebene 3 — Report Engine
+### Layer 3 — Report engine
 
 ```pascal
 uses mormot.ui.report;
@@ -70,43 +70,43 @@ Report.ExportPdfEmbeddedTTF := False;
 Report.GetExportFonts(SansFont, SerifFont, MonoFont);
 Report.PaperSize        := psA4;
 Report.MarginLeft       := 1500;   // 15 mm
-Report.LineHeightFactor := 1.3;    // Zeilenabstand (Standard 1.1)
+Report.LineHeightFactor := 1.3;    // line spacing (default 1.1)
 Report.NewPage;
 Report.SetFont(SansFont, 11);
-Report.DrawHeading(1, 'Report-Titel');          // automatisches PDF-Lesezeichen
-Report.DrawParagraph('Text mit Zeilenumbruch...');
+Report.DrawHeading(1, 'Report title');          // automatic PDF bookmark
+Report.DrawParagraph('Text with line wrapping...');
 Report.BeginTable(MyLayout);
-Report.DrawTableHeader(['Spalte 1', 'Spalte 2']);
-Report.DrawTableRow(['Wert A', 'Wert B']);      // automatischer Seitenumbruch + Header-Wiederholung
+Report.DrawTableHeader(['Column 1', 'Column 2']);
+Report.DrawTableRow(['Value A', 'Value B']);      // automatic page break + header repetition
 Report.EndTable;
 Report.EndDoc;
-// Tagged PDF + Stream-Export (FileFormat wird automatisch auf pdf17 angehoben)
+// Tagged PDF + stream export (file format is automatically raised to pdf17)
 Report.ExportPdfTagged := True;
 Report.ExportPdfStream(Stream);
-// oder: Report.ShowPreviewForm
+// or: Report.ShowPreviewForm
 Report.Free;
 ```
 
-Einheiten: 1/100mm. Lernpfad mit allen Features: [docs/DEMOS.md](docs/DEMOS.md)
+Units: 1/100 mm. Learning path with all features: [docs/DEMOS.md](docs/DEMOS.md)
 
 ---
 
-## Die 6 Demos (Lernpfad)
+## The 6 demos (learning path)
 
-| Demo | API | Was wird gezeigt |
+| Demo | API | What it shows |
 |---|---|---|
-| [pdf_demo](examples/pdf_demo/) | `TPdfDocumentVcl` | Text, Grafik, Tagged PDF (H1/P/Figure/Table/TR/TH/TD) |
-| [report_demo](examples/report_demo/) | `TGDIPages` + GUI | Preview, Tabellen, Kopf-/Fußzeilen |
+| [pdf_demo](examples/pdf_demo/) | `TPdfDocumentVcl` | Text, graphics, tagged PDF (H1/P/Figure/Table/TR/TH/TD) |
+| [report_demo](examples/report_demo/) | `TGDIPages` + GUI | Preview, tables, headers/footers |
 | [markdown_demo](examples/markdown_demo/) | `TGDIPages` | H1-H6, TTableLayout, LineHeightFactor, ExportPdfTagged |
-| [mormot_demo](examples/mormot_demo/) | `TGDIPages` + ORM | SQLite-Datenbank, Service-Layer, TTableLayout |
-| [chinese_demo](examples/chinese_demo/) | `TPdfDocumentVcl` | CJK-Text, vollständiges TTF-Embedding |
-| [rtl_demo](examples/rtl_demo/) | `TPdfDocumentVcl` | Arabisch RTL, HarfBuzz / Uniscribe Shaping |
+| [mormot_demo](examples/mormot_demo/) | `TGDIPages` + ORM | SQLite database, service layer, TTableLayout |
+| [chinese_demo](examples/chinese_demo/) | `TPdfDocumentVcl` | CJK text, full TTF embedding |
+| [rtl_demo](examples/rtl_demo/) | `TPdfDocumentVcl` | Arabic RTL, HarfBuzz / Uniscribe shaping |
 
-Vollständige Anleitung: [docs/DEMOS.md](docs/DEMOS.md)
+Full guide: [docs/DEMOS.md](docs/DEMOS.md)
 
 ---
 
-## Bauen
+## Build
 
 ```bash
 # Windows
@@ -124,37 +124,37 @@ lazbuild examples/chinese_demo/chinese_demo.lpi -B
 lazbuild examples/rtl_demo/rtl_demo.lpi -B
 ```
 
-## Runtime-Abhängigkeiten
+## Runtime dependencies
 
-**Windows:** keine zusätzlichen (GDI ist Teil des OS)
+**Windows:** none additional (GDI is part of the OS)
 
 **Linux:**
 ```bash
-sudo apt install libfreetype6                    # Pflicht — PDF-Fontrendering
-sudo apt install libharfbuzz0b                   # Optional — arabisches RTL-Shaping (rtl_demo)
-sudo apt install fonts-noto-core                 # Optional — Noto Naskh Arabic (rtl_demo)
-sudo apt install fonts-wqy-microhei              # Optional — CJK-Font (chinese_demo)
+sudo apt install libfreetype6                    # required — PDF font rendering
+sudo apt install libharfbuzz0b                   # optional — Arabic RTL shaping (rtl_demo)
+sudo apt install fonts-noto-core                 # optional — Noto Naskh Arabic (rtl_demo)
+sudo apt install fonts-wqy-microhei              # optional — CJK font (chinese_demo)
 ```
-Fonts werden automatisch aus `/usr/share/fonts`, `/usr/local/share/fonts`, `~/.fonts` gefunden.
+Fonts are detected automatically from `/usr/share/fonts`, `/usr/local/share/fonts`, `~/.fonts`.
 
 **macOS:**
 ```bash
 brew install freetype
-brew install harfbuzz          # Optional — arabisches RTL-Shaping (rtl_demo)
+brew install harfbuzz          # optional — Arabic RTL shaping (rtl_demo)
 ```
-Fonts aus `/Library/Fonts`, `/System/Library/Fonts`, `~/Library/Fonts`.
+Fonts from `/Library/Fonts`, `/System/Library/Fonts`, `~/Library/Fonts`.
 
 ---
 
-## Open Items
+## Open items
 
-- **Font-Subsetting:** opt-in via `EmbeddedWholeTtf := False`; für CJK und RTL/Arabisch nicht zuverlässig — vollständiges TTF empfohlen
-- **EMF/MetaFile:** Windows-only (`TPdfDocumentGdi`), nicht portierbar
-- **GDI+/Gradient Fills:** nur via EMF auf Windows verfügbar
-- **Tabellen-Pagination:** kein Zeilenumbruch innerhalb einer Zelle
+- **Font subsetting:** opt-in via `EmbeddedWholeTtf := False`; not reliable for CJK and RTL/Arabic — full TTF is recommended
+- **EMF/MetaFile:** Windows-only (`TPdfDocumentGdi`), not portable
+- **GDI+/Gradient fills:** available only via EMF on Windows
+- **Table pagination:** no row wrap within a cell
 
 ---
 
-## Lizenz
+## License
 
-Dieses Projekt folgt den Lizenzbedingungen von mORMot2. Siehe [mORMot2 Repository](https://github.com/synopse/mORMot2) für Details.
+This project follows the licensing terms of mORMot2. See the [mORMot2 repository](https://github.com/synopse/mORMot2) for details.
