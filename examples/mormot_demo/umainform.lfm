@@ -1,0 +1,169 @@
+object MainForm: TMainForm
+  Left = 200
+  Height = 600
+  Top = 150
+  Width = 800
+  Caption = 'mORMot2 Report Demo'
+  ClientHeight = 600
+  ClientWidth = 800
+  LCLVersion = '4.6.0.0'
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  object ToolBar1: TToolBar
+    Left = 0
+    Height = 40
+    Top = 0
+    Width = 800
+    Caption = 'ToolBar1'
+    ShowCaptions = True
+    TabOrder = 0
+    object btnPreview: TToolButton
+      Left = 1
+      Top = 2
+      Action = actPreview
+    end
+    object btnPrint: TToolButton
+      Left = 58
+      Top = 2
+      Action = actPrint
+    end
+    object btnPDF: TToolButton
+      Left = 110
+      Top = 2
+      Action = actExportPDF
+    end
+    object btnSep1: TToolButton
+      Left = 175
+      Height = 8
+      Top = 2
+      Style = tbsSeparator
+    end
+    object btnClose: TToolButton
+      Left = 183
+      Top = 2
+      Action = actClose
+    end
+  end
+  object pnlData: TPanel
+    Left = 0
+    Height = 537
+    Top = 40
+    Width = 800
+    Align = alClient
+    ClientHeight = 537
+    ClientWidth = 800
+    TabOrder = 1
+    object lblTitle: TLabel
+      Left = 20
+      Height = 15
+      Top = 24
+      Width = 66
+      Caption = 'Report Title:'
+    end
+    object edtTitle: TEdit
+      Left = 160
+      Height = 23
+      Top = 20
+      Width = 350
+      TabOrder = 0
+      Text = 'Order List Q1/2026'
+    end
+    object lblCompany: TLabel
+      Left = 20
+      Height = 15
+      Top = 64
+      Width = 70
+      Caption = 'Company Name:'
+    end
+    object edtCompany: TEdit
+      Left = 160
+      Height = 23
+      Top = 60
+      Width = 350
+      TabOrder = 1
+      Text = 'Sample Corp Inc.'
+    end
+    object grpOptions: TGroupBox
+      Left = 20
+      Height = 180
+      Top = 110
+      Width = 300
+      Caption = 'Options'
+      ClientHeight = 160
+      ClientWidth = 296
+      TabOrder = 2
+      object chkHeader: TCheckBox
+        Left = 16
+        Height = 19
+        Top = 24
+        Width = 112
+        Caption = 'Print header'
+        Checked = True
+        State = cbChecked
+        TabOrder = 0
+      end
+      object chkFooter: TCheckBox
+        Left = 16
+        Height = 19
+        Top = 56
+        Width = 107
+        Caption = 'Print footer'
+        Checked = True
+        State = cbChecked
+        TabOrder = 1
+      end
+      object chkGrid: TCheckBox
+        Left = 16
+        Height = 19
+        Top = 88
+        Width = 186
+        Caption = 'Table lines and shading'
+        Checked = True
+        State = cbChecked
+        TabOrder = 2
+      end
+      object chkColors: TCheckBox
+        Left = 16
+        Height = 19
+        Top = 120
+        Width = 115
+        Caption = 'Use colours'
+        Checked = True
+        State = cbChecked
+        TabOrder = 3
+      end
+    end
+  end
+  object StatusBar1: TStatusBar
+    Left = 0
+    Height = 23
+    Top = 577
+    Width = 800
+    Panels = <>
+    SimpleText = 'Ready.'
+  end
+  object SaveDialog1: TSaveDialog
+    Left = 600
+    Top = 200
+  end
+  object ActionList1: TActionList
+    Left = 600
+    Top = 280
+    object actPreview: TAction
+      Caption = 'Preview'
+      OnExecute = actPreviewExecute
+    end
+    object actPrint: TAction
+      Caption = 'Print'
+      OnExecute = actPrintExecute
+    end
+    object actExportPDF: TAction
+      Caption = 'PDF Export'
+      OnExecute = actExportPDFExecute
+    end
+    object actClose: TAction
+      Caption = 'Close'
+      OnExecute = actCloseExecute
+    end
+  end
+end

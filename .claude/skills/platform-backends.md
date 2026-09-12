@@ -1,0 +1,252 @@
+# Platform Backends — IPdfPlatformFont / IPdfSystemFonts / IPdfPlatformDC
+
+Source: `src/core/mormot.pdf.types.pas`
+Windows backend: `src/platform/windows/mormot.pdf.gdi.pas`
+Unix/macOS backend: `src/platform/unix/mormot.pdf.freetype.pas`
+
+---
+
+## Three Interfaces
+
+All platform-specific operations run exclusively through these three interfaces. The core (`mormot.ui.pdf.pas`) contains no `{$ifdef}` for platform details.
+
+### IPdfPlatformFont — Font Operations
+
+```pascal
+IPdfPlatformFont = interface
+  // Create a font object from a logical font descriptor
+  function  CreateFont(const ALogFont: TPdfLogFont): TPdfPlatformFontHandle;
+  // Release a previously created font
+  procedure DeleteFont(AFont: TPdfPlatformFontHandle);
+  // Select font into DC; returns the previously selected font handle
+  function  SelectFont(ADC: TPdfPlatformDC;
+                       AFont: TPdfPlatformFontHandle): TPdfPlatformFontHandle;
+  // Retrieve basic text metrics for the currently selected font
+  function  GetTextMetrics(ADC: TPdfPlatformDC;
+                           out AMetrics: TPdfTextMetrics): boolean;
+  // Retrieve extended outline metrics (ascent, descent, em-square, etc.)
+  function  GetOutlineMetrics(ADC: TPdfPlatformDC;
+                              out AMetrics: TPdfOutlineMetrics): boolean;
+  // Retrieve ABC advance widths for characters FirstChar..LastChar
+  function  GetCharABCWidths(ADC: TPdfPlatformDC;
+                             FirstChar, LastChar: cardinal;
+                             out AWidths: TPdfCharABCArray): boolean;
+  // Read raw TrueType/OpenType table bytes (tag = 4-byte table name, e.g. 'cmap')
+  // Returns bytes read, or FontDataError on failure
+  function  GetFontData(ADC: TPdfPlatformDC;
+                        ATableTag, AOffset: cardinal;
+                        ABuffer: pointer; ABufferSize: cardinal): cardinal;
+  // Sentinel value returned by GetFontData on error ($FFFFFFFF on all platforms)
+  function  FontDataError: cardinal;
+end;
+```
+
+### IPdfSystemFonts — Font Enumeration
+
+```pascal
+IPdfSystemFonts = interface
+  // Fill List with UTF-8 encoded font family names available on the system
+  procedure EnumTrueTypeFonts(ADC: TPdfPlatformDC;
+                              var List: TRawUtf8DynArray);
+end;
+```
+
+### IPdfPlatformDC — Device Context
+
+```pascal
+IPdfPlatformDC = interface
+  // Create a compatible device context for font measurements
+  // Windows: CreateCompatibleDC(0); Unix/macOS: returns non-nil dummy pointer
+  function  CreateDC: TPdfPlatformDC;
+  // Release a device context created by CreateDC
+  procedure DeleteDC(ADC: TPdfPlatformDC);
+  // Return screen DPI (Y axis); Unix/macOS always returns 96
+  function  GetScreenLogPixels(ADC: TPdfPlatformDC): integer;
+end;
+```
+
+---
+
+## Registration
+
+Each backend registers its implementations in the `initialization` section:
+
+```pascal
+// In mormot.pdf.gdi.pas (Windows):
+initialization
+  RegisterPdfPlatform(
+    TPdfGdiFontProvider.Create,
+    TPdfGdiSystemFonts.Create,
+    TPdfGdiDCProvider.Create);
+
+// In mormot.pdf.freetype.pas (Unix/macOS):
+initialization
+  RegisterPdfPlatform(
+    TPdfFreeTypeFontProvider.Create,
+    TPdfFreeTypeSystemFonts.Create,
+    TPdfFreeTypeDCProvider.Create);
+```
+
+The global variables `PdfPlatformFont`, `PdfSystemFonts`, `PdfPlatformDCProvider` in `mormot.pdf.types.pas` are set. The core calls them directly.
+
+```pascal
+// Check whether a platform backend has been registered:
+if not PdfPlatformRegistered then
+  raise ESynException.Create('No PDF platform registered');
+```
+
+**Conditional uses in the application project (not in the core):**
+
+```pascal
+uses
+  {$ifdef MSWINDOWS}
+  mormot.pdf.gdi,       // registers GDI backend
+  {$else}
+  mormot.pdf.freetype,  // registers FreeType2 backend
+  {$endif}
+  mormot.ui.pdf;
+```
+
+---
+
+## Data Types (mormot.pdf.types.pas)
+
+### TPdfLogFont — Font Request Descriptor
+
+```pascal
+TPdfLogFont = record
+  FaceName:       SynUnicode;  // font family name (e.g. 'Calibri')
+  Height:         integer;     // character height in logical units (negative = cell height)
+  Weight:         integer;     // FW_NORMAL=400, FW_BOLD=700
+  Italic:         integer;     // 0 = upright, 1 = italic
+  CharSet:        integer;     // 0 = ANSI_CHARSET
+  PitchAndFamily: integer;     // FF_SWISS, FF_ROMAN, etc.
+end;
+```
+
+### TPdfPlatformFontHandle / TPdfPlatformDC
+
+```pascal
+TPdfPlatformFontHandle = type pointer;  // opaque font handle
+TPdfPlatformDC         = type pointer;  // opaque device context
+```
+
+### TPdfTextMetrics
+
+```pascal
+TPdfTextMetrics = record
+  tmHeight, tmAscent, tmDescent: integer;
+  tmInternalLeading, tmExternalLeading: integer;
+  tmAveCharWidth, tmMaxCharWidth: integer;
+  tmWeight: integer;
+  tmOverhang: integer;
+  tmFirstChar, tmLastChar, tmDefaultChar, tmBreakChar: integer;
+  tmItalic, tmUnderlined, tmStruckOut: byte;
+  tmPitchAndFamily, tmCharSet: byte;
+end;
+```
+
+### TPdfOutlineMetrics
+
+```pascal
+TPdfOutlineMetrics = record
+  otmSize:         cardinal;
+  otmAscent:       integer;
+  otmDescent:      integer;
+  otmLineGap:      cardinal;
+  otmItalicAngle:  integer;
+  otmEMSquare:     cardinal;
+  otmrcFontBox:    TRect;        // tight bounding box of all glyphs
+  otmMacAscent, otmMacDescent, otmMacLineGap: integer;
+  otmCapEmHeight, otmXHeight: cardinal;
+  otmStrikeoutPosition, otmStrikeoutSize: integer;
+  otmUnderscorePosition, otmUnderscoreSize: integer;
+end;
+```
+
+### TPdfCharABC
+
+```pascal
+TPdfCharABC = record
+  abcA: integer;   // pre-character spacing (can be negative)
+  abcB: cardinal;  // glyph width (always positive)
+  abcC: integer;   // post-character spacing (can be negative)
+end;
+TPdfCharABCArray = array of TPdfCharABC;
+```
+
+Total character advance = `abcA + abcB + abcC`.
+
+---
+
+## Windows Backend (mormot.pdf.gdi.pas)
+
+GDI API mapping:
+
+| Interface method | Windows API |
+|---|---|
+| `CreateFont` | `CreateFontIndirectW` |
+| `DeleteFont` | `DeleteObject` |
+| `SelectFont` | `SelectObject` |
+| `GetTextMetrics` | `GetTextMetricsW` |
+| `GetOutlineMetrics` | `GetOutlineTextMetricsW` |
+| `GetCharABCWidths` | `GetCharABCWidthsW` |
+| `GetFontData` | `GetFontData` |
+| `FontDataError` | returns `GDI_ERROR` ($FFFFFFFF) |
+| `EnumTrueTypeFonts` | `EnumFontFamiliesExW` with TRUETYPE_FONTTYPE |
+| `CreateDC` | `CreateCompatibleDC(0)` |
+| `DeleteDC` | `DeleteDC` |
+| `GetScreenLogPixels` | `GetDeviceCaps(DC, LOGPIXELSY)` |
+
+No additional runtime dependency — GDI is part of Windows.
+
+---
+
+## Unix/macOS Backend (mormot.pdf.freetype.pas)
+
+FreeType2 API mapping:
+
+| Interface method | FreeType2 API |
+|---|---|
+| `CreateFont` | `FT_New_Face` + `FT_Set_Char_Size` |
+| `DeleteFont` | `FT_Done_Face` |
+| `SelectFont` | internal context switch |
+| `GetTextMetrics` | `FT_FaceRec.ascender/descender/height` |
+| `GetOutlineMetrics` | `FT_FaceRec.bbox` + scaled values |
+| `GetCharABCWidths` | `FT_Load_Char` + `horiAdvance` |
+| `GetFontData` | `FT_Load_Sfnt_Table` |
+| `FontDataError` | returns $FFFFFFFF |
+| `EnumTrueTypeFonts` | filesystem scan + `FT_New_Face` |
+| `CreateDC` | dummy non-nil pointer (no real DC needed) |
+| `DeleteDC` | no-op |
+| `GetScreenLogPixels` | constant 96 |
+
+**Font search paths:**
+
+Linux:
+- `/usr/share/fonts/**`
+- `/usr/local/share/fonts/**`
+- `~/.fonts/**`
+
+macOS:
+- `/Library/Fonts/**`
+- `/System/Library/Fonts/**`
+- `~/Library/Fonts/**`
+
+If a font is not found: fallback to DejaVu Sans (Linux) or Helvetica (macOS).
+
+**Runtime library:** `libfreetype.so.6` (Linux) / `libfreetype.6.dylib` (macOS) — loaded dynamically via `dlopen`. If not present: exception on first font access.
+
+---
+
+## Adding a New Platform
+
+1. Create new unit `mormot.pdf.<platform>.pas`
+2. Implement three classes:
+   - `TPdf<Platform>FontProvider(TInterfacedObject, IPdfPlatformFont)`
+   - `TPdf<Platform>SystemFonts(TInterfacedObject, IPdfSystemFonts)`
+   - `TPdf<Platform>DCProvider(TInterfacedObject, IPdfPlatformDC)`
+3. Register in `initialization` via `RegisterPdfPlatform(...)`
+4. Add conditional `uses` in the application project
+
+No changes to `mormot.ui.pdf.pas` required.
