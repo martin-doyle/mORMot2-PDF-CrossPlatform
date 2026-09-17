@@ -342,6 +342,10 @@ begin
     CheckEqual(350, Report.CurrentY, 'After +350');
     Report.MoveToNextLine(200);
     CheckEqual(550, Report.CurrentY, 'After +200');
+    { AddVerticalSpace takes millimetres, MoveToNextLine 1/100 mm — both land
+      in the same fCurrentY, so 5 mm must be 500 units }
+    Report.AddVerticalSpace(5);
+    CheckEqual(1050, Report.CurrentY, 'After +5 mm');
     Report.EndDoc;
   finally
     Report.Free;

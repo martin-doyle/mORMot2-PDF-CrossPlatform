@@ -713,10 +713,12 @@ positions should now agree. PDFs are gitignored, so the Linux reference has to
 be regenerated from this commit rather than pulled from the repository. The
 layout change itself is already accepted, so Step 5 is not blocked on it.
 
-**Unrelated defect noticed, not fixed.** `TGDIPages.AddVerticalSpace(mm)`
-computes `MMToPixels(mm * 100, 96)`, which converts a 1/100 mm value to pixels
-— `AddVerticalSpace(5)` advances by 18 units instead of 500. It is
-platform-neutral, so it is not part of B-5, but it belongs on the list.
+**Unrelated defect noticed while working here, fixed separately.**
+`TGDIPages.AddVerticalSpace(mm)` computed `MMToPixels(mm * 100, 96)`, converting
+an already-correct 1/100 mm value into pixels — `AddVerticalSpace(5)` advanced
+by 18 units instead of 500. It is platform-neutral, so it was never part of
+B-5. Nothing in the repository called it, so no layout changed; it is now
+`mm * 100`, with an assertion in `TestMoveToNextLine`.
 
 ---
 

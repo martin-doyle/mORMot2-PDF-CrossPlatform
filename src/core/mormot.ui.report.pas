@@ -393,7 +393,9 @@ type
     property LineHeightFactor: single read fLineHeightFactor write SetLineHeightFactor;
     /// advance Y cursor by offset in 1/100 mm units
     procedure MoveToNextLine(Offset: Integer);
-    /// add vertical spacing in millimeters
+    /// advance Y cursor by mm millimetres
+    // - for 1/100 mm units, the unit of every other coordinate, use
+    // MoveToNextLine instead
     procedure AddVerticalSpace(mm: Integer);
     /// force a page break and reset Y cursor to top
     procedure ForceNewPage;
@@ -1869,7 +1871,10 @@ end;
 
 procedure TGDIPages.AddVerticalSpace(mm: Integer);
 begin
-  Inc(fCurrentY, MMToPixels(mm * 100, 96));
+  { fCurrentY is in 1/100 mm, so mm millimetres are mm * 100 units. This used
+    to run the value through MMToPixels, converting an already-correct 1/100 mm
+    figure into pixels: AddVerticalSpace(5) advanced by 18 units, not 500. }
+  Inc(fCurrentY, mm * 100);
 end;
 
 procedure TGDIPages.ForceNewPage;
