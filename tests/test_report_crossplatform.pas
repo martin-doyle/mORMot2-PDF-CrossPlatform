@@ -38,6 +38,7 @@ type
     procedure TestMoveToNextLine;
     procedure TestBeginEndTableRestoresLayout;
     procedure TestFontConstants;
+    procedure TestPlatformIndependentMetrics;
   end;
 
 implementation
@@ -361,6 +362,70 @@ begin
   CheckEqual('Liberation Serif', REPORT_FONT_SERIF, 'Unix SERIF = Liberation Serif');
   CheckEqual('Liberation Mono', REPORT_FONT_MONO, 'Unix MONO = Liberation Mono');
   {$ENDIF}
+end;
+
+procedure TReportTests.TestPlatformIndependentMetrics;
+const
+  { Adobe AFM advances of the base-14 Helvetica, in 1000-per-em units:
+    H=722 e=556 l=222 l=222 o=556 -> 'Hello' = 2278, space = 278.
+    Taken from the AFM, not from our own code, so this test fails if the
+    engine ever measures with something other than the font the PDF uses. }
+  W_HELLO = 2278;
+  W_SPACE = 278;
+  SIZE    = 10;
+  FACTOR  = 1.1;
+var
+  Report: TGDIPages;
+  ExpectedW, ExpectedLH, PairW: Integer;
+  Lines: Integer;
+
+  function CountTextCmds(P: Integer): Integer;
+  var
+    j: Integer;
+  begin
+    Result := 0;
+    for j := 0 to High(Report.Pages[P].Commands) do
+      if Report.Pages[P].Commands[j].Kind = dckDrawText then
+        Inc(Result);
+  end;
+
+begin
+  { PDF points -> 1/100 mm is x 2540/72 }
+  ExpectedW  := Round(W_HELLO * SIZE / 1000 * 2540 / 72);
+  ExpectedLH := Round(SIZE * FACTOR * 2540 / 72);
+  PairW      := Round((W_HELLO * 2 + W_SPACE) * SIZE / 1000 * 2540 / 72);
+  Report := TGDIPages.Create(nil);
+  try
+    Report.ExportPdfStandardFonts := true; // base-14 AFM widths on every OS
+    Report.PaperSize   := psA4;
+    Report.Orientation := poPortrait;
+    Report.LineHeightFactor := FACTOR;
+    Report.NewPage;
+    Report.SetFont('Helvetica', SIZE);
+    { right-aligned text is placed at PageWidth - TextWidth, so the recorded X
+      reveals the width the layout measured }
+    Report.DrawTextRight(0, 0, 'Hello');
+    CheckEqual(Report.PageWidth - ExpectedW, Report.Pages[0].Commands[0].X,
+      'Helvetica 10pt measures Hello with its AFM width');
+    { line breaking happens at the same place on every platform: the pair fits
+      just above its own width and wraps just below it }
+    Report.ForceNewPage;
+    Report.DrawTextWrapped(0, PairW + 100, Report.CurrentY, 'Hello Hello');
+    CheckEqual(1, CountTextCmds(1), 'pair fits on one line');
+    Report.ForceNewPage;
+    Report.DrawTextWrapped(0, PairW - 100, Report.CurrentY, 'Hello Hello');
+    Lines := CountTextCmds(2);
+    CheckEqual(2, Lines, 'pair wraps into two lines');
+    { and those lines are exactly one line height apart }
+    CheckEqual(ExpectedLH,
+      Report.Pages[2].Commands[1].Y - Report.Pages[2].Commands[0].Y,
+      'line advance is FontSize x LineHeightFactor, not a widgetset height');
+    CheckEqual('Hello', Report.Pages[2].Commands[0].Text, 'first wrapped line');
+    CheckEqual('Hello', Report.Pages[2].Commands[1].Text, 'second wrapped line');
+    Report.EndDoc;
+  finally
+    Report.Free;
+  end;
 end;
 
 end.

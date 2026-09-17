@@ -46,6 +46,11 @@ type
   /// Re-export TPdfALevel from mormot.ui.pdf to allow importing only mormot.pdf.vclcanvas
   TPdfALevel = mormot.ui.pdf.TPdfALevel;
 
+  /// Re-export TPdfFontMeasurer so TGDIPages can lay out its pages with the
+  // metrics of the PDF font engine without pulling all of mormot.ui.pdf — that
+  // unit re-exports Windows-style TRect/TPoint which clash with the LCL ones
+  TPdfFontMeasurer = mormot.ui.pdf.TPdfFontMeasurer;
+
   /// coordinate scaling state used by TPdfVclCanvas
   TPdfVclScale = record
     // origin offset in PDF points
@@ -91,6 +96,12 @@ type
     procedure DoLineTo(X, Y: integer); override;  // TCanvas.LineTo calls this
   public
     procedure TextOut(X, Y: integer; const AText: string); override;
+    /// TextOut at a sub-pixel position
+    // - TCanvas.TextOut only takes integers, so a caller that knows its layout
+    // more precisely than whole screen pixels would lose that precision at the
+    // 0.75 pt (1 px @ 96 DPI) grid; TGDIPages uses this overload to place text
+    // at the position it actually computed (ROADMAP B-5)
+    procedure TextOutFrac(X, Y: single; const AText: string);
     procedure Rectangle(X1, Y1, X2, Y2: integer); override;
     procedure Ellipse(X1, Y1, X2, Y2: integer); override;
     procedure RoundRect(X1, Y1, X2, Y2, X3, Y3: integer); override;
@@ -303,15 +314,25 @@ end;
 // --- Text ---
 
 procedure TPdfVclCanvas.TextOut(X, Y: integer; const AText: string);
+begin
+  TextOutFrac(X, Y, AText);
+end;
+
+procedure TPdfVclCanvas.TextOutFrac(X, Y: single; const AText: string);
 var
   W: WideString;
+  pageH: single;
 begin
   if AText = '' then
     exit;
   SyncFont;
+  pageH := fPdfDoc.DefaultPageHeight;
+  if pageH <= 0 then
+    pageH := 841; // A4 fallback
   // FPC string is UTF-8; TPdfCanvas.TextOutW handles Unicode→WinAnsi/CID mapping
   W := UTF8Decode(AText);
-  fPdfCanvas.TextOutW(PxToPtX(X), PxToPtY(Y + Font.Size), pointer(W));
+  fPdfCanvas.TextOutW((X + fScale.OriginX) * fScale.ScaleX,
+    pageH - (Y + Font.Size + fScale.OriginY) * fScale.ScaleY, pointer(W));
 end;
 
 // --- Shapes ---

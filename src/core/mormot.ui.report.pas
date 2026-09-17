@@ -26,6 +26,7 @@ uses
   mormot.core.unicode,
   mormot.pdf.types,     // PDF_FONT_STD_* + TPdfStructRole (Tagged PDF)
   mormot.ui.pdfcanvas;  // cross-platform PDF engine (uses FreeType2 on POSIX)
+              // also re-exports TPdfFontMeasurer (layout metrics, ROADMAP B-5)
               // Re-exports TPdfALevel and PDF/A level constants from mormot.ui.pdf
 
 { =========================================================================
@@ -245,8 +246,11 @@ type
     fInList:           boolean;       // true between dckBeginList and dckEndList
     fRecordingListItem: boolean;      // true while DrawListItem records its text
 
-    { --- Phase 2: 1×1 bitmap for LCL text measurement --- }
+    { --- Phase 2: 1×1 bitmap for LCL text measurement (preview fallback) --- }
     fMeasureBitmap: TBitmap;
+
+    { --- B-5: layout metrics taken from the PDF engine, not from the LCL --- }
+    fMeasurer:        TPdfFontMeasurer;
 
     { --- saved state stack --- }
     fSavedStates:  array of TSavedState;
@@ -336,6 +340,10 @@ type
     function  GetCurrentPageIndex: Integer;
     function  GetPage(Index: Integer): TPageData;
     procedure SetupMeasureFont;
+    /// select the current font on fMeasurer; false = fall back to the LCL
+    function  SetupPdfMeasureFont: boolean;
+    /// advance width of S in PDF points, or -1 when the PDF metrics are absent
+    function  MeasureTextWidthPt(const S: string): single;
     function  MeasureTextWidthPx(const S: string): Integer;
     function  LineHeightPx: Integer;
     function  LineHeightMM: Integer;
@@ -348,6 +356,12 @@ type
     procedure AddHeadingsToOutline(PDF: TPdfDocumentVcl);
     function  NormalizeX(X: Integer): Integer;
     function  NormalizeY(Y: Integer): Integer;
+    /// 1/100mm -> render pixels, without the integer rounding of ScaleX/ScaleY
+    function  ScaleXF(V: Integer): single;
+    function  ScaleYF(V: Integer): single;
+    /// draw text keeping sub-pixel precision when ACanvas is the PDF bridge
+    procedure EmitCanvasText(ACanvas: TCanvas; X, Y: Integer;
+                             const S: string);
     { Zentrale Skalierungsfunktionen - IMMER nutzen für Koordinaten-Umwandlung }
     function  ScaleX(V: Integer): Integer;  // Convert 1/100mm to render pixels
     function  ScaleY(V: Integer): Integer;  // Convert 1/100mm to render pixels
@@ -643,6 +657,14 @@ begin
   Result := MulDiv(Pixels, 2540, DPI);
 end;
 
+{ Convert PDF points (1/72 inch) to 1/100 mm — the unit of every TGDIPages
+  coordinate. Kept as a single late rounding step, so sub-unit differences do
+  not accumulate over the lines of a page (ROADMAP B-5, step 5). }
+function PointsToMM100(Points: single): Integer;
+begin
+  Result := Round(Points * (2540 / 72));
+end;
+
 procedure GetReportFonts(Embedded: boolean;
   out SansFont, SerifFont, MonoFont: string);
 begin
@@ -681,6 +703,7 @@ begin
   fMeasureBitmap        := TBitmap.Create;
   fMeasureBitmap.Width  := 1;
   fMeasureBitmap.Height := 1;
+  fMeasurer             := TPdfFontMeasurer.Create;
   // Phase 6 defaults
   fUseOutlines          := False;
   fExportPdfLevel       := pdfaNone;
@@ -725,6 +748,7 @@ destructor TGDIPages.Destroy;
 begin
   fBitmaps.Free;
   fMeasureBitmap.Free;
+  fMeasurer.Free;
   fFormatRegistry.Free;
   SetLength(fHeadings, 0);  // clear dynamic array
   inherited;
@@ -959,7 +983,14 @@ begin
 end;
 
 { =========================================================================
-  Phase 2 – Text measurement via LCL TCanvas.TextExtent
+  Phase 2 – Text measurement
+
+  Layout is measured with the PDF font engine, not with the LCL: the glyphs are
+  placed by TPdfCanvas later on, so measuring with a widgetset canvas made the
+  two disagree — every advance was rounded to a whole screen pixel and each
+  platform returned a different text height for the same nominal font
+  (ROADMAP B-5). The LCL canvas remains as an explicit fallback for fonts the
+  PDF engine cannot resolve, and for the on-screen preview.
   ========================================================================= }
 
 procedure TGDIPages.SetupMeasureFont;
@@ -967,6 +998,24 @@ begin
   fMeasureBitmap.Canvas.Font.Name  := fFontName;
   fMeasureBitmap.Canvas.Font.Size  := fFontSize;
   fMeasureBitmap.Canvas.Font.Style := fFontStyle;
+end;
+
+function TGDIPages.SetupPdfMeasureFont: boolean;
+begin
+  if fMeasurer = nil then
+    fMeasurer := TPdfFontMeasurer.Create;
+  { the export flags decide which font the PDF will really use, so they decide
+    which metrics the layout has to be measured with }
+  Result := fMeasurer.SetFont(StringToUtf8(fFontName),
+    fsBold in fFontStyle, fsItalic in fFontStyle, fExportPdfStandardFonts);
+end;
+
+function TGDIPages.MeasureTextWidthPt(const S: string): single;
+begin
+  if SetupPdfMeasureFont then
+    Result := fMeasurer.TextWidth(StringToUtf8(S), fFontSize)
+  else
+    Result := -1; { no PDF metrics for this font — caller falls back to the LCL }
 end;
 
 function TGDIPages.MeasureTextWidthPx(const S: string): Integer;
@@ -977,8 +1026,7 @@ end;
 
 function TGDIPages.LineHeightPx: Integer;
 begin
-  SetupMeasureFont;
-  Result := Round(fMeasureBitmap.Canvas.TextHeight('Hg') * fLineHeightFactor);
+  Result := MMToPixels(LineHeightMM, 96);
 end;
 
 procedure TGDIPages.SetLineHeightFactor(Value: single);
@@ -990,12 +1038,25 @@ end;
 
 function TGDIPages.LineHeightMM: Integer;
 begin
-  Result := PixelsToMM(LineHeightPx, GetMeasureDPI);
+  { The per-line advance is FontSize x LineHeightFactor, expressed in PDF
+    points. It used to be an LCL pixel text height times the factor, which
+    absorbed the widgetset's own leading and quantised to whole screen pixels:
+    11 pt text with LineHeightFactor=1.1 advanced by 16.5 pt on Linux and
+    14.25 pt on macOS instead of 12.1 pt. Note that a face whose
+    ascender+descender exceeds 1.1 em now needs a larger LineHeightFactor —
+    this is the deliberate layout change of ROADMAP B-5. }
+  Result := PointsToMM100(fFontSize * fLineHeightFactor);
 end;
 
 function TGDIPages.MeasureTextWidthMM(const S: string): Integer;
+var
+  Pt: single;
 begin
-  Result := PixelsToMM(MeasureTextWidthPx(S), GetMeasureDPI);
+  Pt := MeasureTextWidthPt(S);
+  if Pt >= 0 then
+    Result := PointsToMM100(Pt)
+  else
+    Result := PixelsToMM(MeasureTextWidthPx(S), GetMeasureDPI);
 end;
 
 function TGDIPages.GetMeasureDPI: Integer;
@@ -1181,6 +1242,29 @@ begin
     Format('NormalizeY: Y=%d out of bounds [0, %d]', [Y, fPageHeight]));
   {$ENDIF}
   Result := Y;
+end;
+
+procedure TGDIPages.EmitCanvasText(ACanvas: TCanvas; X, Y: Integer;
+  const S: string);
+begin
+  { TCanvas.TextOut takes integer pixels, which on PDF export snaps every
+    position to the 0.75 pt (1 px @ 96 DPI) grid. The PDF bridge can do better,
+    so place the text where the layout actually put it (ROADMAP B-5). The
+    preview keeps the integer path — it draws on a pixel grid anyway. }
+  if ACanvas is TPdfVclCanvas then
+    TPdfVclCanvas(ACanvas).TextOutFrac(ScaleXF(X), ScaleYF(Y), S)
+  else
+    ACanvas.TextOut(ScaleX(X), ScaleY(Y), S);
+end;
+
+function TGDIPages.ScaleXF(V: Integer): single;
+begin
+  Result := V * fRenderScaleX + fRenderOffsetX;
+end;
+
+function TGDIPages.ScaleYF(V: Integer): single;
+begin
+  Result := V * fRenderScaleY + fRenderOffsetY;
 end;
 
 function TGDIPages.ScaleX(V: Integer): Integer;
@@ -1684,15 +1768,14 @@ end;
 procedure TGDIPages.RecordWrappedText(X: Integer; var Y: Integer;
   const S: string; MaxWidthMM: Integer);
 var
-  MaxPx:  Integer;
-  SpaceW: Integer;
+  MaxPt:  single;
+  SpaceW: single;
   LH:     Integer;
   Words:  TStringList;
   Line:   string;
-  LineW:  Integer;
-  WordW:  Integer;
+  LineW:  single;
+  WordW:  single;
   i:      Integer;
-  MeasureDPI: Integer;
   PrevBlockId: Integer;
 begin
   { All lines emitted below belong to one logical paragraph: they share a
@@ -1701,20 +1784,20 @@ begin
   Inc(fNextBlockId);
   fCurrentBlockId := fNextBlockId;
   fInlineBlockId := 0;  { a block-level paragraph ends any open inline line }
-  { Get the actual DPI of the measurement canvas }
-  MeasureDPI := GetMeasureDPI;
-  { MaxPx is always in 96-DPI-pixels (matches the normalized WordW values below) }
-  MaxPx  := MMToPixels(MaxWidthMM, 96);
-  SetupMeasureFont;
-
-  { Nutze Font-Cache statt neu zu berechnen }
-  if fCachedLineHeightMM > 0 then
-    LH := fCachedLineHeightMM
-  else
-    LH := LineHeightMM;
-
-  { Canvas.TextWidth returns pixels in MeasureDPI. Normalize to 96 DPI for PDF. }
-  SpaceW := MMToPixels(PixelsToMM(fMeasureBitmap.Canvas.TextWidth(' '), MeasureDPI), 96);
+  { Break lines in PDF points — the unit the glyphs are actually placed in.
+    Widths are accumulated unrounded and only the emitted Y is converted to
+    1/100 mm, so no per-word rounding error can add up over a paragraph. }
+  MaxPt  := MaxWidthMM * (72 / 2540);
+  LH     := LineHeightMM;
+  SpaceW := MeasureTextWidthPt(' ');
+  if SpaceW < 0 then
+  begin
+    { no PDF metrics for this font: fall back to the LCL measurement path,
+      normalized to 96 DPI as before }
+    SetupMeasureFont;
+    SpaceW := PixelsToMM(fMeasureBitmap.Canvas.TextWidth(' '),
+                GetMeasureDPI) * (72 / 2540);
+  end;
 
   Words  := TStringList.Create;
   try
@@ -1726,9 +1809,11 @@ begin
     for i := 0 to Words.Count - 1 do
     begin
       if Words[i] = '' then Continue;
-      { Canvas.TextWidth returns pixels in MeasureDPI. Normalize to 96 DPI for PDF. }
-      WordW := MMToPixels(PixelsToMM(fMeasureBitmap.Canvas.TextWidth(Words[i]), MeasureDPI), 96);
-      if (LineW > 0) and (LineW + SpaceW + WordW > MaxPx) then
+      WordW := MeasureTextWidthPt(Words[i]);
+      if WordW < 0 then
+        WordW := PixelsToMM(fMeasureBitmap.Canvas.TextWidth(Words[i]),
+                   GetMeasureDPI) * (72 / 2540);
+      if (LineW > 0) and (LineW + SpaceW + WordW > MaxPt) then
       begin
         { === Check for page break before emitting line === }
         if Y + LH > fPageHeight then
@@ -1744,7 +1829,7 @@ begin
       else if Line <> '' then
       begin
         Line  := Line + ' ' + Words[i];
-        Inc(LineW, SpaceW + WordW);
+        LineW := LineW + SpaceW + WordW;
       end
       else
       begin
@@ -2340,8 +2425,8 @@ begin
           - For center align: X has half text width subtracted
           - For left align: X is unchanged
           - Just render at the adjusted X position }
-        TX := ScaleX(Cmd.X);
-        ACanvas.TextOut(TX, ScaleY(Cmd.Y), SubstitutePlaceholders(Cmd.Text, PageIndex));
+        EmitCanvasText(ACanvas, Cmd.X, Cmd.Y,
+          SubstitutePlaceholders(Cmd.Text, PageIndex));
         if SpanOpen then
           fActivePdfDoc.EndStructContent;
         if (fActivePdfDoc <> nil) and
@@ -2394,8 +2479,8 @@ begin
         ACanvas.Font.Color := Format.Color;
         ACanvas.Brush.Style := bsClear;
         { Render heading text (left-aligned) }
-        TX := ScaleX(Cmd.X);
-        ACanvas.TextOut(TX, ScaleY(Cmd.Y), SubstitutePlaceholders(Cmd.HeadingTitle, PageIndex));
+        EmitCanvasText(ACanvas, Cmd.X, Cmd.Y,
+          SubstitutePlaceholders(Cmd.HeadingTitle, PageIndex));
         if fActivePdfDoc <> nil then
           fActivePdfDoc.EndStructContent;
       end;

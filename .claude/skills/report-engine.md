@@ -89,7 +89,7 @@ Report.TextColor := clNavy;           // text colour
 Report.LineHeightFactor := 1.3;       // line spacing multiplier (default 1.1); R-8
 ```
 
-`LineHeightFactor` scales the per-line vertical advance: `Round(FontTextHeight * LineHeightFactor)`. Default `1.1` (10% extra leading). Set to `1.3` or higher for more open layouts.
+`LineHeightFactor` scales the per-line vertical advance: `FontSize * LineHeightFactor`, in PDF points (ROADMAP B-5). Default `1.1`. It used to multiply an LCL `TextHeight`, which absorbed the widgetset's own leading and differed per platform — a face whose ascender+descender exceeds 1.1 em therefore needs a larger factor now. Set `1.3` or higher for more open layouts.
 
 ### Layout Stack
 
@@ -205,6 +205,24 @@ Default H1 size is 28pt; H2–H6 scale proportionally (75%, 57%, 46%, 39%, 36%).
 
 ---
 
+## Measurement — PDF metrics, not the LCL
+
+Layout is measured with the font engine that will later place the glyphs, not with an LCL `TCanvas` (ROADMAP B-5, `mormot.ui.pdf.TPdfFontMeasurer`):
+
+| Quantity | Source |
+|---|---|
+| Text width | `TPdfFontMeasurer.TextWidth` — base-14 AFM tables when `ExportPdfStandardFonts` is set and the font is Helvetica/Times/Courier, otherwise `IPdfPlatformFont.GetCharABCWidths` on a 1000-per-em DC |
+| Line height | `FontSize * LineHeightFactor`, in PDF points |
+| Fallback | `fMeasureBitmap.Canvas` — only when no platform backend is registered |
+
+Consequences for callers:
+
+- `ExportPdfStandardFonts` / `ExportPdfEmbeddedTTF` decide **which font the layout is measured with**, so set them before drawing, not just before export.
+- Line breaking accumulates widths as unrounded PDF points and rounds once, when emitting a line — do not reintroduce per-word `PixelsToMM`/`MMToPixels` round-trips.
+- `RenderPageToCanvas` places text via `TPdfVclCanvas.TextOutFrac` when the target is the PDF bridge, keeping sub-pixel positions; the preview uses the integer `TCanvas.TextOut`. The preview may therefore differ slightly from the PDF — by design.
+
+---
+
 ## Tables
 
 ### Primary API — TTableLayout
@@ -235,7 +253,7 @@ Report.EndTable;
 - `BeginTable(Layout)` calls `SaveLayout` internally — balanced by `EndTable` calling `RestoreLayout`. Set the document body font via `SetFont` **before** `BeginTable` so the save captures it.
 - `DrawTableHeader` and `DrawTableRow` each call `SaveLayout`/`RestoreLayout` internally for their cell drawing.
 - `CELL_PADDING = 200` (2 mm). Row/cell height = `LineHeightMM + CELL_PADDING`.
-- `LineHeightMM` always calls `SetupMeasureFont` first (syncs `fMeasureBitmap.Canvas.Font` to `fFontName`/`fFontSize`/`fFontStyle`) — measurement is always current.
+- `LineHeightMM` is `FontSize * LineHeightFactor` converted to 1/100 mm — no canvas involved, identical on every platform.
 - Column loop in both `DrawTableHeader` and `DrawTableRow`: `for i := 0 to Min(High(Cells), High(fTableColWidths))`.
 - `fTableColWidths`/`fTableColAligns` are populated from `Length(Layout.ColumnWidths)` / `Length(Layout.ColumnAligns)`. If `TTableLayout` typed constants have dynamic array fields that aren't properly initialized by the FPC version in use, `Length()` returns 0 and NO cells are drawn (not even the header). See note below.
 - `AddCommand` raises an exception ("call NewPage before drawing") if `fCurrCmds = nil` — i.e. if `NewPage` was not called before any draw method, or after `EndDoc`.

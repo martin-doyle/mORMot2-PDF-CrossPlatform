@@ -190,7 +190,7 @@ GDI API mapping:
 | `SelectFont` | `SelectObject` |
 | `GetTextMetrics` | `GetTextMetricsW` |
 | `GetOutlineMetrics` | `GetOutlineTextMetricsW` |
-| `GetCharABCWidths` | `GetCharABCWidthsW` |
+| `GetCharABCWidths` | `GetCharABCWidthsA` (ANSI — code points above 255 are not reachable through this call) |
 | `GetFontData` | `GetFontData` |
 | `FontDataError` | returns `GDI_ERROR` ($FFFFFFFF) |
 | `EnumTrueTypeFonts` | `EnumFontFamiliesExW` with TRUETYPE_FONTTYPE |
@@ -236,6 +236,28 @@ macOS:
 If a font is not found: fallback to DejaVu Sans (Linux) or Helvetica (macOS).
 
 **Runtime library:** `libfreetype.so.6` (Linux) / `libfreetype.6.dylib` (macOS) — loaded dynamically via `dlopen`. If not present: exception on first font access.
+
+---
+
+## Document-Independent Measurement — TPdfFontMeasurer
+
+`mormot.ui.pdf.pas` exposes the metrics of a face **without a `TPdfDocument`**, so `TGDIPages` can lay out its pages with the widths the PDF will really use (ROADMAP B-5):
+
+```pascal
+var M: TPdfFontMeasurer;
+M := TPdfFontMeasurer.Create;
+try
+  if M.SetFont('Helvetica', {bold=}false, {italic=}false, {standardFonts=}true) then
+    W := M.TextWidth('Hello', 11);   // PDF points
+finally
+  M.Free;
+end;
+```
+
+- `SetFont` repeats `TPdfCanvas.SetFont`'s resolution order: the base-14 AFM tables (`STANDARDFONTS`) when `aStandardFonts` is set and the name is Helvetica/Times/Courier or an alias, otherwise `PdfPlatformFont.CreateFont` on a `Height = -1000` logfont plus `GetCharABCWidths(32, 255)` — i.e. 1000-per-em units, like every other width in the engine.
+- Returns `false` when nothing resolves (no backend registered); the caller then falls back to its own measurement.
+- Faces are cached per (name, bold, italic, standard-flag) on the measurer instance; `TPdfFaceMetrics` owns the platform font handle and its DC until the measurer is freed.
+- Code points above WinAnsi use `DefaultWidth` — the GDI backend's `GetCharABCWidths` is the ANSI call, so per-code-point Unicode widths are not available through this path.
 
 ---
 

@@ -4,12 +4,14 @@ This document describes all planned improvements with full technical background,
 affected files, implementation steps, and verification criteria.
 
 **Current baseline:** All previously planned features (P1-A … P3, R-1 … R-9) plus
-Steps 1, 2 and 3 (B-1, B-2, B-3) are implemented. The structure tree is now
+Steps 1, 2, 3 and 4 (B-1, B-2, B-3, B-5) are implemented. The structure tree is now
 properly nested, with `Table > TR > TH|TD` and `L > LI > LBody` as real
 hierarchy levels; a wrapped paragraph is one `P` instead of one `P` per line —
 across a page break as well; and a sentence with inline styling is one `P` whose
-styled runs are `Span` kids, in reading order. The open work is the remaining
-set of correctness bugs in the tag tree plus font embedding for tagged output.
+styled runs are `Span` kids, in reading order. Layout is measured with the PDF
+font engine instead of the LCL, so line breaking and inline advances no longer
+depend on the widgetset. The open work is the remaining set of correctness bugs
+in the tag tree plus font embedding for tagged output.
 
 Completed items are archived in [Completed Work](#completed-work) at the end of
 this document.
@@ -68,8 +70,10 @@ Linux run of `pdf_demo`. What that **confirmed**:
   (same nine elements at `Y=365`)
 - B-4: **characters are correct** on Linux — only the `TextWidth`/`TextHeight`
   bounding boxes are wrong. Cause (a), FreeType fallback, is ruled out
-- B-5: Linux fits more text per line than Windows/macOS; inline advances are
-  quantised to 0.75pt (1 px @ 96 DPI) and `bold` overshoots its AFM width by 1.71pt
+- ~~B-5: Linux fits more text per line than Windows/macOS; inline advances are
+  quantised to 0.75pt (1 px @ 96 DPI) and `bold` misses its AFM width by 0.72pt~~
+  — **fixed in Step 4**; the `bold` figure is corrected there (the original
+  1.71pt used the Helvetica *regular* widths)
 - P-6: every tagged PDF currently produced embeds nothing (`emb=no`, `uni=no`)
 
 What is **still not verified** and must be settled during implementation:
@@ -499,7 +503,10 @@ reference files have 5. Only compare runs made in the same environment.
 
 ---
 
-## Step 4 — B-5: Divergent Line and Inline Spacing Across Platforms
+## Step 4 — B-5: Divergent Line and Inline Spacing Across Platforms — **DONE (2026-09-17)**
+
+Implemented and verified on Linux. The analysis below is kept for the record;
+what was actually built is in [Result](#result-step-4) at the end of this step.
 
 **Effort:** 2–3 days | **Files:** `src/core/mormot.ui.report.pas`,
 `src/core/mormot.ui.pdfcanvas.pas` | **Demo:** `markdown_demo`
@@ -532,14 +539,20 @@ Helvetica, whose AFM widths are authoritative because the viewer draws with them
 | Run | Advance emitted | Nominal AFM width | Error |
 |---|---|---|---|
 | `'Inline styles like '` | 80.25 | 80.08 | +0.17 |
-| `'bold'` (Helv-Bold 11) | 22.50 | 20.79 | **+1.71** |
+| `'bold'` (Helv-Bold 11) | 22.50 | 23.22 | **−0.72** |
 | `', '` | 6.00 | 6.12 | −0.12 |
 | `'italic'` | 22.50 | 22.00 | +0.50 |
 
-Every advance is quantised to a multiple of 0.75pt (= 1 px at 96 DPI), and `bold`
-overshoots its true width by 1.71pt. The X positions are therefore **LCL integer
-pixel measurements scaled to points**, not font advances — accumulating visible
-gaps across a nine-run sentence.
+Every advance is quantised to a multiple of 0.75pt (= 1 px at 96 DPI), and
+`bold` is measured 0.72pt *short* of its true width. The X positions are
+therefore **LCL integer pixel measurements scaled to points**, not font
+advances — accumulating visible gaps across a nine-run sentence.
+
+> Correction (Step 4 implementation): the 20.79 originally recorded here as the
+> nominal width of `'bold'` is the **Helvetica regular** sum (556+556+222+556);
+> Helvetica-**Bold** is 611+611+278+611 = 2111, i.e. 23.22pt at 11pt. The
+> defect is real either way — the emitted advance matched neither — but the
+> direction of the `bold` error was the opposite of what was written.
 
 ### Root Cause
 
@@ -638,11 +651,72 @@ qpdf --qdf --object-streams=disable markdown_demo.pdf - | grep -E "Td|TD|Tj"
 - Baseline deltas are no longer all multiples of 0.75 pt (the 1 px @ 96 DPI
   quantisation is gone), and 11 pt body text with `LineHeightFactor = 1.1`
   advances by ~12.1 pt rather than the current 14.25 pt
-- Inline advances match the AFM widths: `'bold'` ≈ 20.79 pt, not 22.50 pt
+- Inline advances match the AFM widths: `'bold'` ≈ 23.22 pt, not 22.50 pt
 - Content-stream diff across the three platforms: `Td` positions agree
 - Preview still renders sensibly (LCL fallback path intact)
 - Gate: accept the deliberate layout change (all reference PDFs are regenerated
   at this step) before Step 5
+
+### Result (Step 4)
+
+Implemented on 2026-09-17, built and run on Linux, and **accepted on Linux on
+2026-09-17** — including the deliberate layout change, so every reference PDF is
+regenerated from this step on. Windows and macOS verification is still
+outstanding, so the cross-platform gate above is not yet closed — but note that
+the layout is now computed from font data alone, with no widgetset value
+anywhere in the path, so the three streams are expected to agree by
+construction rather than by luck.
+
+What was built, against the plan above:
+
+| Plan | Implementation |
+|---|---|
+| 1. Reproduce and quantify | Done before any change, on a fresh Linux build. Baseline deltas were all multiples of 0.75pt; 11pt body text with `LineHeightFactor=1.1` advanced by **16.5pt = 22px** (macOS: 14.25pt = 19px — the divergence is exactly one screen pixel). Inline advances matched neither AFM nor each other. |
+| 1b. `LineHeightFactor` base | Decided: **`FontSize × LineHeightFactor`**, in PDF points. This is what the verification gate below asks for and what the property has always claimed to be (`report-engine.md`: "line spacing multiplier"). The alternative in step 3 of the plan — `(Ascender+Descender+LineGap) × FontSize / 1000 × Factor` — was rejected: it would give 13.5pt for 11pt Helvetica, contradicting the gate, and `otmLineGap` is not a line gap in the FreeType backend (it returns `ascent − descent`). **Consequence:** a face whose ascender+descender exceeds 1.1 em is now set slightly tight at the default factor; raise `LineHeightFactor` per format rather than reintroducing a platform-dependent base. |
+| 2. Measure through the PDF font backend | New `TPdfFontMeasurer` / `TPdfFaceMetrics` in `mormot.ui.pdf.pas` — document-independent access to the very widths the output will use. It repeats `TPdfCanvas.SetFont`'s resolution order: the base-14 AFM tables (`STANDARDFONTS`) when `ExportPdfStandardFonts` is set and the name is Helvetica/Times/Courier or an alias, otherwise `PdfPlatformFont.CreateFont` + `GetCharABCWidths(32,255)` on a `lfHeight = -1000` DC, i.e. 1000-per-em units. Faces are cached per (name, bold, italic, standard-flag); one font creation per style per report. |
+| 3. Derive line height from metrics | `LineHeightMM` is now `PointsToMM100(fFontSize * fLineHeightFactor)` — see 1b. `LineHeightPx` was reduced to `MMToPixels(LineHeightMM, 96)` so nothing reads the LCL height any more. |
+| 4. LCL path for the preview only | Kept and made explicit: `MeasureTextWidthPt` returns −1 when no face resolves, and every caller then falls back to `fMeasureBitmap.Canvas`. In practice both backends always resolve something (FreeType falls back to DejaVu, GDI substitutes), so the fallback fires only when no platform backend is registered at all. |
+| 5. Round once, late | `RecordWrappedText` now accumulates word and space widths as unrounded `single` PDF points and compares against `MaxWidthMM × 72/2540`; only the emitted Y is converted to 1/100 mm. The old code round-tripped every word through `PixelsToMM`/`MMToPixels`. |
+| 6. Guard test | `TestPlatformIndependentMetrics` in `tests/test_report_crossplatform.pas`: asserts that Helvetica 10pt measures `'Hello'` at its AFM width (2278/1000 em, derived in the test from the Adobe AFM, not from our code), that `'Hello Hello'` wraps at exactly its own width, and that two wrapped lines sit exactly `FontSize × Factor` apart. |
+
+**One thing the plan did not foresee.** Measuring correctly was not enough: the
+`TGDIPages → TPdfVclCanvas` bridge went through `TCanvas.TextOut(X, Y: integer)`,
+so every position was snapped back to the 1 px @ 96 DPI grid *after* the layout
+had computed it. `TPdfVclCanvas.TextOutFrac(X, Y: single)` was added and
+`RenderPageToCanvas` uses it when the target canvas is the PDF bridge; the
+preview keeps the integer path, which draws on a pixel grid anyway. Without
+this, the 0.75pt quantisation in the verification list below survives the fix.
+
+Measured on the regenerated `markdown_demo.pdf`, page 1:
+
+| Quantity | Before | After | Expected |
+|---|---|---|---|
+| Body baseline delta (11pt, factor 1.1) | 16.50 | **12.11** | 12.10 |
+| `'Inline styles like '` advance | 80.25 | **80.11** | 80.08 |
+| `'bold'` advance (Helv-Bold 11) | 22.50 | **23.22** | 23.22 |
+| Baseline deltas that are multiples of 0.75 | all | none | — |
+| Page count | 4 | 4 | unchanged |
+
+The residual 0.03pt on the first run is the 1/100 mm coordinate grid of
+`TGDIPages` itself — deterministic, identical on every platform, and it does
+not accumulate because each X is re-derived from the recorded command.
+
+**Regression evidence.** `pdf_demo`'s text positions are byte-identical to the
+previous build: it drives `TPdfDocumentVcl` directly and never enters the
+`TGDIPages` measurement path. All six demos build; `chinese_demo` and
+`rtl_demo` run unchanged. Test suite 121/121 assertions (was 115, +6 from the
+new guard test).
+
+**Open for the cross-platform gate.** Run `markdown_demo` on Windows and macOS
+and diff the decompressed content streams against the Linux one; all `Td`
+positions should now agree. PDFs are gitignored, so the Linux reference has to
+be regenerated from this commit rather than pulled from the repository. The
+layout change itself is already accepted, so Step 5 is not blocked on it.
+
+**Unrelated defect noticed, not fixed.** `TGDIPages.AddVerticalSpace(mm)`
+computes `MMToPixels(mm * 100, 96)`, which converts a 1/100 mm value to pixels
+— `AddVerticalSpace(5)` advances by 18 units instead of 500. It is
+platform-neutral, so it is not part of B-5, but it belongs on the list.
 
 ---
 
@@ -887,9 +961,7 @@ Windows-only (`TPdfDocumentGdi`), not portable. No work planned.
 
 | ID | Item | Effort | Files |
 |---|---|---|---|
-| B-3 | Tags on inline text | 1–2 days | mormot.ui.report.pas |
 | B-4 | Wrong text bounding boxes in graphics (Linux/macOS) | 1–2 days | mormot.ui.pdfcanvas.pas |
-| B-5 | Divergent line/inline spacing across platforms | 2–3 days | mormot.ui.report.pas, mormot.ui.pdfcanvas.pas |
 | P-6 | Font embedding for Tagged PDF | 1–2 days | mormot.ui.pdf.pas, mormot.ui.report.pas |
 | R-10 | Table row pagination | 2–3 days | mormot.ui.report.pas |
 | R-11 | TTC face index | 1 day | mormot.pdf.freetype.pas, mormot.pdf.types.pas |
@@ -903,9 +975,9 @@ platforms before the next begins — see [Working Method](#working-method).
 |---|---|---|
 | ~~1~~ | ~~B-1~~ | **Done** — built the element tree that B-2 and B-3 need |
 | ~~2~~ | ~~B-2~~ | **Done** — one tag per paragraph; multi-MCID leaves and `BlockId` now exist for B-3 |
-| 3 | B-3 | Needs B-1's tree; reuses B-2's `BlockId` |
-| 4 | B-5 | **Before B-4**: decides what `LineHeightFactor` multiplies, which changes every existing layout and would invalidate any B-4 verification done earlier |
-| 5 | B-4 | Thin adapter over the measurement abstraction B-5 builds |
+| ~~3~~ | ~~B-3~~ | **Done** — one tag per sentence, styled runs as `Span` kids |
+| ~~4~~ | ~~B-5~~ | **Done** — layout now measured with the PDF font engine; `LineHeightFactor` multiplies the font size |
+| 5 | B-4 | Thin adapter over `TPdfFontMeasurer`, the measurement abstraction B-5 built |
 | 6 | P-6 | Last: until it lands, PAC reports font-embedding errors on every run |
 
 The remaining R-items are independent and unscheduled.
@@ -931,6 +1003,7 @@ The remaining R-items are independent and unscheduled.
 | R-9 | Table header repeat on page break | mormot.ui.report.pas |
 | B-1 | Nested struct tags (tables, lists) — see [Result (Step 1)](#result-step-1) | mormot.pdf.types.pas, mormot.ui.pdf.pas, mormot.ui.report.pas |
 | B-2 | One tag per paragraph, not per line — see [Result (Step 2)](#result-step-2) | mormot.ui.pdf.pas, mormot.ui.pdfcanvas.pas, mormot.ui.report.pas |
+| B-5 | Layout measured with the PDF font engine, not the LCL — see [Result (Step 4)](#result-step-4) | mormot.ui.pdf.pas, mormot.ui.pdfcanvas.pas, mormot.ui.report.pas |
 
 Note on R-5/R-6: table and figure tags were *emitted* but landed flat in the
 structure tree; B-1 completed them.

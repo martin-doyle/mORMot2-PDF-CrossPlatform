@@ -3070,6 +3070,84 @@ const
     '</rdf:Description>';
 
 
+{************ TPdfFontMeasurer Document-Independent Text Metrics }
+
+type
+  /// the metrics of one resolved face, in 1000-per-em PDF units
+  // - as used by TPdfFontMeasurer - see the comments there
+  TPdfFaceMetrics = class
+  protected
+    fName: RawUtf8;
+    fBold, fItalic: boolean;
+    fStandardReq: boolean; // the request, i.e. the cache key
+    fStandard: boolean;    // the outcome, i.e. AFM tables were used
+    fAscent, fDescent: integer;
+    fDefaultWidth: word;
+    fFixedWidth: boolean;
+    fWidth: array[32..255] of word;
+    fDC: TPdfPlatformDC;
+    fHandle: TPdfPlatformFontHandle;
+    fValid: boolean;
+    procedure FromStandardFont(Index: PtrInt);
+    function FromPlatformFont: boolean;
+  public
+    /// resolve this face, exactly like TPdfCanvas.SetFont would
+    constructor Create(const aName: RawUtf8;
+      aBold, aItalic, aStandardFonts: boolean);
+    /// release the platform font and its measurement device context
+    destructor Destroy; override;
+    /// advance width of aText, in 1000-per-em units
+    // - text is decoded as UTF-8; code points outside WinAnsi use DefaultWidth,
+    // as the WinAnsi branch of TPdfFontTrueType does
+    function TextWidth(const aText: RawUtf8): integer;
+    /// true if the face could be resolved and its widths retrieved
+    property Valid: boolean
+      read fValid;
+    /// true if the base-14 AFM width tables were used, not a platform font
+    property Standard: boolean
+      read fStandard;
+    /// ascender, in 1000-per-em units
+    property Ascent: integer
+      read fAscent;
+    /// descender, in 1000-per-em units (negative)
+    property Descent: integer
+      read fDescent;
+  end;
+
+  /// measure text with the very engine which will later place the glyphs
+  // - TGDIPages lays its pages out long before any TPdfDocument exists, so it
+  // used to measure with an LCL TCanvas while the PDF engine placed the glyphs:
+  // two font engines, two sets of metrics, hence a layout differing per
+  // platform and inline advances quantised to whole screen pixels - see the
+  // B-5 analysis in docs/ROADMAP.md
+  // - resolves a font name the way TPdfCanvas.SetFont does: the base-14 AFM
+  // width tables when aStandardFonts is set and the name is one of
+  // Helvetica/Times/Courier (including their 'Arial'/'Times New Roman'/
+  // 'Courier New' aliases), the registered platform backend otherwise
+  // - faces are cached per (name, bold, italic), so measuring a whole report
+  // costs one font creation per style
+  TPdfFontMeasurer = class
+  protected
+    fFaces: TObjectList;
+    fCurrent: TPdfFaceMetrics;
+  public
+    /// initialize the face cache
+    constructor Create;
+    /// release all cached faces
+    destructor Destroy; override;
+    /// select the face used by the next TextWidth() calls
+    // - returns false if no metrics could be resolved, in which case the
+    // caller is expected to fall back to its own measurement
+    function SetFont(const aName: RawUtf8;
+      aBold, aItalic, aStandardFonts: boolean): boolean;
+    /// advance width of aText in PDF points, for the current face and aFontSize
+    function TextWidth(const aText: RawUtf8; aFontSize: single): single;
+    /// the face selected by the last SetFont(), nil if it could not resolve
+    property Current: TPdfFaceMetrics
+      read fCurrent;
+  end;
+
+
 {************ TPdfDocumentGdi for GDI/TCanvas rendering support }
 
 
@@ -9468,6 +9546,204 @@ const
     'Times New Roman', 'Arial', 'Courier New');
   STAND_FONTS_UPPER: array[TPdfFontStandard] of PAnsiChar = (
     'TIMES', 'HELVETICA', 'COURIER');
+
+
+{************ TPdfFontMeasurer Document-Independent Text Metrics }
+
+{ TPdfFaceMetrics }
+
+constructor TPdfFaceMetrics.Create(const aName: RawUtf8;
+  aBold, aItalic, aStandardFonts: boolean);
+var
+  f: TPdfFontStandard;
+  base: PtrInt;
+begin
+  fName := aName;
+  fBold := aBold;
+  fItalic := aItalic;
+  fStandardReq := aStandardFonts;
+  // same resolution order as TPdfCanvas.SetFont: base-14 first, then the
+  // platform backend - so measurement and rendering pick the same widths
+  if aStandardFonts then
+    for f := low(f) to high(f) do
+      if SameTextU(aName, STAND_FONTS_PDF[f]) or
+         SameTextU(aName, STAND_FONTS_WIN[f]) then
+      begin
+        base := ord(f) * 4;
+        if aBold then
+          inc(base);
+        if aItalic then
+          inc(base, 2);
+        FromStandardFont(base);
+        exit;
+      end;
+  fValid := FromPlatformFont;
+end;
+
+destructor TPdfFaceMetrics.Destroy;
+begin
+  if fHandle <> nil then
+    PdfPlatformFont.DeleteFont(fHandle);
+  if fDC <> nil then
+    PdfPlatformDCProvider.DeleteDC(fDC);
+  inherited Destroy;
+end;
+
+procedure TPdfFaceMetrics.FromStandardFont(Index: PtrInt);
+var
+  c: AnsiChar;
+  w: PSmallIntArray;
+begin
+  fStandard := true;
+  w := STANDARDFONTS[Index].Widths;
+  if w = nil then
+  begin
+    // Widths=nil is the Courier family: fixed 600 units per glyph
+    fFixedWidth := true;
+    fDefaultWidth := DEFAULT_PDF_WIDTH;
+    fAscent := 833;
+    fDescent := -300;
+    for c := #32 to #255 do
+      fWidth[ord(c)] := DEFAULT_PDF_WIDTH;
+  end
+  else
+  begin
+    // WidthArray[0]=Ascent, WidthArray[1]=Descent, WidthArray[2..]=Width(#32..)
+    fAscent := w^[0];
+    fDescent := w^[1];
+    fDefaultWidth := w^[2]; // the space character
+    for c := #32 to #255 do
+      fWidth[ord(c)] := w^[2 + ord(c) - 32];
+  end;
+  fValid := true;
+end;
+
+function TPdfFaceMetrics.FromPlatformFont: boolean;
+var
+  lf: TPdfLogFont;
+  otm: TPdfOutlineMetrics;
+  tm: TPdfTextMetrics;
+  abc: TPdfCharABCArray;
+  c: AnsiChar;
+begin
+  result := false;
+  if not PdfPlatformRegistered then
+    exit;
+  FillCharFast(lf, SizeOf(lf), 0);
+  lf.FaceName := Utf8ToSynUnicode(fName);
+  lf.Height := -1000; // em square = 1000 units, as TPdfCanvas.SetFont does
+  if fBold then
+    lf.Weight := 700  // FW_BOLD
+  else
+    lf.Weight := 400; // FW_NORMAL
+  lf.Italic := ord(fItalic);
+  fHandle := PdfPlatformFont.CreateFont(lf);
+  if fHandle = nil then
+    exit;
+  fDC := PdfPlatformDCProvider.CreateDC;
+  if fDC = nil then
+    exit;
+  PdfPlatformFont.SelectFont(fDC, fHandle);
+  if PdfPlatformFont.GetOutlineMetrics(fDC, otm) then
+  begin
+    fAscent := otm.otmAscent;
+    fDescent := otm.otmDescent;
+  end;
+  if not PdfPlatformFont.GetCharABCWidths(fDC, 32, 255, abc) or
+     (length(abc) < 224) then
+    exit;
+  with abc[0] do
+    fDefaultWidth := abcA + integer(abcB) + abcC; // the space character
+  fFixedWidth := PdfPlatformFont.GetTextMetrics(fDC, tm) and
+                 (tm.tmPitchAndFamily and 1 {TMPF_FIXED_PITCH} = 0);
+  if fFixedWidth then
+    for c := #32 to #255 do
+      fWidth[ord(c)] := fDefaultWidth
+  else
+    for c := #32 to #255 do
+      with abc[ord(c) - 32] do
+        fWidth[ord(c)] := abcA + integer(abcB) + abcC;
+  result := true;
+end;
+
+function TPdfFaceMetrics.TextWidth(const aText: RawUtf8): integer;
+var
+  p: PUtf8Char;
+  u: Ucs4CodePoint;
+  a: integer;
+begin
+  result := 0;
+  p := pointer(aText);
+  if p = nil then
+    exit;
+  while p^ <> #0 do
+  begin
+    u := NextUtf8Ucs4(p);
+    if u = 0 then
+      break;
+    if u > 255 then
+      // the report text path is WinAnsi: map what we can, default the rest -
+      // exactly what the WinAnsi branch of TPdfFontTrueType would emit
+      a := WinAnsiConvert.WideCharToAnsiChar(u)
+    else
+      a := u;
+    if (a >= 32) and
+       (a <= 255) then
+      inc(result, fWidth[a])
+    else
+      inc(result, fDefaultWidth);
+  end;
+end;
+
+
+{ TPdfFontMeasurer }
+
+constructor TPdfFontMeasurer.Create;
+begin
+  fFaces := TObjectList.Create({ownsobjects=}true);
+end;
+
+destructor TPdfFontMeasurer.Destroy;
+begin
+  fFaces.Free;
+  inherited Destroy;
+end;
+
+function TPdfFontMeasurer.SetFont(const aName: RawUtf8;
+  aBold, aItalic, aStandardFonts: boolean): boolean;
+var
+  i: PtrInt;
+  f: TPdfFaceMetrics;
+begin
+  for i := 0 to fFaces.Count - 1 do
+  begin
+    f := TPdfFaceMetrics(fFaces[i]);
+    if (f.fBold = aBold) and
+       (f.fItalic = aItalic) and
+       (f.fStandardReq = aStandardFonts) and
+       (f.fName = aName) then
+    begin
+      fCurrent := f;
+      result := f.Valid;
+      exit;
+    end;
+  end;
+  f := TPdfFaceMetrics.Create(aName, aBold, aItalic, aStandardFonts);
+  fFaces.Add(f); // cache the failures too, to not retry on every measurement
+  fCurrent := f;
+  result := f.Valid;
+end;
+
+function TPdfFontMeasurer.TextWidth(const aText: RawUtf8;
+  aFontSize: single): single;
+begin
+  if (fCurrent = nil) or
+     not fCurrent.Valid then
+    result := 0
+  else
+    result := (fCurrent.TextWidth(aText) * aFontSize) / 1000;
+end;
+
 
 function TPdfCanvas.SetFont(const AName: RawUtf8; ASize: single;
   AStyle: TPdfFontStyles; ACharSet, AForceTtf: integer;
