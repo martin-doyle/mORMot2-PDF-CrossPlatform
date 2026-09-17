@@ -4,10 +4,11 @@ This document describes all planned improvements with full technical background,
 affected files, implementation steps, and verification criteria.
 
 **Current baseline:** All previously planned features (P1-A … P3, R-1 … R-9) plus
-Step 1 (B-1) are implemented. The structure tree is now properly nested, with
-`Table > TR > TH|TD` and `L > LI > LBody` as real hierarchy levels. The open work
-is the remaining set of correctness bugs in the tag tree plus font embedding for
-tagged output.
+Steps 1 and 2 (B-1, B-2) are implemented. The structure tree is now properly
+nested, with `Table > TR > TH|TD` and `L > LI > LBody` as real hierarchy levels,
+and a wrapped paragraph is one `P` instead of one `P` per line — across a page
+break as well. The open work is the remaining set of correctness bugs in the tag
+tree plus font embedding for tagged output.
 
 Completed items are archived in [Completed Work](#completed-work) at the end of
 this document.
@@ -73,16 +74,19 @@ What is **still not verified** and must be settled during implementation:
 | Unknown | Needed for | How to settle |
 |---|---|---|
 | ~~Actual body of `BeginStructContent`, `SerializeStructTree`, `TPdfStructElement`~~ | ~~B-1~~, B-2, B-3 | **Settled in Step 1.** Note the naming: the serializer is `SerializeStructTree`, not `BuildStructTree`, and the class is `TPdfStructElement`. MCIDs come from the per-page counter `TPdfPage.fCurrentMCID`, not from `fStructParents * 1000` |
-| Whether `TDrawCommand` can take new fields without breaking the recording array | B-2, B-3 | read `src/core/mormot.ui.report.pas` (2.7k lines) |
+| ~~Whether `TDrawCommand` can take new fields without breaking the recording array~~ | ~~B-2~~, B-3 | **Settled in Step 2.** It can: every producer builds the record with `Default(TDrawCommand)` and `AddCommand` copies it wholesale, so `BlockId` was added without touching any other call site |
 | ~~How `RenderPageToCanvas` currently chooses a role per command~~ | ~~B-2, B-3~~ | **Settled in Step 1.** A `case Cmd.Kind` block with the local flags `InTableRow`, `InHeaderRow` and `InListItem` |
-| A wrapped paragraph's MCID pattern (B-2's premise) | B-2 | not yet isolated in a content stream — confirm before coding |
+| ~~A wrapped paragraph's MCID pattern (B-2's premise)~~ | ~~B-2~~ | **Confirmed in Step 2** against a freshly built `markdown_demo.pdf`: MCID 3 + 4 were two sibling `P` elements holding the two lines of one paragraph, each with a single `/MCR` |
 | Per-platform `FontTextHeight` / `LineHeightMM` values | B-5 | instrument and run on all three platforms |
 
 **Toolchain on the Linux development machine:** `lazbuild` lives at
 `/home/parallels/fpc-fixes/lazarus/lazbuild` (not on `PATH`) and the mORMot2
 sources at `/home/parallels/synopse/mORMot2`. Compilation works; linking the
 demos needs `libgtk2.0-dev`, whose development symlinks are absent, so the
-runtime GTK2 libraries cannot be found by `ld`. `qpdf`, `mutool` and `veraPDF`
+runtime GTK2 libraries cannot be found by `ld`. Workaround used in Step 2
+without root: symlink `libgtk-x11-2.0.so`, `libgdk-x11-2.0.so` and
+`libatk-1.0.so` to their `.so.0` files in a scratch directory and build with
+`lazbuild --opt=-Fl<dir>`. `qpdf`, `mutool` and `veraPDF`
 are still missing; only `pdffonts` and `pdfinfo` are available.
 
 ---
@@ -249,10 +253,14 @@ Step 2 must not assume that an element and its kids share a page.
 
 ---
 
-## Step 2 — B-2: Tags at Line Breaks
+## Step 2 — B-2: Tags at Line Breaks — **DONE (2026-09-17)**
 
 **Effort:** 1–2 days | **Files:** `src/core/mormot.ui.report.pas`,
-`src/core/mormot.ui.pdf.pas` | **Demos:** `pdf_demo`, `markdown_demo`
+`src/core/mormot.ui.pdf.pas`, `src/core/mormot.ui.pdfcanvas.pas` |
+**Demos:** `pdf_demo`, `markdown_demo`
+
+Implemented and verified on Linux. The analysis below is kept for the record;
+what was actually built is in [Result](#result-step-2) at the end of this step.
 
 ### Symptom
 
@@ -311,6 +319,43 @@ command continues the previous paragraph".
 - PAC → Logical Structure: one `P` node per paragraph, not one per line
 - Acrobat "Read Out Loud" reads the paragraph without pauses at line ends
 - Gate: same paragraph/MCID counts on all three platforms before Step 3
+
+### Result (Step 2)
+
+Implemented on 2026-09-17, built and run on Linux. Windows (PAC 2024) and macOS
+verification is still outstanding; the cross-platform gate above is therefore
+not yet closed. `veraPDF` is still not installed on the development machine.
+
+What was built, against the plan above:
+
+| Plan | Implementation |
+|---|---|
+| 1. Logical block id | `TDrawCommand.BlockId: Integer` (0 = standalone). The id is not assigned per public `Draw*` entry point but once in `RecordWrappedText`, the single place where wrapping happens — which covers `DrawTextWrapped`, `DrawParagraph`, `DrawQuote`, `Columns2` and `DrawListItem` in one stroke. The previous value is restored in the `finally`, so nested use stays correct. |
+| 2. Open on block change | `RenderPageToCanvas` tracks `fRenderBlockId`/`fRenderBlockElem`/`fRenderBlockOpen` — fields, not locals, because a block outlives one call. Any command other than `dckDrawText` closes the open block, so BDC never wraps graphics or a table container. |
+| 3. Multiple MCIDs per element | `TPdfStructElement.MCID` became `MCIDs`/`MCIDPages` + `MCIDCount`. A leaf writes `/K <</Type/MCR /MCID n>>` for one region and an MCR array for several, each entry carrying `/Pg` when it differs from the element's own `/Pg`. `/ParentTree` is now built per (page, MCID) pair, so a continued element is listed in both pages' arrays. |
+| 4. Page-break continuation | New `TPdfCanvas.LastStructContent` + `ResumeStructContent(Index)` (delegated by `TPdfDocumentVcl`): the element is pushed back onto `fStructStack` and gets a fresh MCID on the current page. Parent and kids stay untouched. |
+| 5. Balanced BDC/EMC per page | The block is closed at the end of the command loop with the id kept, so the next page reopens the same element instead of starting a new one. `ExportPdfStream` resets the block state before the page loop, and `RenderPageToCanvas` resets it whenever `fActivePdfDoc = nil`, so preview and printing never inherit it. |
+
+**Deviation from the verification list.** Step 2 asks for the region to stay
+open across lines, while the verification bullet below asks for one MCID per
+line; the two contradict each other. The implementation follows the step: a
+paragraph owns **one MCID per page**, not one per line. ISO 32000-1 §14.7 allows
+a marked-content region to contain any number of text objects, and fewer regions
+means fewer `/ParentTree` entries.
+
+Measured on the regenerated `markdown_demo.pdf`: the two-line paragraphs of
+page 1 (`… structured content.` and `… headings with | automatic PDF bookmarks …`)
+are now one `P` with one MCID each; the nesting from B-1 is unchanged. A
+dedicated page-break test produced
+`/K [<</Type/MCR /MCID 22>> <</Type/MCR /Pg 10 0 R /MCID 0>>]` with the element
+listed in the `/ParentTree` arrays of both pages, and BDC/EMC balanced per
+content stream (23/23 and 1/1). Test suite: 115/115 assertions, all six demos
+build.
+
+**Note for Step 3.** `BlockId` is in place and B-3 can reuse it: the inline runs
+of one line (`Inline styles like | bold | , | italic …`, still nine `P` elements)
+need a shared block id plus `psrSpan` leaves inside one `P`, which is a
+container-with-leaves shape the B-1 stack already supports.
 
 ---
 
@@ -783,7 +828,6 @@ Windows-only (`TPdfDocumentGdi`), not portable. No work planned.
 
 | ID | Item | Effort | Files |
 |---|---|---|---|
-| B-2 | Tags at line breaks | 1–2 days | mormot.ui.report.pas, mormot.ui.pdf.pas |
 | B-3 | Tags on inline text | 1–2 days | mormot.ui.report.pas |
 | B-4 | Wrong text bounding boxes in graphics (Linux/macOS) | 1–2 days | mormot.ui.pdfcanvas.pas |
 | B-5 | Divergent line/inline spacing across platforms | 2–3 days | mormot.ui.report.pas, mormot.ui.pdfcanvas.pas |
@@ -799,7 +843,7 @@ platforms before the next begins — see [Working Method](#working-method).
 | Step | ID | Rationale for this position |
 |---|---|---|
 | ~~1~~ | ~~B-1~~ | **Done** — built the element tree that B-2 and B-3 need |
-| 2 | B-2 | Needs B-1's tree; introduces multi-MCID leaves |
+| ~~2~~ | ~~B-2~~ | **Done** — one tag per paragraph; multi-MCID leaves and `BlockId` now exist for B-3 |
 | 3 | B-3 | Needs B-1's tree; reuses B-2's `BlockId` |
 | 4 | B-5 | **Before B-4**: decides what `LineHeightFactor` multiplies, which changes every existing layout and would invalidate any B-4 verification done earlier |
 | 5 | B-4 | Thin adapter over the measurement abstraction B-5 builds |
@@ -827,6 +871,7 @@ The remaining R-items are independent and unscheduled.
 | R-8 | `LineHeightFactor` property | mormot.ui.report.pas |
 | R-9 | Table header repeat on page break | mormot.ui.report.pas |
 | B-1 | Nested struct tags (tables, lists) — see [Result (Step 1)](#result-step-1) | mormot.pdf.types.pas, mormot.ui.pdf.pas, mormot.ui.report.pas |
+| B-2 | One tag per paragraph, not per line — see [Result (Step 2)](#result-step-2) | mormot.ui.pdf.pas, mormot.ui.pdfcanvas.pas, mormot.ui.report.pas |
 
 Note on R-5/R-6: table and figure tags were *emitted* but landed flat in the
 structure tree; B-1 completed them.

@@ -132,6 +132,13 @@ type
       const AAltText: RawUtf8 = '');
     /// close the marked content sequence opened by BeginStructContent
     procedure EndStructContent;
+    /// index of the struct element opened by the last BeginStructContent
+    // - to be passed to ResumeStructContent, -1 when Tagged = false
+    function LastStructContent: integer;
+    /// reopen an already closed struct element on the current page
+    // - lets one logical block interrupted by a page break stay one tag
+    // - must be paired with EndStructContent
+    procedure ResumeStructContent(AStructIndex: integer);
     /// set the fill (non-stroking) opacity for subsequent drawing operations
     // - Value is clamped to [0..1]: 0=fully transparent, 1=fully opaque
     procedure SetFillAlpha(Value: single);
@@ -519,6 +526,16 @@ end;
 procedure TPdfDocumentVcl.EndStructContent;
 begin
   Canvas.EndStructContent;
+end;
+
+function TPdfDocumentVcl.LastStructContent: integer;
+begin
+  result := Canvas.LastStructContent;
+end;
+
+procedure TPdfDocumentVcl.ResumeStructContent(AStructIndex: integer);
+begin
+  Canvas.ResumeStructContent(AStructIndex);
 end;
 
 procedure TPdfDocumentVcl.SetFillAlpha(Value: single);

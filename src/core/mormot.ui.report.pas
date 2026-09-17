@@ -108,6 +108,8 @@ type
     FormatName:  string;     // format registry key (H1, H2, P, Strong, Em, Code, etc. for dckDrawText/dckHeading)
     HeadingLevel: Integer;   // heading level 1..6 (for dckHeading)
     HeadingTitle: string;    // heading text (for dckHeading)
+    BlockId:     Integer;    // logical block: 0 = standalone, >0 = all lines of
+                             // one wrapped paragraph share the id (Tagged PDF)
   end;
 
   /// ordered list of drawing commands for one page
@@ -247,6 +249,12 @@ type
     fHeadings:       array of THeadingInfo;  // stores heading metadata for PDF outlines
     fHeadingCount:   Integer;  // count of headings in fHeadings array
     fCurrentHeadingLevel: Integer;  // tracks current heading level for auto-spacing in EndHeading
+    { --- logical blocks for Tagged PDF (one tag per paragraph, not per line) --- }
+    fNextBlockId:      Integer;  // source of TDrawCommand.BlockId values
+    fCurrentBlockId:   Integer;  // id stamped onto the commands emitted right now
+    fRenderBlockId:    Integer;  // block whose struct element is currently reused
+    fRenderBlockElem:  Integer;  // its index, for TPdfDocumentVcl.ResumeStructContent
+    fRenderBlockOpen:  boolean;  // true while its marked-content region is open
     fInParagraph:    Integer;  // depth counter for nested paragraph begin/end
 
     { --- Phase 6: PDF export options --- }
@@ -676,6 +684,11 @@ begin
   SetLength(fHeadings, 0);
   fCurrentHeadingLevel := 0;
   fInParagraph := 0;
+  fNextBlockId      := 0;
+  fCurrentBlockId   := 0;
+  fRenderBlockId    := 0;
+  fRenderBlockElem  := -1;
+  fRenderBlockOpen  := false;
   InitializeFormatRegistry;
 
   UpdatePageDimensions;
@@ -1506,6 +1519,7 @@ begin
   Cmd.FontStyle    := fFontStyle;
   Cmd.Align        := Align;
   Cmd.HeadingLevel := fCurrentHeadingLevel;
+  Cmd.BlockId      := fCurrentBlockId;
   { Measure text width ONCE at recording time in normalized units }
   TextWidthMM := MeasureTextWidthMM(S);
   Cmd.TextWidthMM := TextWidthMM;
@@ -1624,7 +1638,13 @@ var
   WordW:  Integer;
   i:      Integer;
   MeasureDPI: Integer;
+  PrevBlockId: Integer;
 begin
+  { All lines emitted below belong to one logical paragraph: they share a
+    BlockId, so the tagged PDF export produces a single P (ROADMAP B-2). }
+  PrevBlockId := fCurrentBlockId;
+  Inc(fNextBlockId);
+  fCurrentBlockId := fNextBlockId;
   { Get the actual DPI of the measurement canvas }
   MeasureDPI := GetMeasureDPI;
   { MaxPx is always in 96-DPI-pixels (matches the normalized WordW values below) }
@@ -1689,6 +1709,7 @@ begin
     end;
   finally
     Words.Free;
+    fCurrentBlockId := PrevBlockId;
   end;
 end;
 
@@ -2107,6 +2128,41 @@ var
     ACanvas.Font.Color := Cmd.Color;
   end;
 
+  { close the marked-content region of the logical block being rendered
+    - AKeepBlock=true at a page boundary: the block may continue on the next
+      page and is then reopened by ResumeStructContent }
+  procedure CloseRenderBlock(AKeepBlock: boolean);
+  begin
+    if not fRenderBlockOpen then
+      exit;
+    if fActivePdfDoc <> nil then
+      fActivePdfDoc.EndStructContent;
+    fRenderBlockOpen := false;
+    if not AKeepBlock then
+    begin
+      fRenderBlockId   := 0;
+      fRenderBlockElem := -1;
+    end;
+  end;
+
+  { open the struct element matching the current dckDrawText command }
+  procedure BeginTextStructContent;
+  begin
+    if Cmd.HeadingLevel > 0 then
+      fActivePdfDoc.BeginStructContent(TPdfStructRole(Cmd.HeadingLevel))
+    else if InTableRow then
+    begin
+      if InHeaderRow then
+        fActivePdfDoc.BeginStructContent(psrTH)
+      else
+        fActivePdfDoc.BeginStructContent(psrTD);
+    end
+    else if InListItem then
+      fActivePdfDoc.BeginStructContent(psrLBody)
+    else
+      fActivePdfDoc.BeginStructContent(psrP);
+  end;
+
 begin
   if (PageIndex < 0) or (PageIndex >= fPageCount) then Exit;
   Page := fPages[PageIndex];
@@ -2134,6 +2190,13 @@ begin
   InTableRow  := false;
   InHeaderRow := false;
   InListItem  := false;
+  { preview and printing do not tag: never carry block state into them }
+  if fActivePdfDoc = nil then
+  begin
+    fRenderBlockId   := 0;
+    fRenderBlockElem := -1;
+  end;
+  fRenderBlockOpen := false;
 
   ACanvas.Brush.Color := clWhite;
   ACanvas.Brush.Style := bsSolid;
@@ -2154,25 +2217,38 @@ begin
   for i := 0 to High(Page.Commands) do
   begin
     Cmd := Page.Commands[i];
+    { anything but text ends the logical block that is currently open }
+    if Cmd.Kind <> dckDrawText then
+      CloseRenderBlock(false);
     case Cmd.Kind of
       dckDrawText:
       begin
         if fActivePdfDoc <> nil then
-        begin
-          if Cmd.HeadingLevel > 0 then
-            fActivePdfDoc.BeginStructContent(TPdfStructRole(Cmd.HeadingLevel))
-          else if InTableRow then
+          if (Cmd.BlockId <> 0) and
+             (Cmd.BlockId = fRenderBlockId) then
           begin
-            if InHeaderRow then
-              fActivePdfDoc.BeginStructContent(psrTH)
-            else
-              fActivePdfDoc.BeginStructContent(psrTD);
+            { same paragraph as the previous command }
+            if not fRenderBlockOpen then
+            begin
+              { continued after a page break: reopen the very same element,
+                which then owns MCIDs on both pages }
+              fActivePdfDoc.ResumeStructContent(fRenderBlockElem);
+              fRenderBlockOpen := true;
+            end;
+            { else the region is still open — emit the line only }
           end
-          else if InListItem then
-            fActivePdfDoc.BeginStructContent(psrLBody)
           else
-            fActivePdfDoc.BeginStructContent(psrP);
-        end;
+          begin
+            CloseRenderBlock(false);
+            BeginTextStructContent;
+            if Cmd.BlockId <> 0 then
+            begin
+              { keep the element open for the next line of this paragraph }
+              fRenderBlockId   := Cmd.BlockId;
+              fRenderBlockElem := fActivePdfDoc.LastStructContent;
+              fRenderBlockOpen := fRenderBlockElem >= 0;
+            end;
+          end;
         ApplyFont;
         ACanvas.Brush.Style := bsClear;
         { X position is pre-adjusted at recording time:
@@ -2182,7 +2258,8 @@ begin
           - Just render at the adjusted X position }
         TX := ScaleX(Cmd.X);
         ACanvas.TextOut(TX, ScaleY(Cmd.Y), SubstitutePlaceholders(Cmd.Text, PageIndex));
-        if fActivePdfDoc <> nil then
+        if (fActivePdfDoc <> nil) and
+           not fRenderBlockOpen then
           fActivePdfDoc.EndStructContent;
       end;
       dckDrawLine:
@@ -2280,6 +2357,10 @@ begin
       end;
     end;
   end;
+
+  { a block still open at the end of the page may continue on the next one:
+    BDC/EMC must stay balanced inside each content stream }
+  CloseRenderBlock(true);
 
   { Render footer if set }
   if fFooterText <> '' then
@@ -2719,6 +2800,10 @@ begin
           PDF.DefaultLanguage := fExportPdfLanguage;
       end;
       PDF.SaveToStreamDirectBegin(aDest);
+      { logical block state is per export run (see ROADMAP B-2) }
+      fRenderBlockId   := 0;
+      fRenderBlockElem := -1;
+      fRenderBlockOpen := false;
       for i := 0 to fPageCount - 1 do
       begin
         // PDF page size = FULL page in PDF points (including margins)

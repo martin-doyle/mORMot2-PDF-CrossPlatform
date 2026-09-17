@@ -387,8 +387,20 @@ TDrawCommand = record
   FormatName:   string;        // name in format registry (H1, P, etc.)
   HeadingLevel: Integer;
   HeadingTitle: string;
+  BlockId:      Integer;       // logical block: 0 = standalone, >0 = shared by
+                               // all lines of one wrapped paragraph (B-2)
 end;
 ```
+
+**BlockId (Tagged PDF).** `RecordWrappedText` — and therefore every wrapping
+entry point (`DrawTextWrapped`, `DrawParagraph`, `DrawQuote`, `Columns2`,
+`DrawListItem`) — stamps one fresh id onto all lines it emits. During tagged
+export `RenderPageToCanvas` opens **one** struct element per block and keeps its
+marked-content region open across the lines, so a wrapped paragraph is a single
+`P`, not one `P` per line. Cell text and inline runs keep `BlockId = 0`
+(standalone). A block interrupted by a page break is reopened on the next page
+via `TPdfDocumentVcl.ResumeStructContent`, so it stays one element with one MCID
+per page.
 
 New features: record the command first, implement rendering in `RenderPageToCanvas()`.
 

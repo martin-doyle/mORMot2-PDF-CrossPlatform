@@ -246,7 +246,10 @@ TGDIPages.ExportPdfStream(aDest: TStream)
   │    TGDIPages.RenderPageToCanvas(VclCanvas, PageIndex, DestW, DestH, 96)
   │    │  SourceDPI=96 matches PDF.ScreenLogPixels → exact coordinate match
   │    │  fActivePdfDoc <> nil → struct content wrapping enabled:
-  │    │    dckDrawText:  fActivePdfDoc.BeginStructContent(psrH1..6 / psrTH / psrTD / psrP)
+  │    │    dckDrawText:  Cmd.BlockId = open block? → keep region open (or
+  │    │                  ResumeStructContent after a page break)
+  │    │                  else BeginStructContent(psrH1..6 / psrTH / psrTD /
+  │    │                                          psrLBody / psrP)
   │    │    dckDrawBitmap: fActivePdfDoc.BeginStructContent(psrFigure)
   │    │    dckBeginTable: fActivePdfDoc.BeginStructContent(psrTable)
   │    │    dckEndTable:   fActivePdfDoc.EndStructContent + reset InTableRow
@@ -662,25 +665,34 @@ TPdfDocument.AddPage
 
 TPdfCanvas.BeginStructContent(ARole, AAltText='')
   if not fDoc.fTagged: exit  ← no-op guard
-  mcid := fPage.fStructParents * 1000 + fPage content index
-  elem: TPdfStructElem := (Role, PageIndex, MCID)
+  elem: TPdfStructElement := (Role, PageIndex=fPage.fStructParents)
   fDoc.fStructElems.Add(elem)
-  fContents.Writer.Add('/H1 <</MCID 3>> BDC')   ← e.g.
-  if AAltText <> '': fContents.Writer.Add('/Alt (…)')
+  if fStructStack <> []: top.AddKid(elem)   ← nesting (B-1)
+  fStructStack.Add(elem)
+  if PDF_STRUCT_CONTAINER[ARole]: exit      ← Document/Table/TR/L/LI own no MCID
+  mcid := fPage.fCurrentMCID; Inc(fPage.fCurrentMCID)   ← per-page counter
+  elem.AddMCID(mcid, fPage.fStructParents)
+  fContents.Writer.Add('/H1 <</MCID 3')     ← e.g.
+  if AAltText <> '': fContents.Writer.Add(' /Alt (…)')
   fContents.Writer.Add('>> BDC')
 
+TPdfCanvas.ResumeStructContent(Index)        ← B-2: block continued on next page
+  reopens fStructElems[Index]: pushes it again, allocates a new MCID on the
+  current page, writes another BDC — the element then owns several MCIDs
+
 TPdfCanvas.EndStructContent
-  fContents.Writer.Add('EMC')
+  pops fStructStack; writes 'EMC' unless the element is a container
 
 SaveToStreamDirectEnd (called by ExportPdfStream):
   if fTagged:
     if fMetaData <> nil and fPdfA=pdfaNone:
       fMetaData stream written with PDF/UA-1 XMP (pdfuaid:part=1)
-    BuildStructTree:
-      StructTreeRoot: /ParentTree number tree (one entry per page)
-      for each TPdfStructElem in fStructElems:
-        create /OBJR dict referencing the page
-        group by page → /Kids array under /Document root
+    SerializeStructTree:
+      one indirect dict per element; /P points at the real parent
+      container → /K [kid dicts];  leaf → /K MCR dict, or an array of MCR
+        dicts (each with /Pg when it differs from the element's /Pg)
+      /ParentTree /Nums: per page an array indexed by MCID; an element
+        continued across a page break appears in both pages' arrays
 ```
 
 ---

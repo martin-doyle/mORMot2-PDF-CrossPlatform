@@ -432,6 +432,12 @@ Doc.Canvas.EndStructContent;
 
 `BeginStructContent(ARole, AAltText)` — `AAltText` is optional (default ''); written as `/Alt` for Figure elements. No-op when `Tagged = false`.
 
+`LastStructContent` returns the index of the element just opened, and
+`ResumeStructContent(Index)` reopens that element on the current page with a
+fresh MCID. Use it when one logical block is interrupted by a page break: the
+element then owns several MCIDs and its `/K` becomes an array of `/MCR` dicts,
+each carrying an explicit `/Pg` when it sits on another page than the element.
+
 **Important:** BDC/EMC must be outside BT/ET. Call `BeginStructContent` before and `EndStructContent` after the text command.
 
 When `Tagged = true`:
