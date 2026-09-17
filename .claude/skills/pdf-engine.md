@@ -433,10 +433,44 @@ Doc.Canvas.EndStructContent;
 `BeginStructContent(ARole, AAltText)` — `AAltText` is optional (default ''); written as `/Alt` for Figure elements. No-op when `Tagged = false`.
 
 `LastStructContent` returns the index of the element just opened, and
-`ResumeStructContent(Index)` reopens that element on the current page with a
-fresh MCID. Use it when one logical block is interrupted by a page break: the
-element then owns several MCIDs and its `/K` becomes an array of `/MCR` dicts,
-each carrying an explicit `/Pg` when it sits on another page than the element.
+`ResumeStructContent(Index, AOpenRegion=true)` reopens that element on the
+current page with a fresh MCID. Use it when one logical block is interrupted by
+a page break: the element then owns several MCIDs and its `/K` becomes an array
+of `/MCR` dicts, each carrying an explicit `/Pg` when it sits on another page
+than the element. `AOpenRegion=false` reopens it without a region, as
+`BeginStructGroup` does.
+
+### Mixed content: one paragraph, several inline runs
+
+An element may own both marked-content regions and child elements; `/K` then
+lists `/MCR` dicts and kid references in **reading order**. This is how one
+sentence with inline styling becomes one `P` (ROADMAP B-3):
+
+```pascal
+Canvas.BeginStructGroup(psrP);        // element only — no region, no MCID yet
+  Canvas.ContinueStructContent;       // plain run: adds a region to the P
+  Canvas.TextOut(...);                // 'Inline styles like '
+  Canvas.SuspendStructContent;        // closes that region, P stays the parent
+  Canvas.BeginStructContent(psrSpan); // styled run: nested Span kid
+  Canvas.TextOut(...);                // 'bold'
+  Canvas.EndStructContent;            // Span
+  Canvas.ContinueStructContent;       // next plain run: one more P region
+  Canvas.TextOut(...);                // ', '
+Canvas.EndStructContent;              // P
+```
+
+Result: `P /K [ MCR 15  Span 16  MCR 17  … ]`, with every MCID mapped back to
+its owner in `/ParentTree`.
+
+- `BeginStructGroup(ARole)` — opens an element without a region; pair with
+  `EndStructContent`
+- `ContinueStructContent` — adds one region (fresh MCID) to the innermost open
+  element; no-op when it already has an open region
+- `SuspendStructContent` — closes that region but keeps the element open as the
+  parent of what is nested next; no-op when no region is open
+
+`EndStructContent` writes `EMC` only when the element actually has an open
+region, so a group element and a container emit none.
 
 **Important:** BDC/EMC must be outside BT/ET. Call `BeginStructContent` before and `EndStructContent` after the text command.
 
@@ -450,6 +484,8 @@ When `Tagged = true`:
 ```pascal
 Doc.BeginStructContent(psrH2);  // delegates to Canvas.BeginStructContent
 Doc.EndStructContent;            // delegates to Canvas.EndStructContent
+// same delegation for BeginStructGroup, ContinueStructContent,
+// SuspendStructContent, LastStructContent and ResumeStructContent
 ```
 
 ### TGDIPages integration

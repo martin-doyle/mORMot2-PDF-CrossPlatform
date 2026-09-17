@@ -2336,6 +2336,19 @@ type
     // - AAltText is written to the properties dict as /Alt for Figure elements
     procedure BeginStructContent(ARole: TPdfStructRole;
       const AAltText: RawUtf8 = '');
+    /// open a Tagged PDF struct element without any marked-content region
+    // - for a paragraph whose inline runs own the regions: a plain run adds
+    // one to this element via ContinueStructContent, a styled run becomes a
+    // nested Span, and /K then lists both in reading order (ROADMAP B-3)
+    // - must be paired with EndStructContent, as BeginStructContent is
+    procedure BeginStructGroup(ARole: TPdfStructRole);
+    /// open one more marked-content region for the innermost open element
+    // - does nothing when that element already has an open region
+    procedure ContinueStructContent;
+    /// close the marked-content region of the innermost open element, which
+    // stays open as the parent of the elements nested next
+    // - does nothing when that element has no open region
+    procedure SuspendStructContent;
     /// close a Tagged PDF marked content section (EMC operator)
     // - only writes when TPdfDocument.Tagged=true
     procedure EndStructContent;
@@ -2346,7 +2359,10 @@ type
     // - emits a new BDC region with a fresh MCID which is added to the very
     // same element, so one logical block split by a page break stays one tag
     // - must be paired with EndStructContent, as BeginStructContent is
-    procedure ResumeStructContent(AStructIndex: integer);
+    // - AOpenRegion=false reopens the element without a region, as
+    // BeginStructGroup does
+    procedure ResumeStructContent(AStructIndex: integer;
+      AOpenRegion: boolean = true);
   public
     /// retrieve the current Canvas content stream, i.e. where the PDF
     // commands are to be written to
@@ -8158,10 +8174,21 @@ type
     MCIDPages: TIntegerDynArray;
     /// number of used MCIDs[]/MCIDPages[] entries
     MCIDCount: integer;
+    /// document-order rank of each MCIDs[] entry, against KidSeqs[]
+    MCIDSeqs: TIntegerDynArray;
     /// owning element, nil for a top-level element below the Document root
     Parent: TPdfStructElement;
-    /// child elements, in document order (containers only)
+    /// child elements, in document order
     Kids: TSynList;
+    /// document-order rank of each Kids[] entry, against MCIDSeqs[]
+    // - an element may own both regions and kids, e.g. a P whose plain runs
+    // are its own regions and whose styled runs are Span kids (ROADMAP B-3),
+    // and /K must then list both in reading order
+    KidSeqs: TIntegerDynArray;
+    /// source of the MCIDSeqs[]/KidSeqs[] ranks
+    SeqNext: integer;
+    /// true while one of this element's marked-content regions is open
+    RegionOpen: boolean;
     /// indirect dictionary, assigned in SerializeStructTree
     Dic: TPdfDictionary;
     destructor Destroy; override;
@@ -8198,6 +8225,10 @@ begin
   if Kids = nil then
     Kids := TSynList.Create;
   Kids.Add(aKid);
+  if Kids.Count > length(KidSeqs) then
+    SetLength(KidSeqs, Kids.Count + 8);
+  KidSeqs[Kids.Count - 1] := SeqNext;
+  inc(SeqNext);
   aKid.Parent := self;
 end;
 
@@ -8207,9 +8238,12 @@ begin
   begin
     SetLength(MCIDs, MCIDCount + 8);
     SetLength(MCIDPages, MCIDCount + 8);
+    SetLength(MCIDSeqs, MCIDCount + 8);
   end;
   MCIDs[MCIDCount] := aMCID;
   MCIDPages[MCIDCount] := aPageIndex;
+  MCIDSeqs[MCIDCount] := SeqNext;
+  inc(SeqNext);
   inc(MCIDCount);
 end;
 
@@ -8237,25 +8271,41 @@ var
     result.AddItem('MCID', aElem.MCIDs[aIndex]);
   end;
 
-  // /K of a container holds its kid references, /K of a leaf the MCR dict
+  // /K of an element which has kids: kid references and own MCR dicts merged
+  // in document order - a leaf without kids got its MCR in Step 3 instead
   procedure WriteKids(aElem: TPdfStructElement);
   var
-    k: integer;
+    k, m, kidCount: integer;
     arr: TPdfArray;
     kid: TPdfStructElement;
   begin
+    if (aElem.Kids = nil) and
+       not PDF_STRUCT_CONTAINER[aElem.Role] then
+      exit;
+    if aElem.Kids = nil then
+      kidCount := 0
+    else
+      kidCount := aElem.Kids.Count;
     arr := TPdfArray.Create(fXRef);
-    if aElem.Kids <> nil then
-      for k := 0 to aElem.Kids.Count - 1 do
+    k := 0;
+    m := 0;
+    while (k < kidCount) or
+          (m < aElem.MCIDCount) do
+      if (k < kidCount) and
+         ((m >= aElem.MCIDCount) or
+          (aElem.KidSeqs[k] < aElem.MCIDSeqs[m])) then
       begin
         kid := TPdfStructElement(aElem.Kids.List[k]);
         arr.AddItem(kid.Dic);
         WriteKids(kid);
+        inc(k);
+      end
+      else
+      begin
+        arr.AddItem(NewMCR(aElem, m));
+        inc(m);
       end;
-    if PDF_STRUCT_CONTAINER[aElem.Role] then
-      aElem.Dic.AddItem('K', arr)
-    else
-      arr.Free; // a leaf carries its MCR instead
+    aElem.Dic.AddItem('K', arr);
   end;
 
 begin
@@ -8294,7 +8344,8 @@ begin
       page := TPdfPage(fRawPages.List[elem.PageIndex]);
       elem.Dic.AddItem('Pg', page);
     end;
-    if not PDF_STRUCT_CONTAINER[elem.Role] then
+    if (not PDF_STRUCT_CONTAINER[elem.Role]) and
+       (elem.Kids = nil) then
       if elem.MCIDCount = 1 then
         // a single region: /K is the MCR dict itself
         elem.Dic.AddItem('K', NewMCR(elem, 0))
@@ -10477,11 +10528,65 @@ begin
   mcid := fPage.fCurrentMCID;
   Inc(fPage.fCurrentMCID);
   elem.AddMCID(mcid, fPage.fStructParents);
+  elem.RegionOpen := true;
   fContents.Writer.Add('/').Add(PDF_STRUCT_ROLE[ARole]).
     Add(' <</MCID ').Add(mcid);
   if AAltText <> '' then
     fContents.Writer.Add(' /Alt ').AddEscapeText(pointer(AAltText), nil);
   fContents.Writer.Add('>> BDC'#10);
+end;
+
+procedure TPdfCanvas.BeginStructGroup(ARole: TPdfStructRole);
+var
+  elem: TPdfStructElement;
+begin
+  if (fContents = nil) or not fDoc.fTagged then
+    exit;
+  elem := TPdfStructElement.Create;
+  elem.Role := ARole;
+  elem.PageIndex := fPage.fStructParents;
+  fDoc.fStructElems.Add(elem);
+  if fDoc.fStructStack.Count > 0 then
+    TPdfStructElement(fDoc.fStructStack.List[fDoc.fStructStack.Count - 1]).
+      AddKid(elem);
+  fDoc.fStructStack.Add(elem);
+  // no BDC and no MCID: ContinueStructContent adds them when content follows
+end;
+
+procedure TPdfCanvas.ContinueStructContent;
+var
+  mcid: integer;
+  elem: TPdfStructElement;
+begin
+  if (fContents = nil) or
+     not fDoc.fTagged or
+     (fDoc.fStructStack.Count = 0) then
+    exit;
+  elem := TPdfStructElement(fDoc.fStructStack.List[fDoc.fStructStack.Count - 1]);
+  if elem.RegionOpen or
+     PDF_STRUCT_CONTAINER[elem.Role] then
+    exit;
+  mcid := fPage.fCurrentMCID;
+  Inc(fPage.fCurrentMCID);
+  elem.AddMCID(mcid, fPage.fStructParents);
+  elem.RegionOpen := true;
+  fContents.Writer.Add('/').Add(PDF_STRUCT_ROLE[elem.Role]).
+    Add(' <</MCID ').Add(mcid).Add('>> BDC'#10);
+end;
+
+procedure TPdfCanvas.SuspendStructContent;
+var
+  elem: TPdfStructElement;
+begin
+  if (fContents = nil) or
+     not fDoc.fTagged or
+     (fDoc.fStructStack.Count = 0) then
+    exit;
+  elem := TPdfStructElement(fDoc.fStructStack.List[fDoc.fStructStack.Count - 1]);
+  if not elem.RegionOpen then
+    exit;
+  elem.RegionOpen := false;
+  fContents.Writer.Add('EMC'#10);
 end;
 
 function TPdfCanvas.LastStructContent: integer;
@@ -10494,7 +10599,8 @@ begin
     result := fDoc.fStructElems.Count - 1;
 end;
 
-procedure TPdfCanvas.ResumeStructContent(AStructIndex: integer);
+procedure TPdfCanvas.ResumeStructContent(AStructIndex: integer;
+  AOpenRegion: boolean);
 var
   mcid: integer;
   elem: TPdfStructElement;
@@ -10510,9 +10616,12 @@ begin
       'ResumeStructContent: % is a container', [PDF_STRUCT_ROLE[elem.Role]]);
   // the element is reopened as-is: its parent link and kids stay untouched
   fDoc.fStructStack.Add(elem);
+  if not AOpenRegion then
+    exit;
   mcid := fPage.fCurrentMCID;
   Inc(fPage.fCurrentMCID);
   elem.AddMCID(mcid, fPage.fStructParents);
+  elem.RegionOpen := true;
   fContents.Writer.Add('/').Add(PDF_STRUCT_ROLE[elem.Role]).
     Add(' <</MCID ').Add(mcid).Add('>> BDC'#10);
 end;
@@ -10528,8 +10637,11 @@ begin
       'EndStructContent without matching BeginStructContent');
   elem := TPdfStructElement(fDoc.fStructStack.List[fDoc.fStructStack.Count - 1]);
   fDoc.fStructStack.Delete(fDoc.fStructStack.Count - 1);
-  if not PDF_STRUCT_CONTAINER[elem.Role] then
+  if elem.RegionOpen then
+  begin
+    elem.RegionOpen := false;
     fContents.Writer.Add('EMC'#10);
+  end;
 end;
 
 

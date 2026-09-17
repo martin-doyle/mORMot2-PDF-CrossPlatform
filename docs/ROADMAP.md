@@ -4,11 +4,12 @@ This document describes all planned improvements with full technical background,
 affected files, implementation steps, and verification criteria.
 
 **Current baseline:** All previously planned features (P1-A … P3, R-1 … R-9) plus
-Steps 1 and 2 (B-1, B-2) are implemented. The structure tree is now properly
-nested, with `Table > TR > TH|TD` and `L > LI > LBody` as real hierarchy levels,
-and a wrapped paragraph is one `P` instead of one `P` per line — across a page
-break as well. The open work is the remaining set of correctness bugs in the tag
-tree plus font embedding for tagged output.
+Steps 1, 2 and 3 (B-1, B-2, B-3) are implemented. The structure tree is now
+properly nested, with `Table > TR > TH|TD` and `L > LI > LBody` as real
+hierarchy levels; a wrapped paragraph is one `P` instead of one `P` per line —
+across a page break as well; and a sentence with inline styling is one `P` whose
+styled runs are `Span` kids, in reading order. The open work is the remaining
+set of correctness bugs in the tag tree plus font embedding for tagged output.
 
 Completed items are archived in [Completed Work](#completed-work) at the end of
 this document.
@@ -61,8 +62,10 @@ Linux run of `pdf_demo`. What that **confirmed**:
 - B-1: the struct tree is flat — all 34 elements parented to one `Document`
 - B-1: containers (`Table`, `TR`) wrongly own an MCID
 - B-1: the `/ParentTree` is keyed per page, not per MCID
-- B-3: one visual line (`Y=447.5`) is split into **nine** top-level `P` elements,
-  MCID 18–26; even a bare `", "` separator becomes its own paragraph
+- ~~B-3: one visual line (`Y=447.5`) is split into **nine** top-level `P`
+  elements, MCID 18–26; even a bare `", "` separator becomes its own
+  paragraph~~ — **fixed in Step 3**, reproduced first on a fresh Linux run
+  (same nine elements at `Y=365`)
 - B-4: **characters are correct** on Linux — only the `TextWidth`/`TextHeight`
   bounding boxes are wrong. Cause (a), FreeType fallback, is ruled out
 - B-5: Linux fits more text per line than Windows/macOS; inline advances are
@@ -359,7 +362,10 @@ container-with-leaves shape the B-1 stack already supports.
 
 ---
 
-## Step 3 — B-3: Tags on Inline Text
+## Step 3 — B-3: Tags on Inline Text — **DONE (2026-09-17)**
+
+Implemented and verified on Linux. The analysis below is kept for the record;
+what was actually built is in [Result](#result-step-3) at the end of this step.
 
 **Effort:** 1–2 days | **File:** `src/core/mormot.ui.report.pas` |
 **Demos:** `pdf_demo`, `markdown_demo`
@@ -437,6 +443,59 @@ for the styled sub-runs (`bold`, `italic`, `code`, `links`).
 - No `P` element contains only a single bold word or a bare `", "`
 - Screen reader reads each sentence as one continuous sentence
 - Gate: same structure on all three platforms before Step 4
+
+### Result (Step 3)
+
+Implemented on 2026-09-17, built and run on Linux, and **accepted on Linux**.
+Windows (PAC 2024) and macOS verification is still outstanding; the
+cross-platform gate above is therefore not yet closed. `veraPDF` is still not
+installed on the development machine.
+
+What was built, against the plan above:
+
+| Plan | Implementation |
+|---|---|
+| 1. Mark inline commands | `TDrawCommand.IsInline: boolean` plus `InlineStyle: TInlineStyle` (`isPlain`, `isStrong`, `isEm`, `isCode`, `isLink`). Both are stamped in `EmitTextCmd` from the transient fields `fEmitInline`/`fEmitInlineStyle`. As predicted, all five coordinate-less overloads funnel through `DrawText(const S)`, so the shared `BlockId` (`fInlineBlockId`, allocated lazily from `fNextBlockId`) is assigned in that one place. The line is closed — and the next run gets a fresh id — in `MoveToNextLine`, in `NewPage` and at the start of `RecordWrappedText`. |
+| 2. Map inline runs to `psrSpan` | `RenderPageToCanvas` opens the enclosing element for an inline line with the new `BeginStructGroup` instead of `BeginStructContent`, i.e. **without** a marked-content region. A styled run then calls `SuspendStructContent` + `BeginStructContent(psrSpan)`; the role of the enclosing element is unchanged (`P`, or `TH`/`TD`/`LBody`/`Hx` in context) and was factored out into the local `TextStructRole`. |
+| 3. Plain runs untagged | Achieved as specified: a plain run calls `ContinueStructContent`, which adds one more MCID to the enclosing element rather than creating an element. This needed the `/K` of a struct element to mix its own `/MCR` dicts with kid references **in reading order**, so `TPdfStructElement` gained `MCIDSeqs`/`KidSeqs`/`SeqNext` and `SerializeStructTree` merges both by rank. A leaf without kids keeps its previous single-`/MCR` or `/MCR`-array form. |
+| 4. Richer roles than `Span` | Not implemented. ISO 32000-1 has no `Code` role, and a bare `Span` is the correct representation; adding `/ActualText` or `/Alt` holding the very same string the run already draws would be pure duplication. Revisit only if a reader is shown to need it. |
+
+**Why a plain `Span` per run was rejected.** Wrapping every run — plain ones
+included — in a `Span` would have been a two-line change, but keeping one
+single region for all plain runs of the line destroys the reading order: the
+plain text would be one MCID listed before all `Span` kids, so a reader
+announces *"Inline styles like , , and can be mixed inline."* followed by
+*"bold italic code links"*. Hence the suspend/continue primitives and the
+ordered `/K`.
+
+Measured on the regenerated `markdown_demo.pdf`, page 1:
+
+```
+/P    <</MCID 15>> BDC (Inline styles like )   Tj ET EMC
+/Span <</MCID 16>> BDC (bold)                  Tj ET EMC
+/P    <</MCID 17>> BDC (, )                    Tj ET EMC
+/Span <</MCID 18>> BDC (italic)                Tj ET EMC
+…
+/P    <</MCID 23>> BDC ( can be mixed inline.) Tj ET EMC
+```
+
+`63 0 obj <</Type/StructElem/S/P … /K[<</MCR/MCID 15>> 64 0 R <</MCR/MCID 17>>
+65 0 R <</MCR/MCID 19>> 66 0 R <</MCR/MCID 21>> 67 0 R <</MCR/MCID 23>>]>>` —
+the nine top-level `P` elements of MCID 15–23 are **one** `P` with four `Span`
+kids, and `/ParentTree` maps MCID 15/17/19/21/23 back to that `P` and 16/18/20/22
+to their `Span`. Across the whole file: `P` 68 → 52, `Span` 0 → 8, BDC/EMC
+balanced per page (45/45, 89/89, 46/46, 88/88).
+
+**Regression evidence.** A HEAD worktree was built and run in the same
+environment for a like-for-like baseline: the drawing operators of
+`markdown_demo.pdf` are identical with the tagging operators stripped, and
+`pdf_demo`'s content stream *and* struct tree are byte-identical (it drives
+`BeginStructContent` directly and never takes the new path). Test suite
+115/115 assertions, all six demos build.
+
+**Note on the environment.** Font measurement differs without an X display, so
+this machine produces a 4-page `markdown_demo.pdf` where the committed
+reference files have 5. Only compare runs made in the same environment.
 
 ---
 

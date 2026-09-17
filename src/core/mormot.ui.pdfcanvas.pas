@@ -130,6 +130,15 @@ type
     // - AAltText is written as /Alt for Figure elements (image accessibility)
     procedure BeginStructContent(ARole: TPdfStructRole;
       const AAltText: RawUtf8 = '');
+    /// open a struct element without any marked-content region
+    // - a plain inline run then adds one via ContinueStructContent, a styled
+    // run becomes a nested Span (ROADMAP B-3)
+    procedure BeginStructGroup(ARole: TPdfStructRole);
+    /// open one more marked-content region for the innermost open element
+    procedure ContinueStructContent;
+    /// close the region of the innermost open element, which stays open as
+    // the parent of the elements nested next
+    procedure SuspendStructContent;
     /// close the marked content sequence opened by BeginStructContent
     procedure EndStructContent;
     /// index of the struct element opened by the last BeginStructContent
@@ -138,7 +147,8 @@ type
     /// reopen an already closed struct element on the current page
     // - lets one logical block interrupted by a page break stay one tag
     // - must be paired with EndStructContent
-    procedure ResumeStructContent(AStructIndex: integer);
+    procedure ResumeStructContent(AStructIndex: integer;
+      AOpenRegion: boolean = true);
     /// set the fill (non-stroking) opacity for subsequent drawing operations
     // - Value is clamped to [0..1]: 0=fully transparent, 1=fully opaque
     procedure SetFillAlpha(Value: single);
@@ -523,6 +533,21 @@ begin
   Canvas.BeginStructContent(ARole, AAltText);
 end;
 
+procedure TPdfDocumentVcl.BeginStructGroup(ARole: TPdfStructRole);
+begin
+  Canvas.BeginStructGroup(ARole);
+end;
+
+procedure TPdfDocumentVcl.ContinueStructContent;
+begin
+  Canvas.ContinueStructContent;
+end;
+
+procedure TPdfDocumentVcl.SuspendStructContent;
+begin
+  Canvas.SuspendStructContent;
+end;
+
 procedure TPdfDocumentVcl.EndStructContent;
 begin
   Canvas.EndStructContent;
@@ -533,9 +558,10 @@ begin
   result := Canvas.LastStructContent;
 end;
 
-procedure TPdfDocumentVcl.ResumeStructContent(AStructIndex: integer);
+procedure TPdfDocumentVcl.ResumeStructContent(AStructIndex: integer;
+  AOpenRegion: boolean);
 begin
-  Canvas.ResumeStructContent(AStructIndex);
+  Canvas.ResumeStructContent(AStructIndex, AOpenRegion);
 end;
 
 procedure TPdfDocumentVcl.SetFillAlpha(Value: single);

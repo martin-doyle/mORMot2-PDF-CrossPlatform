@@ -90,6 +90,12 @@ type
     dckEndLI          // end list item — for Tagged PDF structure
   );
 
+  /// style of an inline text run, mapped to a Tagged PDF Span element
+  // - isPlain runs carry no semantics of their own: their marked content
+  // belongs directly to the enclosing paragraph (ROADMAP B-3)
+  TInlineStyle = (
+    isPlain, isStrong, isEm, isCode, isLink);
+
   /// one drawing command (all coordinates in 1/100 mm unless noted)
   TDrawCommand = record
     Kind:        TDrawCmdKind;
@@ -110,6 +116,8 @@ type
     HeadingTitle: string;    // heading text (for dckHeading)
     BlockId:     Integer;    // logical block: 0 = standalone, >0 = all lines of
                              // one wrapped paragraph share the id (Tagged PDF)
+    IsInline:    boolean;    // true = inline run continuing the current line
+    InlineStyle: TInlineStyle; // style of an inline run (Tagged PDF Span role)
   end;
 
   /// ordered list of drawing commands for one page
@@ -255,6 +263,10 @@ type
     fRenderBlockId:    Integer;  // block whose struct element is currently reused
     fRenderBlockElem:  Integer;  // its index, for TPdfDocumentVcl.ResumeStructContent
     fRenderBlockOpen:  boolean;  // true while its marked-content region is open
+    { --- inline runs sharing one visual line (Tagged PDF, ROADMAP B-3) --- }
+    fInlineBlockId:    Integer;  // block id of the line being filled, 0 = none
+    fEmitInline:       boolean;  // true while an inline overload emits
+    fEmitInlineStyle:  TInlineStyle;  // style of the run being emitted
     fInParagraph:    Integer;  // depth counter for nested paragraph begin/end
 
     { --- Phase 6: PDF export options --- }
@@ -686,6 +698,9 @@ begin
   fInParagraph := 0;
   fNextBlockId      := 0;
   fCurrentBlockId   := 0;
+  fInlineBlockId    := 0;
+  fEmitInline       := false;
+  fEmitInlineStyle  := isPlain;
   fRenderBlockId    := 0;
   fRenderBlockElem  := -1;
   fRenderBlockOpen  := false;
@@ -1023,6 +1038,7 @@ begin
   fCurrCmds := @fPages[fPageCount - 1].Commands;
   fCurrentY := 0;
   fCurrentX := 0;  { reset horizontal position on new page }
+  fInlineBlockId := 0;
 end;
 
 procedure TGDIPages.EndDoc;
@@ -1073,6 +1089,7 @@ end;
 procedure TGDIPages.MoveToNextLine(Offset: Integer);
 begin
   Inc(fCurrentY, Offset);
+  fInlineBlockId := 0;  { the inline run of the previous line is closed }
 end;
 
 procedure TGDIPages.SetHeader(const AText: string);
@@ -1237,7 +1254,12 @@ procedure TGDIPages.DrawStrong(const AText: string); overload;
 begin
   SaveLayout;
   FontStyle := FontStyle + [fsBold];
-  DrawText(AText);
+  fEmitInlineStyle := isStrong;
+  try
+    DrawText(AText);
+  finally
+    fEmitInlineStyle := isPlain;
+  end;
   RestoreLayout;
 end;
 
@@ -1253,7 +1275,12 @@ procedure TGDIPages.DrawEm(const AText: string); overload;
 begin
   SaveLayout;
   FontStyle := FontStyle + [fsItalic];
-  DrawText(AText);
+  fEmitInlineStyle := isEm;
+  try
+    DrawText(AText);
+  finally
+    fEmitInlineStyle := isPlain;
+  end;
   RestoreLayout;
 end;
 
@@ -1289,7 +1316,12 @@ begin
     CodeSize := (fFontSize * 90) div 100;
   SetFont(Format.FontName, CodeSize);
   TextColor := Format.Color;
-  DrawText(AText);
+  fEmitInlineStyle := isCode;
+  try
+    DrawText(AText);
+  finally
+    fEmitInlineStyle := isPlain;
+  end;
   RestoreLayout;
 end;
 
@@ -1310,7 +1342,12 @@ begin
   SetFont(fFontName, fFontSize);
   FontStyle := FontStyle + [fsUnderline];
   TextColor := clBlue;
-  DrawText(AText);
+  fEmitInlineStyle := isLink;
+  try
+    DrawText(AText);
+  finally
+    fEmitInlineStyle := isPlain;
+  end;
   RestoreLayout;
   { Future: could add PDF annotation with ATarget as URL }
 end;
@@ -1520,6 +1557,8 @@ begin
   Cmd.Align        := Align;
   Cmd.HeadingLevel := fCurrentHeadingLevel;
   Cmd.BlockId      := fCurrentBlockId;
+  Cmd.IsInline     := fEmitInline;
+  Cmd.InlineStyle  := fEmitInlineStyle;
   { Measure text width ONCE at recording time in normalized units }
   TextWidthMM := MeasureTextWidthMM(S);
   Cmd.TextWidthMM := TextWidthMM;
@@ -1554,6 +1593,7 @@ procedure TGDIPages.DrawText(const S: string); overload;
 var
   TextWidth: Integer;
   LineH: Integer;
+  PrevBlockId: Integer;
 begin
   { Check if line fits on current page, otherwise move to next page }
   LineH := LineHeightMM;
@@ -1563,8 +1603,23 @@ begin
     fCurrentX := 0;
   end;
 
-  { Draw text at current position and advance X }
-  EmitTextCmd(fCurrentX, fCurrentY, S, 0);
+  { All runs of one visual line share a BlockId, so the tagged PDF export
+    produces a single P with the styled runs as Span kids (ROADMAP B-3) }
+  if fInlineBlockId = 0 then
+  begin
+    Inc(fNextBlockId);
+    fInlineBlockId := fNextBlockId;
+  end;
+  PrevBlockId := fCurrentBlockId;
+  fCurrentBlockId := fInlineBlockId;
+  fEmitInline := true;
+  try
+    { Draw text at current position and advance X }
+    EmitTextCmd(fCurrentX, fCurrentY, S, 0);
+  finally
+    fEmitInline := false;
+    fCurrentBlockId := PrevBlockId;
+  end;
 
   { Measure text width and advance X }
   TextWidth := MeasureTextWidthMM(S);
@@ -1645,6 +1700,7 @@ begin
   PrevBlockId := fCurrentBlockId;
   Inc(fNextBlockId);
   fCurrentBlockId := fNextBlockId;
+  fInlineBlockId := 0;  { a block-level paragraph ends any open inline line }
   { Get the actual DPI of the measurement canvas }
   MeasureDPI := GetMeasureDPI;
   { MaxPx is always in 96-DPI-pixels (matches the normalized WordW values below) }
@@ -2111,6 +2167,7 @@ var
   InTableRow:     boolean;        // true between dckBeginTR and dckEndTR
   InHeaderRow:    boolean;        // true if current TR is a header row
   InListItem:     boolean;        // true between dckBeginLI and dckEndLI
+  SpanOpen:       boolean;        // true while a Span wraps the current run
 
 
   function SubstitutePlaceholders(const AText: string; PageNum: Integer): string;
@@ -2145,22 +2202,31 @@ var
     end;
   end;
 
-  { open the struct element matching the current dckDrawText command }
-  procedure BeginTextStructContent;
+  { role of the struct element matching the current dckDrawText command }
+  function TextStructRole: TPdfStructRole;
   begin
     if Cmd.HeadingLevel > 0 then
-      fActivePdfDoc.BeginStructContent(TPdfStructRole(Cmd.HeadingLevel))
+      result := TPdfStructRole(Cmd.HeadingLevel)
     else if InTableRow then
-    begin
       if InHeaderRow then
-        fActivePdfDoc.BeginStructContent(psrTH)
+        result := psrTH
       else
-        fActivePdfDoc.BeginStructContent(psrTD);
-    end
+        result := psrTD
     else if InListItem then
-      fActivePdfDoc.BeginStructContent(psrLBody)
+      result := psrLBody
     else
-      fActivePdfDoc.BeginStructContent(psrP);
+      result := psrP;
+  end;
+
+  { open the struct element matching the current dckDrawText command
+    - an inline line opens it without a region: every run of the line adds
+      its own, so plain runs and Span kids stay in reading order (B-3) }
+  procedure BeginTextStructContent;
+  begin
+    if Cmd.IsInline then
+      fActivePdfDoc.BeginStructGroup(TextStructRole)
+    else
+      fActivePdfDoc.BeginStructContent(TextStructRole);
   end;
 
 begin
@@ -2190,6 +2256,7 @@ begin
   InTableRow  := false;
   InHeaderRow := false;
   InListItem  := false;
+  SpanOpen    := false;
   { preview and printing do not tag: never carry block state into them }
   if fActivePdfDoc = nil then
   begin
@@ -2232,7 +2299,8 @@ begin
             begin
               { continued after a page break: reopen the very same element,
                 which then owns MCIDs on both pages }
-              fActivePdfDoc.ResumeStructContent(fRenderBlockElem);
+              fActivePdfDoc.ResumeStructContent(fRenderBlockElem,
+                not Cmd.IsInline);
               fRenderBlockOpen := true;
             end;
             { else the region is still open — emit the line only }
@@ -2249,6 +2317,22 @@ begin
               fRenderBlockOpen := fRenderBlockElem >= 0;
             end;
           end;
+        { a styled inline run becomes a Span kid of the enclosing paragraph,
+          a plain run one more region of the paragraph itself — both are
+          listed in /K in reading order (ROADMAP B-3) }
+        SpanOpen := (fActivePdfDoc <> nil) and
+                    Cmd.IsInline and
+                    fRenderBlockOpen and
+                    (Cmd.InlineStyle <> isPlain);
+        if SpanOpen then
+        begin
+          fActivePdfDoc.SuspendStructContent;
+          fActivePdfDoc.BeginStructContent(psrSpan);
+        end
+        else if (fActivePdfDoc <> nil) and
+                Cmd.IsInline and
+                fRenderBlockOpen then
+          fActivePdfDoc.ContinueStructContent;
         ApplyFont;
         ACanvas.Brush.Style := bsClear;
         { X position is pre-adjusted at recording time:
@@ -2258,6 +2342,8 @@ begin
           - Just render at the adjusted X position }
         TX := ScaleX(Cmd.X);
         ACanvas.TextOut(TX, ScaleY(Cmd.Y), SubstitutePlaceholders(Cmd.Text, PageIndex));
+        if SpanOpen then
+          fActivePdfDoc.EndStructContent;
         if (fActivePdfDoc <> nil) and
            not fRenderBlockOpen then
           fActivePdfDoc.EndStructContent;

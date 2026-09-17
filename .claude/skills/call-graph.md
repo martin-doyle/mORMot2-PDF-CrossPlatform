@@ -250,6 +250,9 @@ TGDIPages.ExportPdfStream(aDest: TStream)
   │    │                  ResumeStructContent after a page break)
   │    │                  else BeginStructContent(psrH1..6 / psrTH / psrTD /
   │    │                                          psrLBody / psrP)
+  │    │                  Cmd.IsInline → BeginStructGroup instead, then per run:
+  │    │                    isPlain  → ContinueStructContent (region on the P)
+  │    │                    styled   → SuspendStructContent + psrSpan kid
   │    │    dckDrawBitmap: fActivePdfDoc.BeginStructContent(psrFigure)
   │    │    dckBeginTable: fActivePdfDoc.BeginStructContent(psrTable)
   │    │    dckEndTable:   fActivePdfDoc.EndStructContent + reset InTableRow
@@ -676,12 +679,24 @@ TPdfCanvas.BeginStructContent(ARole, AAltText='')
   if AAltText <> '': fContents.Writer.Add(' /Alt (…)')
   fContents.Writer.Add('>> BDC')
 
-TPdfCanvas.ResumeStructContent(Index)        ← B-2: block continued on next page
+TPdfCanvas.ResumeStructContent(Index, AOpenRegion=true)
+  ← B-2: block continued on next page
   reopens fStructElems[Index]: pushes it again, allocates a new MCID on the
   current page, writes another BDC — the element then owns several MCIDs
+  AOpenRegion=false: pushed back without a region (inline line, B-3)
+
+TPdfCanvas.BeginStructGroup(ARole)           ← B-3: element without a region
+  as BeginStructContent, but no MCID and no BDC
+
+TPdfCanvas.ContinueStructContent             ← B-3: plain inline run
+  top of fStructStack gains one more MCID + BDC; no-op if its region is open
+
+TPdfCanvas.SuspendStructContent              ← B-3: before a nested Span
+  writes 'EMC' for the top element but leaves it on fStructStack, so the next
+  BeginStructContent still becomes its kid
 
 TPdfCanvas.EndStructContent
-  pops fStructStack; writes 'EMC' unless the element is a container
+  pops fStructStack; writes 'EMC' only when that element has an open region
 
 SaveToStreamDirectEnd (called by ExportPdfStream):
   if fTagged:
@@ -689,8 +704,10 @@ SaveToStreamDirectEnd (called by ExportPdfStream):
       fMetaData stream written with PDF/UA-1 XMP (pdfuaid:part=1)
     SerializeStructTree:
       one indirect dict per element; /P points at the real parent
-      container → /K [kid dicts];  leaf → /K MCR dict, or an array of MCR
-        dicts (each with /Pg when it differs from the element's /Pg)
+      leaf without kids → /K MCR dict, or an array of MCR dicts (each with
+        /Pg when it differs from the element's /Pg)
+      element with kids → /K [kid dicts and own MCR dicts], merged in
+        document order via KidSeqs[]/MCIDSeqs[] (B-3: P with Span kids)
       /ParentTree /Nums: per page an array indexed by MCID; an element
         continued across a page break appears in both pages' arrays
 ```

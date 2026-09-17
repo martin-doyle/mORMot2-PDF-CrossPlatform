@@ -389,6 +389,9 @@ TDrawCommand = record
   HeadingTitle: string;
   BlockId:      Integer;       // logical block: 0 = standalone, >0 = shared by
                                // all lines of one wrapped paragraph (B-2)
+                               // or by all runs of one inline line (B-3)
+  IsInline:     boolean;       // true = inline run continuing the current line
+  InlineStyle:  TInlineStyle;  // isPlain, isStrong, isEm, isCode, isLink
 end;
 ```
 
@@ -401,6 +404,16 @@ marked-content region open across the lines, so a wrapped paragraph is a single
 (standalone). A block interrupted by a page break is reopened on the next page
 via `TPdfDocumentVcl.ResumeStructContent`, so it stays one element with one MCID
 per page.
+
+**Inline runs (Tagged PDF).** The coordinate-less overloads (`DrawText`,
+`DrawStrong`, `DrawEm`, `DrawCode`, `DrawLink`) advance `CurrentX` on the
+current line. They all stamp one shared `BlockId` and `IsInline = true`, so the
+tagged export emits **one** `P` (or `TD`/`LBody`/`Hx`) for the whole line: a
+plain run adds a region to that element, a styled run becomes a nested `Span`
+(`ROADMAP B-3`). The line ends — and the next one gets a fresh id — at
+`MoveToNextLine`, at `NewPage`, and at any wrapping entry point
+(`RecordWrappedText`). The coordinate overloads (`DrawStrong(X, Y, …)`) stay
+standalone blocks.
 
 New features: record the command first, implement rendering in `RenderPageToCanvas()`.
 
