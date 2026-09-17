@@ -3,10 +3,11 @@
 This document describes all planned improvements with full technical background,
 affected files, implementation steps, and verification criteria.
 
-**Current baseline:** All previously planned features (P1-A … P3, R-1 … R-9) are
-implemented. Tagged PDF output is produced, but the structure tree is **flat** —
-the open work is now a set of correctness bugs in the tag tree plus font
-embedding for tagged output.
+**Current baseline:** All previously planned features (P1-A … P3, R-1 … R-9) plus
+Step 1 (B-1) are implemented. The structure tree is now properly nested, with
+`Table > TR > TH|TD` and `L > LI > LBody` as real hierarchy levels. The open work
+is the remaining set of correctness bugs in the tag tree plus font embedding for
+tagged output.
 
 Completed items are archived in [Completed Work](#completed-work) at the end of
 this document.
@@ -71,24 +72,29 @@ What is **still not verified** and must be settled during implementation:
 
 | Unknown | Needed for | How to settle |
 |---|---|---|
-| Actual signature/body of `BeginStructContent`, `BuildStructTree`, `TPdfStructElem` | B-1, B-2, B-3 | read `src/core/mormot.ui.pdf.pas` (13.5k lines — targeted sections only) |
+| ~~Actual body of `BeginStructContent`, `SerializeStructTree`, `TPdfStructElement`~~ | ~~B-1~~, B-2, B-3 | **Settled in Step 1.** Note the naming: the serializer is `SerializeStructTree`, not `BuildStructTree`, and the class is `TPdfStructElement`. MCIDs come from the per-page counter `TPdfPage.fCurrentMCID`, not from `fStructParents * 1000` |
 | Whether `TDrawCommand` can take new fields without breaking the recording array | B-2, B-3 | read `src/core/mormot.ui.report.pas` (2.7k lines) |
-| How `RenderPageToCanvas` currently chooses a role per command | B-2, B-3 | read `mormot.ui.report.pas` |
+| ~~How `RenderPageToCanvas` currently chooses a role per command~~ | ~~B-2, B-3~~ | **Settled in Step 1.** A `case Cmd.Kind` block with the local flags `InTableRow`, `InHeaderRow` and `InListItem` |
 | A wrapped paragraph's MCID pattern (B-2's premise) | B-2 | not yet isolated in a content stream — confirm before coding |
 | Per-platform `FontTextHeight` / `LineHeightMM` values | B-5 | instrument and run on all three platforms |
 
-**Toolchain gap on this machine:** `lazbuild` is not installed and no mORMot2
-source tree was found, so none of the demos can currently be rebuilt or run here;
-only `fpc`, `pdffonts` and `pdfinfo` are available. `qpdf`, `mutool` and `veraPDF`
-are missing. Verification steps that require building must run on a machine with
-Lazarus plus the mORMot2 sources.
+**Toolchain on the Linux development machine:** `lazbuild` lives at
+`/home/parallels/fpc-fixes/lazarus/lazbuild` (not on `PATH`) and the mORMot2
+sources at `/home/parallels/synopse/mORMot2`. Compilation works; linking the
+demos needs `libgtk2.0-dev`, whose development symlinks are absent, so the
+runtime GTK2 libraries cannot be found by `ld`. `qpdf`, `mutool` and `veraPDF`
+are still missing; only `pdffonts` and `pdfinfo` are available.
 
 ---
 
-## Step 1 — B-1: Nested Structure Tags (Tables and Lists)
+## Step 1 — B-1: Nested Structure Tags (Tables and Lists) — **DONE (2026-09-17)**
 
-**Effort:** 2–3 days | **Files:** `src/core/mormot.ui.pdf.pas`,
-`src/core/mormot.ui.report.pas` | **Demos:** `pdf_demo`, `markdown_demo`
+**Effort:** 2–3 days | **Files:** `src/core/mormot.pdf.types.pas`,
+`src/core/mormot.ui.pdf.pas`, `src/core/mormot.ui.report.pas` |
+**Demos:** `pdf_demo`, `markdown_demo`
+
+Implemented and verified on Linux. The analysis below is kept for the record;
+what was actually built is in [Result](#result-step-1) at the end of this step.
 
 ### Symptom
 
@@ -209,6 +215,37 @@ veraPDF --flavour ua1 pdf_demo.pdf
 - Table announced as a table (with row/column context) by a screen reader
 - Gate: identical tag hierarchy on Windows, Linux and macOS before Step 2
 - Expected until Step 6: PAC still flags non-embedded fonts
+
+### Result (Step 1)
+
+Implemented on 2026-09-17, built and run on Linux. Windows and macOS
+verification is still outstanding; the cross-platform gate above is therefore
+not yet closed.
+
+What was built, against the plan above:
+
+| Plan | Implementation |
+|---|---|
+| 1. Parent tracking | `TPdfStructElement` gained `Parent`, `Kids: TSynList` and `Dic: TPdfDictionary`. `Kids` is freed with the element; `fStructElems` stays the owner of all elements. |
+| 2. Open-element stack | `TPdfDocument.fStructStack: TSynList` — **document level, not page level**, because `dckBeginTable` and `dckEndTable` land on different pages when a table paginates. |
+| 3. BDC/EMC for leaves only | Decided by role through the new `PDF_STRUCT_CONTAINER` table: `Document`, `Table`, `TR`, `L` and `LI` are containers and carry `MCID = -1`. |
+| 4. Raise on unbalanced nesting | `EndStructContent` raises `EPdfInvalidOperation` on an empty stack; `SaveToStreamDirectEnd` raises when the stack is not empty. |
+| 5. List roles | `psrL`, `psrLI`, `psrLbl`, `psrLBody` appended at the end of `TPdfStructRole`. |
+| 6. Tag lists in `TGDIPages` | New commands `dckBeginList`, `dckEndList`, `dckBeginLI`, `dckEndLI`. `DrawListItem` opens the list on its first call; `AddCommand` closes it on the first foreign command, `NewPage` and `EndDoc` likewise. |
+| 7. Rewrite `SerializeStructTree` | Walks the tree recursively, `/P` points at the real parent, `/K` holds kid references for containers and an `MCR` dict for leaves. The `/ParentTree` stays keyed per page with the array index equal to the MCID — valid now that containers consume no MCID. |
+
+**Deviation from step 6 of the plan.** The list structure is `L > LI > LBody`
+with the bullet left inside the item text, not `L > LI > Lbl + LBody`. A real
+`Lbl` needs the bullet and the text as two separate `TextOut` calls, and their
+gap is computed from the text-width measurement that B-4 and B-5 are still
+about to fix. Splitting them now would change the rendered output in a step
+that is supposed to touch only the tag tree. `psrLbl` exists in the enum and
+can be wired up once Step 5 has landed. PDF/UA is satisfied either way, since
+`Lbl` is optional inside `LI`.
+
+**Note for later steps.** A `Table` element now legitimately spans pages: its
+`/Pg` names the page it started on, while each leaf carries its own `/Pg`.
+Step 2 must not assume that an element and its kids share a page.
 
 ---
 
@@ -746,7 +783,6 @@ Windows-only (`TPdfDocumentGdi`), not portable. No work planned.
 
 | ID | Item | Effort | Files |
 |---|---|---|---|
-| B-1 | Nested struct tags (tables, lists) | 2–3 days | mormot.ui.pdf.pas, mormot.ui.report.pas |
 | B-2 | Tags at line breaks | 1–2 days | mormot.ui.report.pas, mormot.ui.pdf.pas |
 | B-3 | Tags on inline text | 1–2 days | mormot.ui.report.pas |
 | B-4 | Wrong text bounding boxes in graphics (Linux/macOS) | 1–2 days | mormot.ui.pdfcanvas.pas |
@@ -762,7 +798,7 @@ platforms before the next begins — see [Working Method](#working-method).
 
 | Step | ID | Rationale for this position |
 |---|---|---|
-| 1 | B-1 | Builds the element tree and multi-MCID support that B-2 and B-3 need |
+| ~~1~~ | ~~B-1~~ | **Done** — built the element tree that B-2 and B-3 need |
 | 2 | B-2 | Needs B-1's tree; introduces multi-MCID leaves |
 | 3 | B-3 | Needs B-1's tree; reuses B-2's `BlockId` |
 | 4 | B-5 | **Before B-4**: decides what `LineHeightFactor` multiplies, which changes every existing layout and would invalidate any B-4 verification done earlier |
@@ -790,6 +826,7 @@ The remaining R-items are independent and unscheduled.
 | R-7 | Transparency (`SetFillAlpha`/`SetStrokeAlpha`) | mormot.ui.pdf.pas |
 | R-8 | `LineHeightFactor` property | mormot.ui.report.pas |
 | R-9 | Table header repeat on page break | mormot.ui.report.pas |
+| B-1 | Nested struct tags (tables, lists) — see [Result (Step 1)](#result-step-1) | mormot.pdf.types.pas, mormot.ui.pdf.pas, mormot.ui.report.pas |
 
-Note on R-5/R-6: table and figure tags are *emitted* but land flat in the
-structure tree — B-1 completes them.
+Note on R-5/R-6: table and figure tags were *emitted* but landed flat in the
+structure tree; B-1 completed them.

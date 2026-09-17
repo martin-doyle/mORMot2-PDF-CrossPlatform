@@ -1423,6 +1423,8 @@ type
     fTagged: boolean;
     fDefaultLanguage: RawUtf8;
     fStructElems: TObjectList;
+    // currently open struct elements, innermost last (not owning)
+    fStructStack: TSynList;
     fPdfAMetadaExtension: RawUtf8;
     fSaveToStreamWriter: TPdfWrite;
     {$ifdef USE_PDFSECURITY}
@@ -7376,6 +7378,7 @@ begin
   fCompressionMethod := cmFlateDecode; // deflate by default
   fDefaultLanguage := 'en';
   fStructElems := TObjectList.Create;
+  fStructStack := TSynList.Create;
   fBookMarks := TRawUtf8List.CreateEx([fCaseSensitive, fNoDuplicate]);
   fMissingBookmarks := TRawUtf8List.Create;
   fUseOutlines := AUseOutlines;
@@ -7419,6 +7422,7 @@ end;
 destructor TPdfDocument.Destroy;
 begin
   FreeDoc;
+  fStructStack.Free;
   fStructElems.Free;
   fCanvas.Free;
   {$ifdef OSWINDOWS}
@@ -7716,6 +7720,8 @@ begin
   fMissingBookmarks.Clear;
   FreeDoc;
   fStructTree := nil;
+  if fStructStack <> nil then
+    fStructStack.Clear;
   if fStructElems <> nil then
     fStructElems.Clear;
   fXRef := TPdfXref.Create;
@@ -8096,7 +8102,13 @@ begin
           PrepareForSaving;
     // serialize Tagged PDF structure tree before writing pending objects
     if fTagged and (fStructTree <> nil) then
+    begin
+      if fStructStack.Count > 0 then
+        raise EPdfInvalidOperation.CreateUtf8(
+          '% struct element(s) left open: missing EndStructContent',
+          [fStructStack.Count]);
       SerializeStructTree;
+    end;
     // write pending objects
     if fFileFormat >= pdf15 then
       fTrailer.ToCrossReference(self);
@@ -8129,67 +8141,141 @@ type
   public
     Role: TPdfStructRole;
     PageIndex: integer;
+    /// marked-content identifier of the leaf region, -1 for a pure container
     MCID: integer;
+    /// owning element, nil for a top-level element below the Document root
+    Parent: TPdfStructElement;
+    /// child elements, in document order (containers only)
+    Kids: TSynList;
+    /// indirect dictionary, assigned in SerializeStructTree
+    Dic: TPdfDictionary;
+    destructor Destroy; override;
+    procedure AddKid(aKid: TPdfStructElement);
   end;
 
 const
   PDF_STRUCT_ROLE: array[TPdfStructRole] of RawUtf8 = (
     'Document', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'P', 'Span',
     'Figure',
-    'Table', 'TR', 'TH', 'TD');
+    'Table', 'TR', 'TH', 'TD',
+    'L', 'LI', 'Lbl', 'LBody');
+
+  /// roles which only group other elements: they own no marked-content region
+  // - a container must not emit BDC/EMC, otherwise the MCID sequence would
+  // contain regions without any content (see ROADMAP B-1)
+  PDF_STRUCT_CONTAINER: array[TPdfStructRole] of boolean = (
+    true,                                     // Document
+    false, false, false, false, false, false, // H1..H6
+    false, false,                             // P, Span
+    false,                                    // Figure
+    true, true, false, false,                 // Table, TR, TH, TD
+    true, true, false, false);                // L, LI, Lbl, LBody
+
+destructor TPdfStructElement.Destroy;
+begin
+  Kids.Free;
+  inherited Destroy;
+end;
+
+procedure TPdfStructElement.AddKid(aKid: TPdfStructElement);
+begin
+  if Kids = nil then
+    Kids := TSynList.Create;
+  Kids.Add(aKid);
+  aKid.Parent := self;
+end;
 
 procedure TPdfDocument.SerializeStructTree;
 var
-  i, pageIdx, maxPage, mcid, foundIdx: integer;
+  i, pageIdx, maxPage, mcid: integer;
   elem: TPdfStructElement;
-  elemDics: array of TPdfDictionary;
   docDic, parentTreeDic, mcr: TPdfDictionary;
   kidsArr, numsArr, pageArr: TPdfArray;
   page: TPdfPage;
   maxMCID: integer;
+
+  // /K of a container holds its kid references, /K of a leaf the MCR dict
+  procedure WriteKids(aElem: TPdfStructElement);
+  var
+    k: integer;
+    arr: TPdfArray;
+    kid: TPdfStructElement;
+  begin
+    arr := TPdfArray.Create(fXRef);
+    if aElem.Kids <> nil then
+      for k := 0 to aElem.Kids.Count - 1 do
+      begin
+        kid := TPdfStructElement(aElem.Kids.List[k]);
+        arr.AddItem(kid.Dic);
+        WriteKids(kid);
+      end;
+    if PDF_STRUCT_CONTAINER[aElem.Role] then
+      aElem.Dic.AddItem('K', arr)
+    else
+      arr.Free; // a leaf carries its MCR instead
+  end;
+
 begin
-  if (fStructElems = nil) or (fStructElems.Count = 0) then
+  if (fStructElems = nil) or
+     (fStructElems.Count = 0) then
   begin
     fStructTree.AddItem('K', TPdfArray.Create(fXRef));
     fStructTree.AddItem('ParentTreeNextKey', 0);
     exit;
   end;
   // Step 1: create an indirect PDF dictionary for each struct element
-  SetLength(elemDics, fStructElems.Count);
   for i := 0 to fStructElems.Count - 1 do
   begin
-    elemDics[i] := TPdfDictionary.Create(fXRef);
-    fXRef.AddObject(elemDics[i]);
+    elem := TPdfStructElement(fStructElems[i]);
+    elem.Dic := TPdfDictionary.Create(fXRef);
+    fXRef.AddObject(elem.Dic);
   end;
   // Step 2: create indirect Document root and ParentTree dictionaries
   docDic := TPdfDictionary.Create(fXRef);
   fXRef.AddObject(docDic);
   parentTreeDic := TPdfDictionary.Create(fXRef);
   fXRef.AddObject(parentTreeDic);
-  // Step 3: Kids array of Document root = all leaf struct elements
+  // Step 3: fill each StructElem — /P points at the real parent, so the
+  // nesting recorded by BeginStructContent survives into the tag tree
+  for i := 0 to fStructElems.Count - 1 do
+  begin
+    elem := TPdfStructElement(fStructElems[i]);
+    elem.Dic.AddItem('Type', 'StructElem');
+    elem.Dic.AddItem('S', PDF_STRUCT_ROLE[elem.Role]);
+    if elem.Parent = nil then
+      elem.Dic.AddItem('P', docDic)
+    else
+      elem.Dic.AddItem('P', elem.Parent.Dic);
+    if cardinal(elem.PageIndex) < cardinal(fRawPages.Count) then
+    begin
+      page := TPdfPage(fRawPages.List[elem.PageIndex]);
+      elem.Dic.AddItem('Pg', page);
+    end;
+    if not PDF_STRUCT_CONTAINER[elem.Role] then
+    begin
+      mcr := TPdfDictionary.Create(fXRef);
+      mcr.AddItem('Type', 'MCR');
+      mcr.AddItem('MCID', elem.MCID);
+      elem.Dic.AddItem('K', mcr);
+    end;
+  end;
+  // Step 4: /K of the Document root = the top-level elements, in order
   kidsArr := TPdfArray.Create(fXRef);
   for i := 0 to fStructElems.Count - 1 do
-    kidsArr.AddItem(elemDics[i]);
-  // Step 4: write Document root StructElem
+  begin
+    elem := TPdfStructElement(fStructElems[i]);
+    if elem.Parent = nil then
+    begin
+      kidsArr.AddItem(elem.Dic);
+      WriteKids(elem);
+    end;
+  end;
   docDic.AddItem('Type', 'StructElem');
   docDic.AddItem('S', 'Document');
   docDic.AddItem('P', fStructTree);
   docDic.AddItem('K', kidsArr);
-  // Step 5: write each leaf StructElem with inline MCR
-  for i := 0 to fStructElems.Count - 1 do
-  begin
-    elem := TPdfStructElement(fStructElems[i]);
-    page := TPdfPage(fRawPages.List[elem.PageIndex]);
-    mcr := TPdfDictionary.Create(fXRef);
-    mcr.AddItem('Type', 'MCR');
-    mcr.AddItem('MCID', elem.MCID);
-    elemDics[i].AddItem('Type', 'StructElem');
-    elemDics[i].AddItem('S', PDF_STRUCT_ROLE[elem.Role]);
-    elemDics[i].AddItem('P', docDic);
-    elemDics[i].AddItem('Pg', page);
-    elemDics[i].AddItem('K', mcr);
-  end;
-  // Step 6: build ParentTree /Nums array (pageIdx -> array-of-StructElem-refs)
+  // Step 5: build ParentTree /Nums (pageIdx -> array indexed by MCID)
+  // - only leaf elements own an MCID, so the array index equals the MCID
   maxPage := 0;
   for i := 0 to fStructElems.Count - 1 do
     if TPdfStructElement(fStructElems[i]).PageIndex > maxPage then
@@ -8199,24 +8285,27 @@ begin
   begin
     maxMCID := 0;
     for i := 0 to fStructElems.Count - 1 do
-      if (TPdfStructElement(fStructElems[i]).PageIndex = pageIdx) and
-         (TPdfStructElement(fStructElems[i]).MCID >= maxMCID) then
-        maxMCID := TPdfStructElement(fStructElems[i]).MCID + 1;
+    begin
+      elem := TPdfStructElement(fStructElems[i]);
+      if (elem.PageIndex = pageIdx) and
+         (elem.MCID >= maxMCID) then
+        maxMCID := elem.MCID + 1;
+    end;
     if maxMCID = 0 then
       continue;
     pageArr := TPdfArray.Create(fXRef);
     for mcid := 0 to maxMCID - 1 do
     begin
-      foundIdx := -1;
+      elem := nil;
       for i := 0 to fStructElems.Count - 1 do
         if (TPdfStructElement(fStructElems[i]).PageIndex = pageIdx) and
            (TPdfStructElement(fStructElems[i]).MCID = mcid) then
         begin
-          foundIdx := i;
+          elem := TPdfStructElement(fStructElems[i]);
           break;
         end;
-      if foundIdx >= 0 then
-        pageArr.AddItem(elemDics[foundIdx])
+      if elem <> nil then
+        pageArr.AddItem(elem.Dic)
       else
         pageArr.AddItem(TPdfNull.Create);
     end;
@@ -8224,7 +8313,7 @@ begin
     numsArr.AddItem(pageArr);
   end;
   parentTreeDic.AddItem('Nums', numsArr);
-  // Step 7: fill StructTreeRoot with K, ParentTree, ParentTreeNextKey
+  // Step 6: fill StructTreeRoot with K, ParentTree, ParentTreeNextKey
   fStructTree.AddItem('K', docDic);
   fStructTree.AddItem('ParentTree', parentTreeDic);
   fStructTree.AddItem('ParentTreeNextKey', maxPage + 1);
@@ -10313,13 +10402,21 @@ var
 begin
   if (fContents = nil) or not fDoc.fTagged then
     exit;
-  mcid := fPage.fCurrentMCID;
-  Inc(fPage.fCurrentMCID);
   elem := TPdfStructElement.Create;
   elem.Role := ARole;
   elem.PageIndex := fPage.fStructParents;
-  elem.MCID := mcid;
+  elem.MCID := -1;
   fDoc.fStructElems.Add(elem);
+  // link into the currently open element, so the nesting is preserved
+  if fDoc.fStructStack.Count > 0 then
+    TPdfStructElement(fDoc.fStructStack.List[fDoc.fStructStack.Count - 1]).
+      AddKid(elem);
+  fDoc.fStructStack.Add(elem);
+  if PDF_STRUCT_CONTAINER[ARole] then
+    exit; // a container groups kids only: no marked-content region, no MCID
+  mcid := fPage.fCurrentMCID;
+  Inc(fPage.fCurrentMCID);
+  elem.MCID := mcid;
   fContents.Writer.Add('/').Add(PDF_STRUCT_ROLE[ARole]).
     Add(' <</MCID ').Add(mcid);
   if AAltText <> '' then
@@ -10328,8 +10425,17 @@ begin
 end;
 
 procedure TPdfCanvas.EndStructContent;
+var
+  elem: TPdfStructElement;
 begin
-  if (fContents <> nil) and fDoc.fTagged then
+  if (fContents = nil) or not fDoc.fTagged then
+    exit;
+  if fDoc.fStructStack.Count = 0 then
+    raise EPdfInvalidOperation.Create(
+      'EndStructContent without matching BeginStructContent');
+  elem := TPdfStructElement(fDoc.fStructStack.List[fDoc.fStructStack.Count - 1]);
+  fDoc.fStructStack.Delete(fDoc.fStructStack.Count - 1);
+  if not PDF_STRUCT_CONTAINER[elem.Role] then
     fContents.Writer.Add('EMC'#10);
 end;
 

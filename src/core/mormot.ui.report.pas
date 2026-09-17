@@ -83,7 +83,11 @@ type
     dckEndTable,      // mark end of table
     dckHeading,       // heading (Level 1..6, Title in Text)
     dckBeginTR,       // begin table row (Color<>0 = header row) — for Tagged PDF structure
-    dckEndTR          // end table row — for Tagged PDF structure
+    dckEndTR,         // end table row — for Tagged PDF structure
+    dckBeginList,     // begin list — for Tagged PDF structure (psrL)
+    dckEndList,       // end list — for Tagged PDF structure
+    dckBeginLI,       // begin list item — for Tagged PDF structure (psrLI)
+    dckEndLI          // end list item — for Tagged PDF structure
   );
 
   /// one drawing command (all coordinates in 1/100 mm unless noted)
@@ -227,6 +231,10 @@ type
     fTableRowIndex:    Integer;       // current row number (0-based, for alternating colors)
     fTableSavedHeaders: TStringDynArray; // headers saved for continuation-page repetition
 
+    { --- List state (Tagged PDF L/LI grouping) --- }
+    fInList:           boolean;       // true between dckBeginList and dckEndList
+    fRecordingListItem: boolean;      // true while DrawListItem records its text
+
     { --- Phase 2: 1×1 bitmap for LCL text measurement --- }
     fMeasureBitmap: TBitmap;
 
@@ -287,6 +295,8 @@ type
 
     { --- internal --- }
     procedure AddCommand(const Cmd: TDrawCommand);
+    /// emit dckEndList if a list is still open (no-op otherwise)
+    procedure CloseOpenList;
     procedure UpdatePageDimensions;
     procedure PreviewUpdateLabel;
     procedure PreviewDoPaint(Sender: TObject);
@@ -877,12 +887,29 @@ begin
   fPageHeight := PH - fMarginTop  - fMarginBottom;
 end;
 
+procedure TGDIPages.CloseOpenList;
+var
+  Cmd: TDrawCommand;
+begin
+  if not fInList then
+    exit;
+  fInList := false; // reset first, so AddCommand does not recurse
+  Cmd := Default(TDrawCommand);
+  Cmd.Kind := dckEndList;
+  AddCommand(Cmd);
+end;
+
 procedure TGDIPages.AddCommand(const Cmd: TDrawCommand);
 var
   n: Integer;
 begin
   if fCurrCmds = nil then
     raise Exception.Create('TGDIPages: call NewPage before drawing');
+  { consecutive DrawListItem calls share one list: any other command ends it }
+  if fInList and
+     not fRecordingListItem and
+     not (Cmd.Kind in [dckBeginList, dckEndList, dckBeginLI, dckEndLI]) then
+    CloseOpenList;
   n := Length(fCurrCmds^);
   SetLength(fCurrCmds^, n + 1);
   fCurrCmds^[n] := Cmd;
@@ -961,6 +988,9 @@ end;
 
 procedure TGDIPages.NewPage;
 begin
+  { close an open list on the page it started on, so L/LI never span pages }
+  if not fRecordingListItem then
+    CloseOpenList;
   UpdatePageDimensions;
 
   { === Cache zentrale Seitengeometrie ===}
@@ -984,6 +1014,7 @@ end;
 
 procedure TGDIPages.EndDoc;
 begin
+  CloseOpenList;
   fCurrCmds := nil; // seal: catch stray drawing calls early
 end;
 
@@ -1325,6 +1356,7 @@ procedure TGDIPages.DrawListItem(X, Y: Integer; const AText: string; const APref
 var
   Format: TReportFormat;
   LH: Integer;
+  Cmd: TDrawCommand;
 begin
   SaveLayout;
   Format := GetFormat('LI');
@@ -1333,7 +1365,28 @@ begin
   TextColor := Format.Color;
   if Format.SpaceBefore > 0 then
     MoveToNextLine(Format.SpaceBefore);
-  DrawText(X, Y, APrefix + AText);
+  { Tagged PDF: consecutive items share one psrL, each item gets its own psrLI.
+    The bullet stays inside the item text, so the rendering is unchanged and
+    the item is tagged as psrLBody — psrLbl would need a separate TextOut. }
+  if not fInList then
+  begin
+    Cmd := Default(TDrawCommand);
+    Cmd.Kind := dckBeginList;
+    AddCommand(Cmd);
+    fInList := true;
+  end;
+  fRecordingListItem := true;
+  try
+    Cmd := Default(TDrawCommand);
+    Cmd.Kind := dckBeginLI;
+    AddCommand(Cmd);
+    DrawText(X, Y, APrefix + AText);
+    Cmd := Default(TDrawCommand);
+    Cmd.Kind := dckEndLI;
+    AddCommand(Cmd);
+  finally
+    fRecordingListItem := false;
+  end;
   LH := LineHeightMM;  { Measure with LI-font active }
   RestoreLayout;
   { Advance by line height + format spacing to adapt to font size }
@@ -2036,6 +2089,7 @@ var
   BaseHeight:     Integer;
   InTableRow:     boolean;        // true between dckBeginTR and dckEndTR
   InHeaderRow:    boolean;        // true if current TR is a header row
+  InListItem:     boolean;        // true between dckBeginLI and dckEndLI
 
 
   function SubstitutePlaceholders(const AText: string; PageNum: Integer): string;
@@ -2079,6 +2133,7 @@ begin
 
   InTableRow  := false;
   InHeaderRow := false;
+  InListItem  := false;
 
   ACanvas.Brush.Color := clWhite;
   ACanvas.Brush.Style := bsSolid;
@@ -2113,6 +2168,8 @@ begin
             else
               fActivePdfDoc.BeginStructContent(psrTD);
           end
+          else if InListItem then
+            fActivePdfDoc.BeginStructContent(psrLBody)
           else
             fActivePdfDoc.BeginStructContent(psrP);
         end;
@@ -2202,6 +2259,24 @@ begin
           fActivePdfDoc.EndStructContent;
         InTableRow  := false;
         InHeaderRow := false;
+      end;
+      dckBeginList:
+        if fActivePdfDoc <> nil then
+          fActivePdfDoc.BeginStructContent(psrL);
+      dckEndList:
+        if fActivePdfDoc <> nil then
+          fActivePdfDoc.EndStructContent;
+      dckBeginLI:
+      begin
+        InListItem := true;
+        if fActivePdfDoc <> nil then
+          fActivePdfDoc.BeginStructContent(psrLI);
+      end;
+      dckEndLI:
+      begin
+        if fActivePdfDoc <> nil then
+          fActivePdfDoc.EndStructContent;
+        InListItem := false;
       end;
     end;
   end;
