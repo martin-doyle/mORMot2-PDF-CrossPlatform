@@ -10,8 +10,11 @@ uses
   Classes,
   SysUtils,
   mormot.core.base,
+  Graphics,             // TCanvas.Font
   mormot.core.test,
-  mormot.ui.pdfcanvas;  // TPdfDocumentVcl
+  mormot.pdf.types,     // TPdfStructRole
+  mormot.ui.pdf,        // TPdfCompressionMethod
+  mormot.ui.pdfcanvas;  // TPdfDocumentVcl, TPdfVclCanvas
 
 type
   /// PDF smoke test cases
@@ -21,9 +24,91 @@ type
     procedure TestPdfMetadata;
     procedure TestPdfMultiplePages;
     procedure TestPdfDifferentSizes;
+    procedure TestVclCanvasTextMetrics;
+    procedure TestTaggedAltTextIsPdfString;
   end;
 
 implementation
+
+procedure TPdfSmokeTests.TestTaggedAltTextIsPdfString;
+const
+  // the characters a PDF string literal has to escape
+  ALT = 'Chart (2026): 50% \ up';
+var
+  PDF: TPdfDocumentVcl;
+  Stream: TMemoryStream;
+  s: RawByteString;
+begin
+  Stream := TMemoryStream.Create;
+  try
+    PDF := TPdfDocumentVcl.Create(false, 0, pdfaNone);
+    try
+      PDF.CompressionMethod := cmNone; // so the content stream stays readable
+      PDF.Tagged := true;
+      PDF.DefaultLanguage := 'en';
+      PDF.AddPage;
+      PDF.BeginStructContent(psrFigure, ALT);
+      PDF.VclCanvas.Rectangle(10, 10, 100, 100);
+      PDF.EndStructContent;
+      PDF.SaveToStream(Stream);
+    finally
+      PDF.Free;
+    end;
+    SetLength(s, Stream.Size);
+    Stream.Position := 0;
+    Stream.Read(pointer(s)^, Stream.Size);
+    { /Alt holds a PDF string: without its parenthesis and escaping the
+      marked-content dictionary does not parse - PAC stops with "unexpected
+      token", Acrobat reports a damaged page (ROADMAP B-6) }
+    Check(Pos(RawByteString('/Alt (Chart \(2026\): 50% \\ up)'), s) > 0,
+      'escaped /Alt string in the content stream');
+    Check(Pos(RawByteString('/Alt ' + ALT), s) = 0, 'no bare /Alt text');
+  finally
+    Stream.Free;
+  end;
+end;
+
+procedure TPdfSmokeTests.TestVclCanvasTextMetrics;
+const
+  // Adobe AFM advance widths of Helvetica, in 1000-per-em units
+  W_HELLO = 722 + 556 + 222 + 222 + 556; // 'Hello'
+  W_L     = 222;                         // 'l'
+var
+  PDF: TPdfDocumentVcl;
+  C: TPdfVclCanvas;
+  w10, w20, wl, h10, h20: single;
+begin
+  PDF := TPdfDocumentVcl.Create(false, 0, pdfaNone);
+  try
+    PDF.EmbeddedTTF := false;
+    PDF.StandardFontsReplace := true;
+    PDF.AddPage;
+    C := PDF.VclCanvas as TPdfVclCanvas;
+    C.Font.Name  := 'Helvetica';
+    C.Font.Style := [];
+    C.Font.Size  := 10;
+    w10 := C.TextWidthFrac('Hello');
+    wl  := C.TextWidthFrac('l');
+    h10 := C.TextHeightFrac('Hello');
+    { widths are exact, not quantised to whole screen pixels }
+    CheckSame(C.TextWidthFrac('HelloHello'), 2 * w10, 1e-3, 'fractional width');
+    { the integer TCanvas API now rounds that exact value }
+    Check(C.TextWidth('Hello') = round(w10), 'integer TextWidth');
+    Check(C.TextHeight('Hello') = round(h10), 'integer TextHeight');
+    C.Font.Size := 20;
+    w20 := C.TextWidthFrac('Hello');
+    h20 := C.TextHeightFrac('Hello');
+    { the text is measured with the base-14 AFM tables the PDF viewer will draw
+      with, not with the widgetset's own resolution of 'Helvetica' (ROADMAP
+      B-4) - the ratio cancels the pixels-per-point factor, so it holds on any
+      screen DPI and on every platform }
+    CheckSame(w10 / wl, W_HELLO / W_L, 1e-3, 'AFM width ratio');
+    CheckSame(w20, 2 * w10, 1e-3, 'width scales with the font size');
+    CheckSame(h20, 2 * h10, 1e-3, 'height scales with the font size');
+  finally
+    PDF.Free;
+  end;
+end;
 
 procedure TPdfSmokeTests.TestPdfCreation;
 var

@@ -4,14 +4,15 @@ This document describes all planned improvements with full technical background,
 affected files, implementation steps, and verification criteria.
 
 **Current baseline:** All previously planned features (P1-A … P3, R-1 … R-9) plus
-Steps 1, 2, 3 and 4 (B-1, B-2, B-3, B-5) are implemented. The structure tree is now
+Steps 1, 2, 3, 4 and 5 (B-1, B-2, B-3, B-5, B-4) are implemented. The structure tree is now
 properly nested, with `Table > TR > TH|TD` and `L > LI > LBody` as real
 hierarchy levels; a wrapped paragraph is one `P` instead of one `P` per line —
 across a page break as well; and a sentence with inline styling is one `P` whose
 styled runs are `Span` kids, in reading order. Layout is measured with the PDF
 font engine instead of the LCL, so line breaking and inline advances no longer
-depend on the widgetset. The open work is the remaining set of correctness bugs
-in the tag tree plus font embedding for tagged output.
+depend on the widgetset, and `TPdfVclCanvas` measures text with the same font
+engine, in `single` precision. The open work is font embedding for tagged
+output.
 
 Completed items are archived in [Completed Work](#completed-work) at the end of
 this document.
@@ -68,13 +69,18 @@ Linux run of `pdf_demo`. What that **confirmed**:
   elements, MCID 18–26; even a bare `", "` separator becomes its own
   paragraph~~ — **fixed in Step 3**, reproduced first on a fresh Linux run
   (same nine elements at `Y=365`)
-- B-4: **characters are correct** on Linux — only the `TextWidth`/`TextHeight`
-  bounding boxes are wrong. Cause (a), FreeType fallback, is ruled out
+- ~~B-4: **characters are correct** on Linux — only the `TextWidth`/`TextHeight`
+  bounding boxes are wrong. Cause (a), FreeType fallback, is ruled out~~
+  — **fixed in Step 5**; the boxes were 19–27% too narrow and quantised to
+  0.75pt, reproduced first on a fresh Linux run
 - ~~B-5: Linux fits more text per line than Windows/macOS; inline advances are
   quantised to 0.75pt (1 px @ 96 DPI) and `bold` misses its AFM width by 0.72pt~~
   — **fixed in Step 4**; the `bold` figure is corrected there (the original
   1.71pt used the Helvetica *regular* widths)
 - P-6: every tagged PDF currently produced embeds nothing (`emb=no`, `uni=no`)
+- ~~B-6: `pdf_demo.pdf` page 2 is unparsable — `/Alt` is written as a bare
+  token, so Acrobat reports a damaged page and PAC aborts with "unexpected
+  token"~~ — **fixed in Step 5b**
 
 What is **still not verified** and must be settled during implementation:
 
@@ -722,7 +728,7 @@ B-5. Nothing in the repository called it, so no layout changed; it is now
 
 ---
 
-## Step 5 — B-4: Wrong Text Bounding Boxes in Graphics (Linux/macOS)
+## Step 5 — B-4: Wrong Text Bounding Boxes in Graphics (Linux/macOS) — **DONE (2026-09-17)**
 
 **Effort:** 1–2 days | **Files:** `src/core/mormot.ui.pdfcanvas.pas`,
 `src/platform/unix/mormot.pdf.freetype.pas` | **Demos:** `pdf_demo`,
@@ -827,6 +833,131 @@ pdffonts pdf_demo.pdf   # requested face embedded, no unexpected fallback
   clipping visible in `pdf_demo_linux.pdf` page 2 is gone
 - Boxes are identical across the three platforms (content-stream diff)
 - Digits still render correctly (they already did — guard against regression)
+
+### Result (Step 5)
+
+Implemented on 2026-09-17, built and run on Linux, and **accepted on Linux on
+2026-09-17**. Windows and macOS verification is still outstanding, but as in
+Step 4 the metrics now come from font data alone, with no widgetset value in
+the path, so the three streams are expected to agree by construction.
+
+**Reproduced first, on a fresh Linux build.** Page 2 of `output_crossplat.pdf`,
+before the change — every box width is a multiple of 0.75pt (1 px @ 96 DPI),
+i.e. an integer LCL pixel measurement, and every one of them is too narrow:
+
+| Size | Text | Box width | AFM width | too narrow by |
+|---|---|---|---|---|
+| 10pt | 1 | 4.50 | 5.56 | 19.1% |
+| 16pt | 4 | 6.75 | 8.90 | 24.1% |
+| 22pt | 7 | 9.00 | 12.23 | 26.4% |
+| 26pt | 9 | 10.50 | 14.46 | 27.4% |
+| 28pt | 10 | 24.00 | 31.14 | 22.9% |
+
+`pdffonts` confirms the demo draws with the non-embedded base-14 `/Helvetica`,
+so the viewer places the glyphs with the AFM widths while `TCanvas.TextWidth`
+measured with the widgetset's own resolution of the name — cause (b), as the
+analysis above concluded.
+
+What was built, against the plan above:
+
+| Plan | Implementation |
+|---|---|
+| 1. Measure through the same backend that renders | `TPdfVclCanvas.TextWidthFrac` delegates to `TPdfFontMeasurer`, selected with `Font.Name`, the bold/italic flags and `TPdfDocumentVcl.StandardFontsReplace` — the same rule `TGDIPages.SetupPdfMeasureFont` uses, so both layers resolve the same face. Points are converted to canvas pixels with the canvas' own scale |
+| 2. LCL path as fallback | Kept: when `TPdfFontMeasurer.SetFont` resolves nothing (no platform backend registered), the frac methods return `inherited TextWidth`/`TextHeight` |
+| 3. `TextHeight` from ascender/descender | `TextHeightFrac` is `Font.Size + Descent` of the face. Not `Ascent + Descent`: `TextOutFrac` puts the baseline `Font.Size` below the requested top, so that — not the ascender — is the distance the caller's box has to span above the baseline. Using the ascender would cut descenders off |
+| 4. Thin adapter over B-5's abstraction | No new measurement code: `TPdfFaceMetrics` already exposes `Ascent`/`Descent`, so `mormot.ui.pdf.pas` was not touched at all |
+| — (new) | `TextWidth`, `TextHeight` and `TextExtent` are now overridden and round the exact value, so existing integer callers improve without changing their code; `RectangleFrac(X1, Y1, X2, Y2: single)` was added, because an integer `Rectangle` would snap the measured edge straight back to the 1 px grid |
+
+Page 2 of the regenerated `output_crossplat.pdf` — every box is now exactly the
+AFM advance width, at every size:
+
+| Size | Text | Box width | AFM width |
+|---|---|---|---|
+| 10pt | 1 | 5.56 | 5.56 |
+| 16pt | 4 | 8.90 | 8.90 |
+| 22pt | 7 | 12.23 | 12.23 |
+| 26pt | 9 | 14.46 | 14.46 |
+| 28pt | 10 | 31.14 | 31.14 |
+
+The heights follow the same rule: for the 10pt digit the box runs from 7.50pt
+above the baseline (the `Font.Size` offset `TextOutFrac` uses) to 2.12pt below
+it (Helvetica's descender), enclosing a glyph whose cap height is 7.17pt.
+
+**Regression evidence.** `markdown_demo.pdf` is **byte-identical** to the build
+from the previous commit (content streams diffed after decompression):
+`TGDIPages` measures through `TPdfFontMeasurer` since Step 4 and never asked
+the canvas. All six demos build; `chinese_demo` and `rtl_demo` run unchanged.
+Test suite 128/128 assertions (was 122, +6 from the new guard test
+`TestVclCanvasTextMetrics` in `tests/test_pdf_smoke.pas`, which pins the width
+*ratio* of `'Hello'` to `'l'` to the Adobe AFM ratio — a ratio cancels the
+pixels-per-point factor, so the assertion holds at any screen DPI).
+
+**One caveat for callers.** `RenderPageToCanvas` measures its header and footer
+text with `ACanvas.TextHeight`; on the PDF bridge that value now comes from the
+font metrics instead of the LCL, so a report **with** `HeaderText`/`FooterText`
+set shifts those two lines by a fraction of a line. No demo sets them, hence
+the byte-identical output above.
+
+---
+
+## Step 5b — B-6: `/Alt` Written as a Bare Token — **DONE (2026-09-17)**
+
+**Effort:** < 0.5 day | **Files:** `src/core/mormot.ui.pdf.pas` | **Demos:** `pdf_demo`
+
+### Symptom
+
+Page 2 of `pdf_demo.pdf` fails to open in Acrobat Reader (Windows) and makes
+PAC 26.1.0.0 abort before any check runs:
+
+```
+Stacktrace 1:
+unexpected token (29)
+```
+
+Found while reviewing the Step 5 content stream, reported independently from a
+Windows run. Unrelated to B-4 — the same page was already broken before.
+
+### Cause
+
+`TPdfCanvas.BeginStructContent` wrote the alternative text into the
+marked-content dictionary **unquoted**:
+
+```
+/Figure <</MCID 0 /Alt Vector graphics: rectangles, lines, text bounds>> BDC
+```
+
+`/Alt` holds a PDF string (ISO 32000-1 14.9.3), so the value has to be a
+literal in parenthesis. A parser reads `Vector` as a keyword instead and stops —
+that is PAC's "unexpected token". `AddEscapeText` escapes the characters but
+does not write the delimiters; its other caller, `ShowText`, adds them itself.
+
+Both `ContinueStructContent` and `ResumeStructContent` write `/MCID` only, so
+this was the only inline dictionary string in the unit.
+
+### Result (Step 5b)
+
+```
+/Figure <</MCID 0 /Alt (Vector graphics: rectangles, lines, text bounds)>> BDC
+```
+
+- The value is escaped and parenthesized, following `TPdfTextUtf8`: a WinAnsi
+  literal, or `<FEFF…>` UTF-16BE for text outside WinAnsi — so a non-Latin
+  `/Alt` is no longer written as raw UTF-8 bytes either
+- `AddEscape`, not `AddEscapeContent`: a content stream is encrypted as a whole,
+  and its strings must not be encrypted a second time
+- **Second defect, found while fixing this one:** the `/Alt` never reached the
+  structure tree. The `Figure` `StructElem` was serialized without it, which no
+  screen reader can use and which PDF/UA 7.3 rejects. `TPdfStructElement.AltText`
+  now carries the text and `SerializeStructTree` writes it:
+  `<</Type/StructElem/S/Figure/…/Alt(Vector graphics: …)>>`
+- Guard test `TestTaggedAltTextIsPdfString` in `tests/test_pdf_smoke.pas` pins
+  the escaping of `(`, `)` and `\`; test suite 130/130
+- `pdftotext`/`pdfinfo` parse the regenerated file; `markdown_demo.pdf` is
+  unchanged (it has no figure, hence no `/Alt`)
+
+**Accepted on Linux on 2026-09-17.** Still open for this file: PAC and Acrobat
+have to be re-run on Windows — both for the parse error, which was reported
+from there, and for the PDF/UA checks PAC could never reach before.
 
 ---
 
@@ -963,7 +1094,6 @@ Windows-only (`TPdfDocumentGdi`), not portable. No work planned.
 
 | ID | Item | Effort | Files |
 |---|---|---|---|
-| B-4 | Wrong text bounding boxes in graphics (Linux/macOS) | 1–2 days | mormot.ui.pdfcanvas.pas |
 | P-6 | Font embedding for Tagged PDF | 1–2 days | mormot.ui.pdf.pas, mormot.ui.report.pas |
 | R-10 | Table row pagination | 2–3 days | mormot.ui.report.pas |
 | R-11 | TTC face index | 1 day | mormot.pdf.freetype.pas, mormot.pdf.types.pas |
@@ -979,7 +1109,8 @@ platforms before the next begins — see [Working Method](#working-method).
 | ~~2~~ | ~~B-2~~ | **Done** — one tag per paragraph; multi-MCID leaves and `BlockId` now exist for B-3 |
 | ~~3~~ | ~~B-3~~ | **Done** — one tag per sentence, styled runs as `Span` kids |
 | ~~4~~ | ~~B-5~~ | **Done** — layout now measured with the PDF font engine; `LineHeightFactor` multiplies the font size |
-| 5 | B-4 | Thin adapter over `TPdfFontMeasurer`, the measurement abstraction B-5 built |
+| ~~5~~ | ~~B-4~~ | **Done** — `TextWidthFrac`/`TextHeightFrac` measure with the PDF font engine; a thin adapter over `TPdfFontMeasurer`, as planned |
+| ~~5b~~ | ~~B-6~~ | **Done** — unscheduled: `/Alt` is a PDF string; written bare it broke the page for every parser, and it never reached the `StructElem` |
 | 6 | P-6 | Last: until it lands, PAC reports font-embedding errors on every run |
 
 The remaining R-items are independent and unscheduled.
@@ -1006,6 +1137,8 @@ The remaining R-items are independent and unscheduled.
 | B-1 | Nested struct tags (tables, lists) — see [Result (Step 1)](#result-step-1) | mormot.pdf.types.pas, mormot.ui.pdf.pas, mormot.ui.report.pas |
 | B-2 | One tag per paragraph, not per line — see [Result (Step 2)](#result-step-2) | mormot.ui.pdf.pas, mormot.ui.pdfcanvas.pas, mormot.ui.report.pas |
 | B-5 | Layout measured with the PDF font engine, not the LCL — see [Result (Step 4)](#result-step-4) | mormot.ui.pdf.pas, mormot.ui.pdfcanvas.pas, mormot.ui.report.pas |
+| B-4 | Text bounding boxes measured with the PDF font engine, in `single` — see [Result (Step 5)](#result-step-5) | mormot.ui.pdfcanvas.pas, pdf_demo, tests |
+| B-6 | `/Alt` written as a PDF string, and onto the `StructElem` — see [Result (Step 5b)](#result-step-5b) | mormot.ui.pdf.pas, tests |
 
 Note on R-5/R-6: table and figure tags were *emitted* but landed flat in the
 structure tree; B-1 completed them.

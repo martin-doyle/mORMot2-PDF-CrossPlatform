@@ -70,7 +70,8 @@ type
     fPdfCanvas:  TPdfCanvas;
     fPdfDoc:     TPdfDocumentVcl;
     fScale:      TPdfVclScale;
-    fMeasureDC:  HDC;   // dummy DC so TextWidth/TextHeight work without a widget
+    fMeasureDC:  HDC;   // dummy DC so the LCL fallback works without a widget
+    fMeasurer:   TPdfFontMeasurer; // metrics of the font the PDF really uses
     // cached state for SetFont (expensive) and SetRGBStrokeColor
     fLastPenColor:  TColor;
     fLastPenWidth:  integer;
@@ -89,6 +90,8 @@ type
     procedure SyncBrush;
     /// sync font state to PDF if changed
     procedure SyncFont;
+    /// select the current Font on fMeasurer; false = fall back to the LCL
+    function SetupMeasureFace: boolean;
     /// apply the PDF fill+stroke operation based on current brush/pen
     procedure FillAndStroke;
   protected
@@ -102,7 +105,27 @@ type
     // 0.75 pt (1 px @ 96 DPI) grid; TGDIPages uses this overload to place text
     // at the position it actually computed (ROADMAP B-5)
     procedure TextOutFrac(X, Y: single; const AText: string);
+    /// width of AText in canvas pixels, measured with the font the PDF uses
+    // - TCanvas.TextWidth measures with the widgetset's own resolution of
+    // Font.Name and rounds to whole screen pixels (0.75 pt @ 96 DPI), while
+    // the glyphs are placed with the PDF font metrics: a bounding box derived
+    // from it was up to 27% too narrow, and differed per platform (ROADMAP B-4)
+    // - falls back to the LCL when no PDF face resolves for Font.Name
+    function TextWidthFrac(const AText: string): single;
+    /// height of AText in canvas pixels, measured with the PDF font metrics
+    // - matches where TextOut/TextOutFrac put the baseline, i.e. Font.Size
+    // below the requested top, plus the descender of the current face
+    function TextHeightFrac(const AText: string): single;
+    /// integer TextExtent, rounded from TextWidthFrac/TextHeightFrac
+    // - TCanvas.TextWidth and TextHeight route through this method
+    function TextExtent(const AText: string): TSize; override;
+    function TextWidth(const AText: string): integer; override;
+    function TextHeight(const AText: string): integer; override;
     procedure Rectangle(X1, Y1, X2, Y2: integer); override;
+    /// Rectangle at sub-pixel coordinates
+    // - TCanvas.Rectangle only takes integers, so an edge derived from
+    // TextWidthFrac would be snapped back to the 1 px grid (ROADMAP B-4)
+    procedure RectangleFrac(X1, Y1, X2, Y2: single);
     procedure Ellipse(X1, Y1, X2, Y2: integer); override;
     procedure RoundRect(X1, Y1, X2, Y2, X3, Y3: integer); override;
     procedure FillRect(const ARect: TRect); reintroduce;
@@ -219,6 +242,7 @@ end;
 destructor TPdfVclCanvas.Destroy;
 begin
   Handle := 0;
+  FreeAndNil(fMeasurer);
   if fMeasureDC <> 0 then
   begin
     LCLIntf.DeleteDC(fMeasureDC);
@@ -335,6 +359,63 @@ begin
     pageH - (Y + Font.Size + fScale.OriginY) * fScale.ScaleY, pointer(W));
 end;
 
+function TPdfVclCanvas.SetupMeasureFace: boolean;
+begin
+  if fMeasurer = nil then
+    fMeasurer := TPdfFontMeasurer.Create;
+  { the export flag decides which font the PDF will really use, so it decides
+    which metrics a measurement has to use - same rule as TGDIPages (B-5) }
+  result := fMeasurer.SetFont(StringToUtf8(Font.Name),
+    fsBold in Font.Style, fsItalic in Font.Style, fPdfDoc.StandardFontsReplace);
+end;
+
+function TPdfVclCanvas.TextWidthFrac(const AText: string): single;
+begin
+  if AText = '' then
+    result := 0
+  else if not SetupMeasureFace then
+    // no PDF metrics for this font: the LCL is all there is - inherited
+    // TextExtent, not inherited TextWidth, which would call back into our
+    // TextExtent override and recurse
+    result := inherited TextExtent(AText).cx
+  else
+    // TPdfFontMeasurer works in PDF points, this canvas in screen pixels
+    result := fMeasurer.TextWidth(StringToUtf8(AText), Abs(Font.Size)) /
+      fScale.ScaleX;
+end;
+
+function TPdfVclCanvas.TextHeightFrac(const AText: string): single;
+var
+  descent: single;
+begin
+  if not SetupMeasureFace then
+  begin
+    result := inherited TextExtent(AText).cy; // see TextWidthFrac
+    exit;
+  end;
+  { TextOutFrac puts the baseline Font.Size below the requested top, so the box
+    of that text is Font.Size plus the descender of the face - the ascender is
+    not added, it is already covered by the (larger) Font.Size offset }
+  descent := Abs(fMeasurer.Current.Descent) / 1000 * Abs(Font.Size);
+  result := Abs(Font.Size) + descent / fScale.ScaleX;
+end;
+
+function TPdfVclCanvas.TextExtent(const AText: string): TSize;
+begin
+  result.cx := round(TextWidthFrac(AText));
+  result.cy := round(TextHeightFrac(AText));
+end;
+
+function TPdfVclCanvas.TextWidth(const AText: string): integer;
+begin
+  result := round(TextWidthFrac(AText));
+end;
+
+function TPdfVclCanvas.TextHeight(const AText: string): integer;
+begin
+  result := round(TextHeightFrac(AText));
+end;
+
 // --- Shapes ---
 
 procedure TPdfVclCanvas.Rectangle(X1, Y1, X2, Y2: integer);
@@ -345,6 +426,23 @@ begin
   SyncBrush;
   x := PxToPtX(X1);
   y := PxToPtY(Y2);   // bottom in PDF coords
+  w := (X2 - X1) * fScale.ScaleX;
+  h := (Y2 - Y1) * fScale.ScaleY;
+  fPdfCanvas.Rectangle(x, y, w, h);
+  FillAndStroke;
+end;
+
+procedure TPdfVclCanvas.RectangleFrac(X1, Y1, X2, Y2: single);
+var
+  x, y, w, h, pageH: single;
+begin
+  SyncPen;
+  SyncBrush;
+  pageH := fPdfDoc.DefaultPageHeight;
+  if pageH <= 0 then
+    pageH := 841; // A4 fallback
+  x := (X1 + fScale.OriginX) * fScale.ScaleX;
+  y := pageH - (Y2 + fScale.OriginY) * fScale.ScaleY; // bottom in PDF coords
   w := (X2 - X1) * fScale.ScaleX;
   h := (Y2 - Y1) * fScale.ScaleY;
   fPdfCanvas.Rectangle(x, y, w, h);

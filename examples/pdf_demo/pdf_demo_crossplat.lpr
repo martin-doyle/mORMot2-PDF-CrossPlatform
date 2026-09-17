@@ -39,6 +39,9 @@ var
   Data:      array[0..4, 0..3] of string;
   MyX, MyY:  Integer;
   MyXLoc:    Integer;
+  {$if defined(FPC) or not defined(MSWINDOWS)}
+  VC:        TPdfVclCanvas;  // sub-pixel text metrics (ROADMAP B-4)
+  {$ifend}
   MyString:  String;
   SansFont: String;
   SerifFont: String;
@@ -143,9 +146,18 @@ begin
       MyXLoc   := MyX * 50;
       MyString := IntToStr(MyX);
       C.TextOut(MyXLoc, MyY, MyString);
+      // measure and draw the box in single precision: the integer TCanvas API
+      // would snap both edges back to the 1 px (0.75 pt) grid
+      {$if defined(FPC) or not defined(MSWINDOWS)}
+      VC := TPdfVclCanvas(C);
+      VC.RectangleFrac(MyXLoc, MyY,
+        MyXLoc + VC.TextWidthFrac(MyString),
+        MyY + VC.TextHeightFrac(MyString));
+      {$else}
       C.Rectangle(MyXLoc, MyY,
         MyXLoc + C.TextWidth(MyString),
         MyY + C.TextHeight(MyString));
+      {$ifend}
       C.Font.Size := C.Font.Size + 2;
     end;
     Doc.EndStructContent; // Figure

@@ -369,10 +369,37 @@ Doc.SaveToFile('out.pdf');
 
 `VclCanvas` must be retrieved after each `AddPage` — a new instance is created per page.
 
+### Text Metrics (ROADMAP B-4)
+
+`TextWidth`/`TextHeight`/`TextExtent` are overridden: they measure with
+`TPdfFontMeasurer`, i.e. the face and widths the PDF will really use, and no
+longer with the widgetset's own resolution of `Font.Name`. They still return
+`integer` pixels, so a caller that needs the exact value takes the `single`
+overloads and draws with `RectangleFrac`:
+
+```pascal
+VC := Doc.VclCanvas as TPdfVclCanvas;
+VC.TextOut(X, Y, S);
+VC.RectangleFrac(X, Y, X + VC.TextWidthFrac(S), Y + VC.TextHeightFrac(S));
+```
+
+- widths come from the base-14 AFM tables when `StandardFontsReplace` is set and
+  the name is Helvetica/Times/Courier (or an alias), from the platform backend
+  otherwise — the resolution order of `TPdfCanvas.SetFont`
+- `TextHeightFrac` is `Font.Size + Descent` of the face, because `TextOut` puts
+  the baseline `Font.Size` below the requested top; a box of that height encloses
+  the glyphs including descenders
+- code points outside WinAnsi fall back to the face's default width, so CJK text
+  is not measurable through this path
+- if no PDF face resolves (no platform backend registered), all of them fall back
+  to the LCL
+
 ### Available TCanvas Methods
 
 Text: `TextOut`, `TextWidth`, `TextHeight`
 Shapes: `Rectangle`, `Ellipse`, `RoundRect`, `FillRect`
+Sub-pixel (TPdfVclCanvas only, `single` instead of `integer`):
+`TextOutFrac`, `TextWidthFrac`, `TextHeightFrac`, `RectangleFrac`
 Lines: `MoveTo`, `LineTo`, `Polyline`, `Polygon`
 Images: `Draw`, `StretchDraw`
 Font: `Name`, `Size`, `Style` (fsBold/fsItalic/fsUnderline/fsStrikeOut), `Color`
@@ -431,6 +458,13 @@ Doc.Canvas.EndStructContent;
 ```
 
 `BeginStructContent(ARole, AAltText)` — `AAltText` is optional (default ''); written as `/Alt` for Figure elements. No-op when `Tagged = false`.
+
+`/Alt` is emitted **twice**, and both are PDF strings — a WinAnsi literal in parenthesis, or `<FEFF…>` UTF-16BE outside WinAnsi (ROADMAP B-6):
+
+```
+/Figure <</MCID 0 /Alt (Vector graphics)>> BDC     ← marked-content dictionary
+<</Type/StructElem/S/Figure/…/Alt(Vector graphics)>>  ← the tag tree, PDF/UA 7.3
+```
 
 `LastStructContent` returns the index of the element just opened, and
 `ResumeStructContent(Index, AOpenRegion=true)` reopens that element on the

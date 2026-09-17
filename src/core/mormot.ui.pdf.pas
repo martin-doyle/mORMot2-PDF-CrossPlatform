@@ -8267,6 +8267,9 @@ type
     SeqNext: integer;
     /// true while one of this element's marked-content regions is open
     RegionOpen: boolean;
+    /// alternative text, written as /Alt on the element (PDF/UA needs it on a
+    // Figure); the marked-content region carries its own copy
+    AltText: RawUtf8;
     /// indirect dictionary, assigned in SerializeStructTree
     Dic: TPdfDictionary;
     destructor Destroy; override;
@@ -8422,6 +8425,10 @@ begin
       page := TPdfPage(fRawPages.List[elem.PageIndex]);
       elem.Dic.AddItem('Pg', page);
     end;
+    // PDF/UA 7.3: a Figure without /Alt on its StructElem is an error, and a
+    // screen reader never sees the copy inside the content stream
+    if elem.AltText <> '' then
+      elem.Dic.AddItemTextUtf8('Alt', elem.AltText);
     if (not PDF_STRUCT_CONTAINER[elem.Role]) and
        (elem.Kids = nil) then
       if elem.MCIDCount = 1 then
@@ -10787,11 +10794,13 @@ procedure TPdfCanvas.BeginStructContent(ARole: TPdfStructRole;
 var
   mcid: integer;
   elem: TPdfStructElement;
+  ansi, utf16: RawByteString;
 begin
   if (fContents = nil) or not fDoc.fTagged then
     exit;
   elem := TPdfStructElement.Create;
   elem.Role := ARole;
+  elem.AltText := AAltText;
   elem.PageIndex := fPage.fStructParents;
   fDoc.fStructElems.Add(elem);
   // link into the currently open element, so the nesting is preserved
@@ -10808,7 +10817,26 @@ begin
   fContents.Writer.Add('/').Add(PDF_STRUCT_ROLE[ARole]).
     Add(' <</MCID ').Add(mcid);
   if AAltText <> '' then
-    fContents.Writer.Add(' /Alt ').AddEscapeText(pointer(AAltText), nil);
+  begin
+    // /Alt holds a PDF string, so it needs its parenthesis and its escaping -
+    // a bare text made the marked-content dictionary unparsable (PAC: "unexpected
+    // token", Acrobat: damaged page); same encoding rule as TPdfTextUtf8, but
+    // AddEscape instead of AddEscapeContent: a content stream is encrypted as a
+    // whole, so its strings must not be encrypted a second time
+    fContents.Writer.Add(' /Alt ');
+    if IsWinAnsiU8Bit(pointer(AAltText)) then
+    begin
+      ansi := Utf8ToWinAnsi(AAltText);
+      fContents.Writer.Add('(').
+        AddEscape(pointer(ansi), length(ansi)).Add(')');
+    end
+    else
+    begin
+      utf16 := Utf8DecodeToUnicodeRawByteString(AAltText);
+      fContents.Writer.Add('<FEFF').
+        AddUnicodeHex(pointer(utf16), length(utf16) shr 1).Add('>');
+    end;
+  end;
   fContents.Writer.Add('>> BDC'#10);
 end;
 
