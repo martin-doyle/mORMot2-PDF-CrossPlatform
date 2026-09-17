@@ -3,584 +3,793 @@
 This document describes all planned improvements with full technical background,
 affected files, implementation steps, and verification criteria.
 
-**Current baseline (as of this document):** rtl_demo and chinese_demo work on Windows.
-Fixes A/B/C (ANSI_CHARSET, array bounds, evaluation order) and the VisualToLogical
-loop fix are applied and committed.
+**Current baseline:** All previously planned features (P1-A … P3, R-1 … R-9) are
+implemented. Tagged PDF output is produced, but the structure tree is **flat** —
+the open work is now a set of correctness bugs in the tag tree plus font
+embedding for tagged output.
+
+Completed items are archived in [Completed Work](#completed-work) at the end of
+this document.
+
+### Working Method
+
+**One fix at a time.** Each step below is implemented, then verified on Windows,
+Linux and macOS, and accepted before the next step starts. B-1, B-2 and B-3 all
+modify `BeginStructContent` and the structure tree — bundling them would make a
+PAC error like "unbalanced marked content" unattributable.
+
+**Platform roles.** Development stays on **Linux** (the only system with a working
+`lazbuild` + mORMot2 tree; also the outlier in the B-5 line-breaking comparison,
+so the defect is most visible there). macOS serves as the third verification
+target, not as the development host.
+
+| Role | System |
+|---|---|
+| Development, build, fast iteration | **Linux** |
+| `veraPDF --flavour ua1` | Linux (Java app — `apt install verapdf` or the zip from verapdf.org; the earlier failure was an install issue, not a platform limit) |
+| PAC 2024 + tag-tree inspection | **Windows** (only platform; mandatory) |
+| Third-platform verification per fix | macOS |
+
+**PAC caveats.** For B-1, the traffic-light status is not sufficient — a flat tree
+of individually-valid `Table`/`TR`/`TD` elements can pass while the nesting is
+still broken. Always open PAC's *Logical Structure* view and check the hierarchy.
+And until Step 6 lands, **PAC will report font-embedding errors on every run**;
+that is expected, not a regression.
+
+**Baseline before Step 1.** Capture the current Windows/Linux/macOS output of
+`pdf_demo` and `markdown_demo` as reference files. For Step 4, diff the
+*decompressed content streams* rather than comparing visually — the 0.75 pt
+quantisation is invisible to the eye but obvious in the stream.
+
+**Font parity.** The three systems must resolve comparable faces, or the Step 4
+stream diffs are meaningless. `markdown_demo` asks for Helvetica and Times; on
+Linux these resolve to Nimbus Sans / Nimbus Roman (urw-base35) or Liberation.
+Harmless while base-14 names stay non-embedded — but **from Step 6 on, whatever
+is found locally gets embedded**, so record the font source per platform then.
 
 ---
 
-## Priority 1-A — Fix fonts.md §10b Status
+### Evidence Base and Open Unknowns
 
-**Effort:** 5 minutes | **File:** `.claude/skills/fonts.md`
+The bug analyses below were verified against real output: the committed macOS
+builds (`examples/*/bin/aarch64-darwin/*.pdf`) with their `/ObjStm` streams
+decompressed, plus supplied Windows/Linux/macOS runs of `markdown_demo` and a
+Linux run of `pdf_demo`. What that **confirmed**:
 
-The skill file section §10b still says "Status: Fix not yet applied" even though
-the VisualToLogical loop fix was applied in `src/core/mormot.ui.pdf.pas ~5420`.
+- B-1: the struct tree is flat — all 34 elements parented to one `Document`
+- B-1: containers (`Table`, `TR`) wrongly own an MCID
+- B-1: the `/ParentTree` is keyed per page, not per MCID
+- B-3: one visual line (`Y=447.5`) is split into **nine** top-level `P` elements,
+  MCID 18–26; even a bare `", "` separator becomes its own paragraph
+- B-4: **characters are correct** on Linux — only the `TextWidth`/`TextHeight`
+  bounding boxes are wrong. Cause (a), FreeType fallback, is ruled out
+- B-5: Linux fits more text per line than Windows/macOS; inline advances are
+  quantised to 0.75pt (1 px @ 96 DPI) and `bold` overshoots its AFM width by 1.71pt
+- P-6: every tagged PDF currently produced embeds nothing (`emb=no`, `uni=no`)
 
-**Change:** Update status line in fonts.md §10b from
-`**Status:** Fix not yet applied` to
-`**Status:** APPLIED (src/core/mormot.ui.pdf.pas ~5420)`.
+What is **still not verified** and must be settled during implementation:
 
-**Verification:** No code change; cross-check call-graph.md Path 4c which already
-shows the FIXED comments.
+| Unknown | Needed for | How to settle |
+|---|---|---|
+| Actual signature/body of `BeginStructContent`, `BuildStructTree`, `TPdfStructElem` | B-1, B-2, B-3 | read `src/core/mormot.ui.pdf.pas` (13.5k lines — targeted sections only) |
+| Whether `TDrawCommand` can take new fields without breaking the recording array | B-2, B-3 | read `src/core/mormot.ui.report.pas` (2.7k lines) |
+| How `RenderPageToCanvas` currently chooses a role per command | B-2, B-3 | read `mormot.ui.report.pas` |
+| A wrapped paragraph's MCID pattern (B-2's premise) | B-2 | not yet isolated in a content stream — confirm before coding |
+| Per-platform `FontTextHeight` / `LineHeightMM` values | B-5 | instrument and run on all three platforms |
+
+**Toolchain gap on this machine:** `lazbuild` is not installed and no mORMot2
+source tree was found, so none of the demos can currently be rebuilt or run here;
+only `fpc`, `pdffonts` and `pdfinfo` are available. `qpdf`, `mutool` and `veraPDF`
+are missing. Verification steps that require building must run on a machine with
+Lazarus plus the mORMot2 sources.
 
 ---
 
-## Priority 1-B — CJK on Linux/macOS
+## Step 1 — B-1: Nested Structure Tags (Tables and Lists)
 
-**Effort:** 0.5 day | **Files:** `examples/chinese_demo/chinese_demo.lpr`,
-`src/platform/unix/mormot.pdf.freetype.pas`
+**Effort:** 2–3 days | **Files:** `src/core/mormot.ui.pdf.pas`,
+`src/core/mormot.ui.report.pas` | **Demos:** `pdf_demo`, `markdown_demo`
 
-### Technical Background
+### Symptom
 
-On Linux/macOS the ANSI_CHARSET root cause does not exist:
-- `fCodePage = CP_UTF8` (non-Windows) → `fCharSet = DEFAULT_CHARSET (1)` in
-  `TPdfDocument` constructor (mormot.ui.pdf.pas ~7051–7054)
-- FreeType backend reads the full CMAP via `FT_Load_Sfnt_Table('cmap')` —
-  no GDI charset restriction applies
-- `GetCharABCWidths` uses `FT_Load_Char + FT_GlyphSlot.advance.x` which works
-  for any Unicode code point including all CJK blocks (U+4E00–U+9FFF)
+In `pdf_demo` the table is emitted with correctly nested `BeginStructContent`
+calls (`psrTable` → `psrTR` → `psrTH`/`psrTD`), and `markdown_demo` emits lists
+via `DrawListItem`. In the resulting PDF the structure tree shows all elements as
+**siblings** under `/Document` — `TR` is not a child of `Table`, `TD` is not a
+child of `TR`, and list items have no `L`/`LI`/`LBody` grouping at all.
+Screen readers therefore announce a table as a flat run of cells, and
+PDF/UA validation fails on the table and list rules.
 
-CJK does not require text shaping (no GSUB ligatures) — the direct CMAP lookup
-in `AddUnicodeHexTextNoUniScribe` is sufficient.
+### Root Cause
+
+**Confirmed against real output** — decompressing the `/ObjStm` of
+`examples/pdf_demo/bin/aarch64-darwin/output_crossplat.pdf` (macOS build,
+2026-09-06) shows every element parented to the single `Document` element `50 0 R`:
+
+```
+<</Type/StructElem/S/Table/P 50 0 R/Pg 14 0 R/K<</Type/MCR/MCID 0>>>>
+<</Type/StructElem/S/TR   /P 50 0 R/Pg 14 0 R/K<</Type/MCR/MCID 1>>>>
+<</Type/StructElem/S/TH   /P 50 0 R/Pg 14 0 R/K<</Type/MCR/MCID 2>>>>
+...
+<</Type/StructElem/S/Document/P 6 0 R/K[16 0 R 17 0 R ... 49 0 R]>>
+```
+
+`Table`, `TR`, `TH` and `TD` are all siblings in one flat 34-element `/K` array.
+`TPdfCanvas.BeginStructContent` appends to a flat list and records no parent
+(see `.claude/skills/call-graph.md` Path 10):
+
+```
+mcid := fPage.fStructParents * 1000 + fPage content index
+elem: TPdfStructElem := (Role, PageIndex, MCID)
+fDoc.fStructElems.Add(elem)          <- flat, no parent link
+```
+
+Nesting depth is discarded at the moment the element is created, so it cannot be
+recovered at serialization time. A second consequence: `EndStructContent` writes
+`EMC` unconditionally, so it cannot detect unbalanced Begin/End pairs.
+
+Two further observations from the same file, which change the plan below:
+
+- **Containers already consume an MCID.** `Table` has `/MCID 0` and `TR` has
+  `/MCID 1` although neither draws content. So the MCID sequence is already
+  polluted with empty regions today — step 3 is a real fix, not a precaution.
+- **The `/ParentTree` is keyed by page, not by MCID.** The emitted number tree is
+  `/Nums[0[16 0 R 17 0 R] 1[18 0 R] 2[19 0 R ...]]` — one entry per
+  `/StructParents` page index holding every element of that page in order. That
+  form is only valid because each element has exactly one MCID and they are
+  numbered per page from 0; it breaks as soon as an element owns several MCIDs
+  (Bugfix 2). The rewrite must keep the array index aligned with the MCID value.
+
+Additionally, `TPdfStructRole` has no list roles, so lists cannot be tagged even
+once nesting works.
 
 ### Steps
 
-1. Install a CJK font on the test Linux system:
-   ```bash
-   sudo apt install fonts-noto-cjk          # Debian/Ubuntu
-   sudo dnf install google-noto-sans-cjk-fonts  # Fedora
-   ```
-   On macOS, system fonts include CJK coverage (e.g. PingFang SC, Hiragino).
-
-2. In `chinese_demo.lpr`, set `FontFallBackName` for Linux/macOS:
+1. **Add parent tracking to `TPdfStructElem`** (`mormot.ui.pdf.pas`):
    ```pascal
-   {$ifdef OSWINDOWS}
-   GetReportFonts(true, SansFont, SerifFont, MonoFont);
-   Doc.FontFallBackName := 'Microsoft YaHei';
-   {$else}
-   SansFont := 'Noto Sans CJK SC';
-   Doc.FontFallBackName := 'Noto Sans CJK SC';
-   {$endif}
+   TPdfStructElem = class
+     Role: TPdfStructRole;
+     PageIndex: integer;
+     MCID: integer;           // -1 when the element is a pure container
+     ObjNum: integer;         // assigned in BuildStructTree
+     Parent: TPdfStructElem;
+     Kids: array of TPdfStructElem;
+   end;
    ```
+   A container element (`Table`, `TR`, `L`, `LI`) has **no** MCID of its own — it
+   only has kids. A leaf element (`P`, `H1`, `TD`, `Figure`, `LBody`) carries the
+   MCID of its marked-content region.
 
-3. Build and run the chinese_demo on Linux:
-   ```bash
-   lazbuild examples/chinese_demo/chinese_demo_crossplat.lpi -B
-   ./chinese_demo
+2. **Maintain an open-element stack on the canvas:**
+   ```pascal
+   fStructStack: array of TPdfStructElem;   // in TPdfCanvas or TPdfPage
    ```
+   `BeginStructContent` pushes the new element and links it to the current stack
+   top (or to the `Document` root when the stack is empty);
+   `EndStructContent` pops.
 
-4. Open the generated PDF and verify CJK characters render (no boxes □).
+3. **Emit BDC/EMC only for leaf elements.** A container must not open a
+   marked-content region, otherwise the MCID sequence contains regions with no
+   content. Decide by role, or by whether any content operator was written
+   between Begin and End.
 
-5. If the font is not found at runtime (fallback triggers), check the FreeType
-   backend font search paths in `mormot.pdf.freetype.pas`:
-   - Linux: `/usr/share/fonts/**`, `/usr/local/share/fonts/**`, `~/.fonts/**`
-   - macOS: `/Library/Fonts/**`, `/System/Library/Fonts/**`, `~/Library/Fonts/**`
+4. **Raise on unbalanced nesting.** In `EndStructContent`, if the stack is empty,
+   raise `ESynException` — this turns a silently corrupt tag tree into a build-time
+   error. At `SaveToStreamDirectEnd`, a non-empty stack is likewise an error.
 
-6. Extend `GetReportFonts()` in `mormot.pdf.types.pas` with a CJK font parameter
-   if needed to allow callers to request a CJK-capable font by platform.
+5. **Add list roles to `TPdfStructRole`** (`mormot.pdf.types.pas`):
+   ```pascal
+   psrL, psrLI, psrLbl, psrLBody   // List, ListItem, Label, ListBody
+   ```
+   Append them at the **end** of the enum — `TPdfStructRole(Level)` is used for
+   heading levels 1..6 and `dckBeginTR` logic depends on the existing ordinals.
+
+6. **Tag lists in `TGDIPages`** (`mormot.ui.report.pas`): `DrawListItem` currently
+   emits a single `dckDrawText`. Add `dckBeginList`/`dckEndList` commands
+   (mirroring the existing `dckBeginTR`/`dckEndTR` pattern) so consecutive list
+   items are wrapped in one `psrL`, each item in `psrLI`, the bullet prefix in
+   `psrLbl` and the item text in `psrLBody`.
+
+7. **Rewrite `BuildStructTree`** to walk the tree recursively instead of grouping
+   by page: write each element with `/P` pointing at its parent, `/K` holding
+   either kid references (container) or an MCID entry (leaf), and keep the
+   `/ParentTree` mapping MCID → owning leaf StructElem.
 
 ### Verification
 
 ```bash
-strings chinese_demo.pdf | head -5   # Should show %PDF-
-# Open PDF in viewer — no □ boxes, correct ideographs
+lazbuild examples/pdf_demo/pdf_demo_crossplat.lpi -B && ./examples/pdf_demo/bin/pdf_demo_crossplat
+lazbuild examples/markdown_demo/markdown_demo.lpi -B && ./examples/markdown_demo/bin/markdown_demo
+veraPDF --flavour ua1 pdf_demo.pdf
 ```
+
+- **PAC 2024 → Logical Structure** (not just the traffic light) shows
+  `Table > TR > TH|TD` and `L > LI > Lbl|LBody` as real nesting levels
+- No MCID appears twice, and no MCID region is empty
+- Table announced as a table (with row/column context) by a screen reader
+- Gate: identical tag hierarchy on Windows, Linux and macOS before Step 2
+- Expected until Step 6: PAC still flags non-embedded fonts
 
 ---
 
-## Priority 1-C — PDF Version 1.7 Output ✅ DONE
+## Step 2 — B-2: Tags at Line Breaks
 
-**Status:** APPLIED — `FileFormat` property, `PDF_HEADER` array, PDF/A and Tagged auto-upgrade all implemented.
-`Tagged := true` now raises `FileFormat` to `pdf17` via `SetTagged` setter (mormot.ui.pdf.pas ~8676).
+**Effort:** 1–2 days | **Files:** `src/core/mormot.ui.report.pas`,
+`src/core/mormot.ui.pdf.pas` | **Demos:** `pdf_demo`, `markdown_demo`
 
-**Effort:** 2–3 hours | **Files:** `src/core/mormot.ui.pdf.pas`,
-`src/core/mormot.pdf.types.pas`, `src/core/mormot.ui.report.pas`
+### Symptom
 
-### Technical Background
+Wrapped and multi-line text produces one structure element **per visual line**
+instead of one per logical paragraph. A three-line wrapped paragraph appears in
+the tag tree as three sibling `P` elements, so a screen reader inserts a
+paragraph break at every line break and reading order becomes choppy. The same
+happens where a paragraph is split by a page break: the continuation starts a new
+`P` rather than continuing the existing one.
 
-The `TPdfFileFormat` enum already exists in `mormot.pdf.types.pas`:
-```pascal
-TPdfFileFormat = (pdf13, pdf14, pdf15, pdf16, pdf17);
-```
+### Root Cause
 
-Currently `GeneratePdf15File: boolean` is the only way to request ≥ 1.5 output.
-The PDF header (`%PDF-1.x`) is written in `TPdfDocument.SaveToStream` /
-`TPdfDocument.NewDoc`.
-
-PDF 1.7 = ISO 32000-1 (2008). For documents without transparency, object streams,
-or xref streams, upgrading the header is the only required change for 1.7 output.
-PDF viewers accept 1.7 headers even for documents using only 1.3 features.
+Tagging is driven per draw command, not per logical block. `DrawTextWrapped` and
+the internal wrapping in `DrawText` emit one `dckDrawText` command per output
+line, and `RenderPageToCanvas` wraps each `dckDrawText` in its own
+`BeginStructContent(psrP)`/`EndStructContent` pair. There is no notion of "this
+command continues the previous paragraph".
 
 ### Steps
 
-1. **Add `FileFormat` property to `TPdfDocument`** (`mormot.ui.pdf.pas`):
+1. **Add a logical block id to `TDrawCommand`:**
    ```pascal
-   // In class declaration:
-   fFileFormat: TPdfFileFormat;
-   property FileFormat: TPdfFileFormat read fFileFormat write fFileFormat;
+   BlockId: integer;   // 0 = standalone; >0 = all commands of one logical block
    ```
-   Default value in constructor: `fFileFormat := pdf13`.
+   Assign a fresh id in each public `Draw*` entry point, and copy the **same** id
+   into every line-level command that the wrapping loop generates.
 
-2. **Keep `GeneratePdf15File` as a compatibility alias:**
-   ```pascal
-   function GetGeneratePdf15File: boolean;
-   begin result := fFileFormat >= pdf15; end;
-   procedure SetGeneratePdf15File(Value: boolean);
-   begin if Value then fFileFormat := pdf15; end;
-   property GeneratePdf15File: boolean
-     read GetGeneratePdf15File write SetGeneratePdf15File;
-   ```
+2. **Open a struct element on block change, not per command.** In
+   `RenderPageToCanvas`, track `fLastBlockId`:
+   - `Cmd.BlockId <> fLastBlockId` → `EndStructContent` (if open), then
+     `BeginStructContent` for the new block
+   - same `BlockId` → emit the content only; the marked-content region stays open
 
-3. **Update PDF/A level interaction:** PDF/A 1.x requires PDF 1.4; PDF/A 2.x
-   requires PDF 1.7. In `NewDoc` or `Create`, auto-set minimum FileFormat when
-   a PDF/A level is set:
-   ```pascal
-   if PdfA in [pdfa2A, pdfa2B, pdfa3A, pdfa3B] then
-     if fFileFormat < pdf17 then fFileFormat := pdf17
-   else if PdfA in [pdfa1A, pdfa1B] then
-     if fFileFormat < pdf14 then fFileFormat := pdf14;
-   ```
+   Multiple lines then share one `P` with several MCIDs in its `/K` array — which
+   the ISO 32000-1 §14.7 model explicitly allows.
 
-4. **Update the header write code** (search for `%PDF-1.` in `mormot.ui.pdf.pas`):
-   ```pascal
-   const PDF_VERSION: array[TPdfFileFormat] of RawUtf8 = (
-     '%PDF-1.3', '%PDF-1.4', '%PDF-1.5', '%PDF-1.6', '%PDF-1.7');
-   // Replace the hard-coded header string with:
-   Add(PDF_VERSION[fFileFormat]);
-   ```
+3. **Support multiple MCIDs per element.** This depends on Bugfix 1 step 1: a leaf
+   element needs `MCIDs: TIntegerDynArray` rather than a single `MCID`, and
+   `/ParentTree` must map every one of them to the same StructElem.
 
-5. **Add `ExportPdfFileFormat` to `TGDIPages`** (`mormot.ui.report.pas`):
-   ```pascal
-   property ExportPdfFileFormat: TPdfFileFormat
-     read fExportPdfFileFormat write fExportPdfFileFormat;
-   ```
-   Pass through in `ExportPdfStream`:
-   ```pascal
-   Doc.FileFormat := ExportPdfFileFormat;
-   ```
-   Default: `pdf13` (backward-compatible).
+4. **Handle page-break continuation.** A block whose lines span two pages produces
+   MCIDs on different pages. Per spec a single StructElem may reference content on
+   several pages, but each MCID entry then needs an explicit `/Pg`. Emit
+   `/K [ <</Type/MCR /Pg p1 /MCID n>> <</Type/MCR /Pg p2 /MCID m>> ]` instead of
+   relying on the element-level `/Pg`.
 
-6. **Update demos:** In `pdf_demo` or `report_demo`, add a commented example:
+5. Close any open block at `EndPage`/`AddPage` boundaries so BDC/EMC stay balanced
+   inside each content stream — an EMC may never cross a page.
+
+### Verification
+
+- `markdown_demo` wrapped paragraph → exactly **one** `P` in the tag tree,
+  containing as many MCIDs as it has lines
+- A paragraph split across a page break → one `P` whose `/K` references both pages
+- `veraPDF --flavour ua1` reports no unbalanced marked content
+- PAC → Logical Structure: one `P` node per paragraph, not one per line
+- Acrobat "Read Out Loud" reads the paragraph without pauses at line ends
+- Gate: same paragraph/MCID counts on all three platforms before Step 3
+
+---
+
+## Step 3 — B-3: Tags on Inline Text
+
+**Effort:** 1–2 days | **File:** `src/core/mormot.ui.report.pas` |
+**Demos:** `pdf_demo`, `markdown_demo`
+
+### Symptom
+
+Inline runs — `DrawStrong` (bold), `DrawEm` (italic), `DrawCode` (monospace) —
+each become a separate top-level `P` element even though they are visually part
+of one sentence. A sentence such as `plain **bold** plain` yields three sibling
+`P` elements, so the sentence is read as three paragraphs and the emphasis
+carries no semantics.
+
+### Root Cause
+
+**Confirmed in the content stream.** The macOS `markdown_demo.pdf` emits the
+single sentence *"Inline styles like bold, italic, code and links can be mixed
+inline."* as **nine** separate `P` elements, MCID 18–26:
+
+```
+/P <</MCID 18>> BDC  /F1 11 Tf  BT 42.75  447.5 Td (Inline styles like ) Tj ET EMC
+/P <</MCID 19>> BDC  /F0 11 Tf  BT 123.00 447.5 Td (bold)                Tj ET EMC
+/P <</MCID 20>> BDC  /F1 11 Tf  BT 145.50 447.5 Td (, )                  Tj ET EMC
+/P <</MCID 21>> BDC  /F2 11 Tf  BT 151.50 447.5 Td (italic)              Tj ET EMC
+...
+/P <</MCID 26>> BDC  /F1 11 Tf  BT 247.50 447.5 Td ( can be mixed inline.) Tj ET EMC
+```
+
+All nine share the same baseline `Y=447.5`, so they are provably one visual line,
+yet each is a top-level `P`. Even the bare separator `", "` becomes its own
+paragraph. `psrSpan` — which exists in `TPdfStructRole` — is never emitted.
+
+The coordinate-less inline overloads (`DrawStrong('bold')` etc.) advance X on the
+current line and emit an independent `dckDrawText`. `RenderPageToCanvas` maps
+every `dckDrawText` to `psrP`.
+
+Note this also makes the **`psrSpan` target concrete**: the fix is to keep one `P`
+open for the whole `Y=447.5` run and emit the nine MCIDs into it, with `Span` only
+for the styled sub-runs (`bold`, `italic`, `code`, `links`).
+
+### Steps
+
+1. **Mark inline commands.** Add to `TDrawCommand`:
    ```pascal
-   Doc.FileFormat := pdf17;  // output PDF 1.7 (ISO 32000-1)
+   Inline: boolean;   // true = continues the current line, not a new block
    ```
+   Set it in the no-coordinate `DrawStrong`/`DrawEm`/`DrawCode`/`DrawText`
+   overloads. These already share a line, so they can reuse the `BlockId`
+   introduced in Bugfix 2 — the two fixes are deliberately complementary.
+
+2. **Map inline runs to `psrSpan` inside the enclosing `P`:**
+   ```
+   P
+    ├─ Span (plain)
+    ├─ Span (bold)      <- DrawStrong
+    └─ Span (plain)
+   ```
+   The enclosing `P` opens on the first command of the line and closes when a
+   block-level command or an explicit `MoveToNextLine` arrives.
+
+3. **Keep unstyled inline text untagged where possible.** A `Span` that carries no
+   semantics beyond its parent `P` adds tree noise; emit `Span` only where the run
+   differs in style, and let plain runs contribute their MCID directly to the
+   parent `P`.
+
+4. **Consider richer roles than `Span`** for code: ISO 32000-1 has no `Code` role,
+   so `Span` with `/ActualText` is the correct representation for
+   `DrawCode`. Emphasis may additionally carry `/Alt` where the styling is
+   meaning-bearing.
+
+### Verification
+
+- `markdown_demo` inline section → one `P` per sentence, with `Span` children for
+  the styled runs
+- The nine-element MCID 18–26 run collapses into **one** `P` (see Root Cause)
+- No `P` element contains only a single bold word or a bare `", "`
+- Screen reader reads each sentence as one continuous sentence
+- Gate: same structure on all three platforms before Step 4
+
+---
+
+## Step 4 — B-5: Divergent Line and Inline Spacing Across Platforms
+
+**Effort:** 2–3 days | **Files:** `src/core/mormot.ui.report.pas`,
+`src/core/mormot.ui.pdfcanvas.pas` | **Demo:** `markdown_demo`
+
+### Symptom — Confirmed Across All Three Platforms
+
+The supplied `markdown_demo_windows.pdf`, `markdown_demo_linux.pdf` and
+`markdown_demo_mac.pdf` (4 pages each, same source) show the divergence directly:
+
+| Observation | Windows | Linux | macOS |
+|---|---|---|---|
+| Intro paragraph (p1) wraps after | "structured" | "structured content." (fits) | "structured" |
+| "All headings **become**" (p1) | wraps to line 2 | stays on line 1 | wraps to line 2 |
+| Inline run gaps | wide, uneven (`italic , code   and`) | tight (`italic, code and`) | even (`italic, code and`) |
+| Page-1 content ends at | Custom Format block | Custom Format block | Custom Format block |
+| Page-3 (Compact/Times) intro wraps after | "inline" | "inline" | "inline" |
+
+So **Linux fits more text per line than Windows/macOS**, and the inline gap
+defect is worst on Windows — visible as stray whitespace around `code` and after
+`italic` in `markdown_demo_windows.pdf` page 1 ("`italic , code   and links`"),
+where Linux renders "`italic, code and links`" with no such gaps.
+
+Page count happens to stay at 4 on all three here, so the drift has not yet
+crossed a page boundary in this demo — but the per-line differences are the same
+mechanism that would cause it in a longer document.
+
+**Measured proof of the inline defect** (from the macOS content stream, base-14
+Helvetica, whose AFM widths are authoritative because the viewer draws with them):
+
+| Run | Advance emitted | Nominal AFM width | Error |
+|---|---|---|---|
+| `'Inline styles like '` | 80.25 | 80.08 | +0.17 |
+| `'bold'` (Helv-Bold 11) | 22.50 | 20.79 | **+1.71** |
+| `', '` | 6.00 | 6.12 | −0.12 |
+| `'italic'` | 22.50 | 22.00 | +0.50 |
+
+Every advance is quantised to a multiple of 0.75pt (= 1 px at 96 DPI), and `bold`
+overshoots its true width by 1.71pt. The X positions are therefore **LCL integer
+pixel measurements scaled to points**, not font advances — accumulating visible
+gaps across a nine-run sentence.
+
+### Root Cause
+
+Layout is measured with the **LCL**, but rendered with the **PDF font backend** —
+two different font engines that disagree on metrics.
+
+**Line spacing is pixel-quantised too, and `LineHeightFactor` is not reaching the
+output.** Every baseline delta in the macOS content stream is an exact multiple of
+0.75pt (= 1 px @ 96 DPI). For 11pt body text on page 1 the delta is **14.25pt =
+19 integer pixels**, i.e. a factor of 1.2955 relative to the font size — but the
+demo's page-1 format specifies `LineHeight=1.1`, which should give
+`11 × 1.1 = 12.1pt`. So the advance is not `FontSize × LineHeightFactor` at all;
+it is an LCL pixel height that happens to absorb the platform's own leading, then
+gets multiplied. This is why the three platforms disagree: each widgetset returns
+a different integer pixel height for the same nominal font.
+
+Both affected quantities come from `fMeasureBitmap.Canvas`:
+
+- **Line spacing:** `LineHeightMM` calls `SetupMeasureFont` to sync
+  `fMeasureBitmap.Canvas.Font` to `fFontName`/`fFontSize`/`fFontStyle`, then the
+  per-line advance is `Round(FontTextHeight * LineHeightFactor)`
+  (`.claude/skills/report-engine.md` — Measurement, and R-8 `LineHeightFactor`).
+  `FontTextHeight` is an LCL text height, which is computed by the platform
+  widgetset: GDI on Windows, and the gtk/Qt or Cocoa backend on Linux/macOS.
+  These differ in how they round, and in whether they include internal leading.
+- **Inline advance:** the no-coordinate `DrawText`/`DrawStrong`/`DrawEm`/`DrawCode`
+  overloads advance `CurrentX` by a measured text width from the same LCL canvas,
+  while the glyphs are actually placed using the PDF font's widths.
+
+So the error is not a single wrong constant — the measuring engine and the
+rendering engine are different per platform. This is the **same class of defect
+as B-4 (Step 5)**; this step builds the shared measurement abstraction that
+B-4 then reuses, which is why it runs first.
+
+Note that `CELL_PADDING = 200` (2 mm) and similar constants are platform-neutral
+and are *not* the problem; only the measured components drift.
+
+### Steps
+
+1. **Reproduce and quantify first.** Run `markdown_demo` on all three platforms
+   and dump the measured metrics before changing anything:
+   ```pascal
+   WriteLn('font=', fFontName, ' size=', fFontSize,
+           ' textheight=', FontTextHeight, ' lineheight=', LineHeightMM);
+   ```
+   This shows whether the divergence is a constant factor (a rounding or
+   internal-leading difference, fixable by normalisation) or font-dependent (the
+   platforms resolved different physical faces — then it is a font-resolution
+   problem, though the Linux `pdf_demo` output makes that unlikely).
+
+1b. **Check whether `LineHeightFactor` is applied to the right base.** The measured
+   14.25pt for 11pt/1.1 text suggests the factor multiplies an LCL pixel height
+   rather than the font size. Decide the intended definition and document it —
+   changing the base will change every existing layout, so this is a deliberate
+   behaviour change, not a silent fix.
+
+2. **Measure through the PDF font backend, not the LCL.** Route
+   `FontTextHeight`/text width through `IPdfPlatformFont` metrics
+   (`GetTextMetrics` / `GetOutlineMetrics` / `GetCharABCWidths`, see
+   `.claude/skills/platform-backends.md`) so measurement and rendering use one
+   engine. The backend is already per-platform, but it is the *same* engine that
+   places the glyphs — which is what makes the layout consistent.
+
+3. **Derive line height from font metrics, not a widgetset text height:**
+   ```pascal
+   // ascender + descender + lineGap from the font, in 1000/em units,
+   // scaled by font size — identical on every platform for the same face
+   LineHeight := Round((Ascender + Descender + LineGap) * FontSize / 1000
+                       * LineHeightFactor);
+   ```
+   `TPdfCanvas` already exposes `TextWidth` in PDF points; prefer it over the
+   LCL path.
+
+4. **Keep the LCL path only for the on-screen preview** where no PDF font is
+   active, and make the fallback explicit rather than implicit. The preview may
+   legitimately differ slightly from the PDF; the three *PDF* outputs may not.
+
+5. **Round once, late.** Convert to 1/100 mm at the end of the calculation
+   instead of rounding each intermediate step — per-line rounding is what lets a
+   sub-pixel difference accumulate into a whole extra page.
+
+6. **Guard with a test.** Add a test to `tests/test_report_crossplatform.pas`
+   asserting expected line count and total text block height for a fixed font and
+   string, so a platform metric change is caught rather than discovered visually.
 
 ### Verification
 
 ```bash
-# Build and run any demo, then:
-head -c 10 out.pdf
-# Expected: %PDF-1.7
-
-# Verify file opens cleanly in a PDF viewer
-# Verify GeneratePdf15File still works (backward compat)
+lazbuild examples/markdown_demo/markdown_demo.lpi -B
+# Run on Windows, Linux and macOS, then compare:
+pdfinfo markdown_demo.pdf | grep Pages        # identical page count
+qpdf --qdf --object-streams=disable markdown_demo.pdf - | grep -E "Td|TD|Tj"
 ```
+
+- Same page count and same number of lines per paragraph on all three platforms
+- Baseline deltas are no longer all multiples of 0.75 pt (the 1 px @ 96 DPI
+  quantisation is gone), and 11 pt body text with `LineHeightFactor = 1.1`
+  advances by ~12.1 pt rather than the current 14.25 pt
+- Inline advances match the AFM widths: `'bold'` ≈ 20.79 pt, not 22.50 pt
+- Content-stream diff across the three platforms: `Td` positions agree
+- Preview still renders sensibly (LCL fallback path intact)
+- Gate: accept the deliberate layout change (all reference PDFs are regenerated
+  at this step) before Step 5
 
 ---
 
-## Priority 2-A — HarfBuzz Integration for RTL on Linux/macOS ✅ DONE
+## Step 5 — B-4: Wrong Text Bounding Boxes in Graphics (Linux/macOS)
 
-**Status:** APPLIED — Arabic renders with correct ligatures and cursive connections on Linux/macOS.
+**Effort:** 1–2 days | **Files:** `src/core/mormot.ui.pdfcanvas.pas`,
+`src/platform/unix/mormot.pdf.freetype.pas` | **Demos:** `pdf_demo`,
+`markdown_demo`
 
-**Effort:** 3–5 days | **New file:** `src/platform/unix/mormot.pdf.harfbuzz.pas` |
-**Modified:** `src/core/mormot.pdf.types.pas`, `src/core/mormot.ui.pdf.pas`,
-`src/platform/unix/mormot.pdf.freetype.pas`
+### Symptom — Corrected After Reviewing `pdf_demo_linux.pdf`
 
-### Technical Background
+**The characters are not corrupt.** Page 2 of the supplied `pdf_demo_linux.pdf`
+renders the digits 1–10 correctly as digits — no boxes, no wrong glyphs, no
+missing characters. What is wrong is the **bounding box around each digit**: the
+rectangles are far too narrow and too short, hugging the glyph and clipping it,
+and the mismatch grows with each font-size increment through the loop.
 
-On Windows, Uniscribe (`ScriptItemize` / `ScriptShape`) handles Arabic, Hebrew,
-and all complex scripts. The result path is `AddUnicodeHexTextUniScribe` →
-`AddGlyphs` — this infrastructure already exists and is reusable.
+This **resolves the (a)/(b) question below in favour of (b)** — a measurement
+defect, not a font-resolution defect. The roadmap's earlier "corrupted
+characters" framing was wrong and is kept here only to explain the correction.
 
-On Linux/macOS the equivalent is HarfBuzz:
-- `libharfbuzz.so` (Linux, typically installed alongside FreeType)
-- `libharfbuzz.dylib` (macOS, via `brew install harfbuzz`)
-- HarfBuzz can use an existing `FT_Face` as its font backend directly
-
-The call site in `mormot.ui.pdf.pas` already has the hook:
-```pascal
-if not shaped and (PdfTextShaper <> nil) then
-  shaped := AddUnicodeHexTextHarfBuzz(PW, Len, ttf.WinAnsiFont, NextLine, Canvas);
-```
-`PdfTextShaper` is currently always nil; it needs a registration mechanism.
-
-### Interface Definition (`mormot.pdf.types.pas`)
-
-Add a new interface (alongside the existing three):
-```pascal
-IPdfTextShaper = interface
-  ['{A1B2C3D4-...}']
-  // Shape a run of Unicode text using OpenType GSUB/GPOS rules.
-  // Returns false if shaping fails (caller falls back to NoUniscribe path).
-  // AGlyphs: shaped glyph IDs in visual order
-  // AAdvances: advance widths in 1000/em units (compatible with fUsedWide[].Width)
-  // AClusters: maps each glyph back to source character index (for ToUnicode CMap)
-  function ShapeText(AText: PWideChar; ALen: integer;
-                     AFontHandle: TPdfPlatformFontHandle;
-                     AIsRTL: boolean;
-                     out AGlyphs: TWordDynArray;
-                     out AAdvances: TIntegerDynArray;
-                     out AClusters: TIntegerDynArray): boolean;
-end;
-
-var PdfTextShaper: IPdfTextShaper;  // nil until registered
-```
-
-### HarfBuzz Backend (`mormot.pdf.harfbuzz.pas`)
+The affected block is the digit loop that draws each label together with a
+bounding box derived from `TextWidth`/`TextHeight`:
 
 ```pascal
-unit mormot.pdf.harfbuzz;
-// Registers IPdfTextShaper via HarfBuzz + FreeType backend.
-// Runtime dependency: libharfbuzz.so.0 / libharfbuzz.dylib
-// Load dynamically via dlopen (same pattern as mormot.pdf.freetype.pas).
-
-type
-  THarfBuzzTextShaper = class(TInterfacedObject, IPdfTextShaper)
-  public
-    function ShapeText(AText: PWideChar; ALen: integer;
-                       AFontHandle: TPdfPlatformFontHandle;
-                       AIsRTL: boolean;
-                       out AGlyphs: TWordDynArray;
-                       out AAdvances: TIntegerDynArray;
-                       out AClusters: TIntegerDynArray): boolean;
-  end;
-
-initialization
-  PdfTextShaper := THarfBuzzTextShaper.Create;
-```
-
-Key HarfBuzz API calls needed:
-```c
-hb_font_t* hb_ft_font_create(FT_Face ft_face, NULL);
-hb_buffer_t* hb_buffer_create();
-hb_buffer_add_utf16(buf, text, len, 0, -1);
-hb_buffer_set_direction(buf, HB_DIRECTION_RTL or HB_DIRECTION_LTR);
-hb_buffer_set_script(buf, HB_SCRIPT_ARABIC / HB_SCRIPT_HEBREW / ...);
-hb_shape(font, buf, NULL, 0);
-hb_glyph_info_t*     infos    = hb_buffer_get_glyph_infos(buf, &count);
-hb_glyph_position_t* positions= hb_buffer_get_glyph_positions(buf, &count);
-// infos[i].codepoint = glyph ID; positions[i].x_advance = advance (in HB units)
-```
-
-HarfBuzz advance units: `position.x_advance` is in 64ths of a design unit when
-`hb_ft_font_create` is used. Convert to 1000/em units:
-```pascal
-// FT_Face.units_per_EM is the em square size (e.g. 2048 for most fonts)
-// HarfBuzz x_advance is in 26.6 fixed point of design units / 64
-// Scale: Width_1000 = (x_advance * 1000) div (FT_Face.units_per_EM * 64)
-```
-
-### `AddUnicodeHexTextHarfBuzz` (`mormot.ui.pdf.pas`)
-
-This function should mirror `AddUnicodeHexTextUniScribe` but consume HarfBuzz output:
-
-```pascal
-function TPdfWrite.AddUnicodeHexTextHarfBuzz(PW: PWideChar; WLen: integer;
-  Ttf: TPdfFontTrueType; NextLine: boolean; Canvas: TPdfCanvas): boolean;
-var
-  Glyphs: TWordDynArray;
-  Advances: TIntegerDynArray;
-  Clusters: TIntegerDynArray;
+for MyX := 1 to 10 do
 begin
-  result := false;
-  if (PdfTextShaper = nil) or (Ttf = nil) then exit;
-  if not PdfTextShaper.ShapeText(PW, WLen, Ttf.fHGDI,
-       Canvas.RightToLeftText, Glyphs, Advances, Clusters) then exit;
-  // Register all shaped glyphs via GetAndMarkGlyphAsUsed
-  // (Step 3 for POSIX needs implementing — see below)
-  AddGlyphs(Glyphs, length(Glyphs), Canvas);
-  result := true;
+  MyString := IntToStr(MyX);
+  C.TextOut(MyXLoc, MyY, MyString);
+  C.Rectangle(MyXLoc, MyY,
+    MyXLoc + C.TextWidth(MyString),
+    MyY + C.TextHeight(MyString));
+  C.Font.Size := C.Font.Size + 2;
 end;
 ```
 
-### GetAndMarkGlyphAsUsed Step 3 on POSIX
+### Cause Confirmed: (b) Measurement
 
-Currently Step 3 (`GetCharABCWidthsI` for GSUB-substituted glyph advance widths)
-is `{$ifdef OSWINDOWS}` only. On POSIX, glyphs not found in the CMAP fall back
-to `/DW` (default width), causing incorrect character spacing for shaped Arabic.
+Retained for the record — (a) is now ruled out by the Linux output:
 
-For the HarfBuzz path, the advance widths come directly from HarfBuzz
-(`positions[i].x_advance`). Pass these widths alongside glyph IDs into
-`GetAndMarkGlyphAsUsed` via a new overload or extended parameter:
-```pascal
-procedure GetAndMarkGlyphAsUsedWithWidth(aGlyph: word; aWidth: integer);
+**(a) Wrong glyphs / boxes — a font path problem.** RULED OUT: glyphs are correct. The character codes written to
+the content stream do not resolve through the embedded font's CMAP. Likely where
+the FreeType backend selected a fallback face (DejaVu Sans) while the font
+dictionary still describes the requested face, so code → glyph mapping is
+inconsistent.
+
+**(b) Right glyphs, wrong boxes — a measurement problem.** `TPdfVclCanvas.TextWidth`
+/`TextHeight` delegate to the LCL via `fMeasureDC`. On Linux/macOS that measures
+with the **LCL's** font resolution, while the PDF text is set with the FreeType
+face — so the rectangles do not match the drawn text, which reads as "broken"
+even though the glyphs are correct.
+
+**Evidence so far points to (b).** `pdffonts` on the existing macOS build
+`examples/pdf_demo/bin/aarch64-darwin/output_crossplat.pdf` shows only the
+non-embedded base-14 Type1 faces:
+
 ```
-This avoids the need for `GetCharABCWidthsI` on POSIX entirely.
-
-### Registration in mormot.pdf.freetype.pas
-
-Add to `initialization`:
-```pascal
-{$ifdef UNIX}
-if HarfBuzzAvailable then     // dlopen check
-  PdfTextShaper := THarfBuzzTextShaper.Create;
-{$endif}
+Helvetica-Bold  Type 1  WinAnsi  emb=no sub=no uni=no
+Helvetica       Type 1  WinAnsi  emb=no sub=no uni=no
+Times-Roman     Type 1  WinAnsi  emb=no sub=no uni=no
+Courier         Type 1  WinAnsi  emb=no sub=no uni=no
 ```
-The existing FreeType registration remains; HarfBuzz supplements it for shaping.
+
+No FreeType face is embedded at all, so there is no DejaVu substitution and no
+custom CMAP in play — cause (a) is unlikely for *this* demo. With base-14 fonts
+the glyphs are drawn by the **viewer's** Helvetica, while `TextWidth`/`TextHeight`
+measure with the **LCL's** resolved Helvetica. That is exactly cause (b).
+
+Remaining diagnostic, to confirm before coding:
+```bash
+# Which codes and font are actually used per text run:
+mutool draw -F txt output_crossplat.pdf     # or: qpdf --qdf --object-streams=disable
+pdffonts output_crossplat.pdf
+```
+Note `qpdf`, `mutool` and `veraPDF` are **not installed** on this machine
+(`pdffonts`/`pdfinfo` from poppler are) — install via
+`brew install qpdf mupdf-tools` before relying on the commands above.
+
+### Steps — Measurement Path
+
+Cause (a) is ruled out, so the FreeType-fallback logging work is dropped. Note the
+demo uses **non-embedded base-14 Helvetica**, so the correct reference widths are
+the standard AFM widths — which the PDF viewer uses to draw, and which the LCL
+does *not* reproduce.
+
+1. Make `TextWidth`/`TextHeight` measure through the **same** font backend that
+   renders the text. `TPdfCanvas` already exposes `TextWidth` in PDF points
+   (`.claude/skills/pdf-engine.md`); prefer delegating to it over `fMeasureDC`
+   when a PDF font is active.
+2. Keep the LCL path only as a fallback for when no PDF font is selected yet.
+3. Check `TextHeight` against the FreeType ascender/descender rather than the LCL
+   line height — these differ per platform.
+4. Reuse the measurement abstraction built in **B-5 (Step 4)** rather than adding a
+   second one here. B-5 runs first precisely so this step becomes a thin adapter
+   over `IPdfPlatformFont` instead of a parallel implementation.
 
 ### Verification
 
 ```bash
-lazbuild examples/rtl_demo/rtl_demo_crossplat.lpi -B
-./rtl_demo
-# Open rtl_demo.pdf — Arabic section must show shaped glyphs, not boxes
-# Compare with Windows output: character forms should match
+lazbuild examples/pdf_demo/pdf_demo_crossplat.lpi -B
+# Run on Linux, macOS and Windows; compare page 2 of the three PDFs
+pdffonts pdf_demo.pdf   # requested face embedded, no unexpected fallback
 ```
+
+- Each bounding box encloses its digit correctly at every font size — the
+  clipping visible in `pdf_demo_linux.pdf` page 2 is gone
+- Boxes are identical across the three platforms (content-stream diff)
+- Digits still render correctly (they already did — guard against regression)
 
 ---
 
-## Priority 2-C — Font Zoom in Preview ✅ DONE
+## Step 6 — P-6: Font Embedding for Tagged PDF
 
-**Status:** APPLIED (Commit `505bed0`) — `FontScale` computed in `RenderPageToCanvas`, applied to all text commands.
-
-**Effort:** 0.5–1 day | **File:** `src/core/mormot.ui.report.pas`
+**Effort:** 1–2 days | **Files:** `src/core/mormot.ui.pdf.pas`,
+`src/core/mormot.ui.report.pas` | **Demos:** `pdf_demo`, `markdown_demo`
 
 ### Technical Background
 
-`TGDIPages.RenderPageToCanvas(ACanvas, PageIndex, DestW, DestH, SourceDPI)` scales
-all 1/100mm coordinates to the destination canvas size. However, font sizes are set
-as `ACanvas.Font.Size := <base_size>` (in points), which does not automatically
-scale when `DestW/DestH` differ from the 96-DPI baseline.
+Tagged PDF targets accessibility, and PDF/UA-1 requires that all glyphs be mapped
+back to Unicode — which in practice requires embedded fonts with a correct
+`/ToUnicode` CMap. The two font modes documented in `CLAUDE.md` are today
+independent of `Tagged`:
 
-The scale factor should be: `ScaleY = DestH / (PageHeight_mm * SourceDPI / 25.4)`
+| Mode | Property | Embedding |
+|---|---|---|
+| Type1 | `StandardFontsReplace := True` | none (Helvetica/Times/Courier) |
+| TrueType | `EmbeddedTTF := True` | yes |
+
+With `StandardFontsReplace := True` a tagged document relies on the viewer's
+non-embedded base-14 fonts, which PDF/UA does not permit. `Tagged := true`
+already auto-raises `FileFormat` to `pdf17` via `SetTagged`; embedding should
+follow the same pattern.
+
+**Confirmed against real output.** Both existing macOS builds are tagged
+(`pdfinfo` → `Tagged: yes`) yet embed nothing —
+`output_crossplat.pdf` carries Helvetica/Helvetica-Bold/Times-Roman/Courier and
+`markdown_demo.pdf` carries seven base-14 faces, every one
+`emb=no sub=no uni=no`. So this is not a latent risk: **every tagged PDF the
+project currently produces would fail PDF/UA** on the embedding and
+Unicode-mapping rules. `uni=no` also means text extraction has no reliable
+`/ToUnicode` round-trip, which is why step 2 matters as much as step 1.
 
 ### Steps
 
-1. In `RenderPageToCanvas`, calculate the vertical scale factor once at the start:
+1. **Couple embedding to `Tagged` in `SetTagged`** (`mormot.ui.pdf.pas`):
    ```pascal
-   ScaleFactor := DestH / (fPageHeight * SourceDPI / (25.4 * 100));
+   procedure TPdfDocument.SetTagged(Value: boolean);
+   begin
+     fTagged := Value;
+     if Value then
+     begin
+       if fFileFormat < pdf17 then
+         fFileFormat := pdf17;         // existing behaviour
+       fEmbeddedTtf := true;           // PDF/UA needs embedded fonts
+     end;
+   end;
    ```
+   Do **not** silently clear `StandardFontsReplace` — instead raise
+   `ESynException` if both `Tagged` and `StandardFontsReplace` are set, so the
+   conflict surfaces at development time rather than at validation time.
 
-2. For every `dckDrawText` and `dckHeading` command, apply the scale to Font.Size:
-   ```pascal
-   ACanvas.Font.Size := Round(Cmd.FontSize * ScaleFactor);
-   ```
-   `Cmd.FontSize` is the base font size stored in the `TDrawCommand` record.
+2. **Guarantee `/ToUnicode` for every embedded font.** Verify it is written for
+   both the WinAnsi and the Unicode instance of the dual-instance model
+   (`.claude/skills/fonts.md` §1) — a missing `/ToUnicode` on either makes text
+   unextractable and fails PDF/UA.
 
-3. Test zoom levels in the preview window: 50%, 75%, 100%, 150%, 200%.
-   Verify text scales proportionally to the page area with no clipping or overlap.
+3. **Use whole-TTF embedding while `Tagged` is on.** Subsetting is documented as
+   unreliable for RTL and unsafe for CJK (`fonts.md` §9–10); a subset that drops
+   glyphs also breaks the Unicode round-trip that tagging depends on. Set
+   `EmbeddedWholeTtf := true` when `Tagged` is enabled, and document the file-size
+   trade-off.
 
-### Verification
+4. **Pass it through `TGDIPages`** (`mormot.ui.report.pas`): when
+   `ExportPdfTagged = true`, set embedding on the created `TPdfDocument` so
+   `markdown_demo` inherits it without demo-side changes.
 
-- Open report_demo, zoom to 200%: text and page outline scale together
-- Zoom to 50%: readable, no layout overflow
-
----
-
-## Priority 3 — Tagged PDF (Text-Relevant Structure Tags Only) ✅ DONE
-
-**Effort:** 3–5 days | **Files:** `src/core/mormot.ui.pdf.pas`,
-`src/core/mormot.ui.report.pas`
-
-### Scope
-
-This phase implements accessibility structure tags for text content only.
-Images (Figure), tables (Table/TR/TD), form fields, and artifacts are
-deferred to the "Rest" section.
-
-Required PDF structures (§14 of ISO 32000-1):
-- `/MarkInfo << /Marked true >>` in the document catalog
-- `/StructTreeRoot` with a structure tree
-- `/Lang` in the catalog (e.g. `'en'`, `'de'`)
-- Structure elements (`/StructElem`) for: `H1`–`H6`, `P`, `Span`
-- Marked content identifiers (`/MCID`) in content streams
-- `/ParentTree` number tree: MCID → StructElem (required for conformance)
-
-### New Classes (`mormot.ui.pdf.pas`)
-
-```pascal
-TPdfStructRole = (psrDocument, psrH1, psrH2, psrH3, psrH4, psrH5, psrH6,
-                  psrP, psrSpan);
-
-const PDF_STRUCT_ROLE: array[TPdfStructRole] of RawUtf8 = (
-  'Document', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'P', 'Span');
-
-TPdfStructElement = class
-  Role: TPdfStructRole;
-  PageObjNum: integer;   // PDF object number of the page dictionary
-  MCID: integer;         // marked content identifier on this page
-  ObjNum: integer;       // this StructElem's object number (assigned at save)
-  Parent: TPdfStructElement;
-  Children: array of TPdfStructElement;
-end;
-```
-
-### New Properties (`TPdfDocument`)
-
-```pascal
-property Tagged: boolean read fTagged write fTagged;
-property DefaultLanguage: RawUtf8 read fDefaultLanguage write fDefaultLanguage;
-```
-
-### Content Stream Changes
-
-When `Tagged = true`, every text emission must be wrapped in marked content:
-```
-/P <</MCID 0>> BDC
-BT (Hello) Tj ET
-EMC
-```
-
-New canvas methods:
-```pascal
-procedure TPdfCanvas.BeginStructContent(Role: TPdfStructRole; MCID: integer);
-// Writes: /<Role> <</MCID N>> BDC
-procedure TPdfCanvas.EndStructContent;
-// Writes: EMC
-```
-
-These are separate from `BeginMarkedContent`/`EndMarkedContent` (which are for
-optional content layers / `/OC`).
-
-### MCID Counter
-
-Add `fCurrentMCID: integer` to `TPdfPage`, incremented for each marked content
-region on the page. Reset to 0 on each new page.
-
-### Catalog Additions (`SaveToStream`)
-
-When `Tagged = true`, add to the catalog dictionary before writing:
-```
-/MarkInfo << /Marked true >>
-/Lang (en)
-/StructTreeRoot N 0 R
-```
-
-### StructTreeRoot and ParentTree Serialization
-
-At `SaveToStream`, after all pages are written:
-1. Assign object numbers to all `TPdfStructElement` instances
-2. Write each `TPdfStructElement` as a PDF dictionary:
-   ```
-   N 0 obj
-   << /Type /StructElem /S /H1 /P M 0 R /Pg P 0 R /K << /Type /MCR /MCID 0 >> >>
-   endobj
-   ```
-3. Write the `ParentTree` number tree mapping each MCID to its StructElem object
-4. Write the `StructTreeRoot` pointing to all top-level StructElems and the ParentTree
-
-### TGDIPages Integration (`mormot.ui.report.pas`)
-
-Add property `ExportPdfTagged: boolean` to `TGDIPages`.
-
-In `ExportPdfStream`, when `ExportPdfTagged = true`:
-- Set `Doc.Tagged := true` and `Doc.DefaultLanguage := ExportPdfLanguage`
-- For each command in `RenderPageToCanvas`:
-  - `dckHeading` with level L → `BeginStructContent(TPdfStructRole(L), MCID)`
-  - `dckDrawText` → `BeginStructContent(psrP, MCID)`
-  - Wrap the existing canvas call between Begin/EndStructContent
+5. **Update the demos** to drop any now-redundant manual embedding flags, and note
+   in `docs/DEMOS.md` that tagged export implies embedded fonts.
 
 ### Verification
 
 ```bash
-# Install veraPDF (free, open-source PDF/UA validator):
-# https://verapdf.org
-veraPDF --flavour 1b output.pdf    # Check PDF/A-1b
-veraPDF --flavour ua1 output.pdf   # Check PDF/UA-1
-
-# Minimum expected: MarkInfo present, StructTreeRoot present, no MCID gaps
-# Adobe Acrobat Pro → Tools → Accessibility → Reading Order: shows headings
+lazbuild examples/markdown_demo/markdown_demo.lpi -B && ./examples/markdown_demo/bin/markdown_demo
+pdffonts markdown_demo.pdf
+# Every font: "emb" = yes, "uni" = yes
+veraPDF --flavour ua1 markdown_demo.pdf
 ```
+
+- No non-embedded font in any tagged PDF
+- Copy/paste out of the PDF returns the original text (proves `/ToUnicode`)
+- `Tagged := true` together with `StandardFontsReplace := true` raises a clear error
 
 ---
 
 ## Rest — Remaining Items
 
-These items are planned but have lower priority than the above.
-
-### P2-B — AES Encryption (PDF 1.7)
-
-**Effort:** 1–2 days | **Files:** `src/core/mormot.ui.pdf.pas`
-
-RC4 is deprecated as of PDF 2.0. PDF 1.7 introduced AES-128 (PDF 1.6 technically).
-
-Extend `TPdfEncryptionLevel`:
-```pascal
-TPdfEncryptionLevel = (elNone, elRC4_40, elRC4_128, elAES_128, elAES_256);
-```
-
-Use `mormot.crypt.core` `TAesFast` for AES-CBC stream cipher. The encryption
-dictionary needs `/Filter /Standard /V 4 /R 4` for AES-128, `/V 5 /R 6` for AES-256.
-
-### Cross-Reference Streams (PDF 1.5+)
-
-**Effort:** 2–3 days
-
-Replace the text-format `xref` table with a compressed `/XRef` stream.
-Required for Object Streams. Reduces file size for documents with many objects.
-
-### Object Streams (PDF 1.5+)
-
-**Effort:** 2–3 days
-
-Batch small PDF objects into `/ObjStm` compressed streams. Significant file size
-reduction for documents with many font dictionaries, annotations, or struct elements.
-
-### XMP Metadata (`/Metadata` stream)
-
-**Effort:** 1 day
-
-PDF/UA-1 requires an XMP metadata stream in the catalog. The stream contains
-RDF/XML describing the document (title, author, PDF/UA identifier).
-
-### Table Structure Tags (P3 Extension)
-
-**Effort:** 2 days
-
-Extend P3 to include `/Table /TR /TD /TH` StructElems for tables produced by
-`TGDIPages.BeginTable` / `DrawTableRow` / `EndTable`.
-
-### Figure Tags (Image Accessibility)
-
-**Effort:** 1 day
-
-Wrap `DrawXObject` calls in `/Figure <</MCID N>> BDC ... EMC` and attach a
-`/Alt` string to each Figure StructElem.
-
-### Transparency (`/ExtGState /ca /CA`)
-
-**Effort:** 2 days
-
-Add `TPdfCanvas.SetFillAlpha(value: single)` and `SetStrokeAlpha(value: single)`.
-Requires adding an ExtGState dictionary to the page resources and `/gs0 gs` operator.
-Minimum PDF version 1.4.
-
-### Line Height Configurable
-
-**Effort:** 0.5 day | **File:** `src/core/mormot.ui.report.pas`
-
-The line height multiplier is hardcoded at approximately 1.3 × FontSize. Add:
-```pascal
-property LineHeightFactor: single  // default 1.3
-```
-to `TGDIPages` and apply it in the vertical advance calculation.
+Lower priority than the bugfixes above.
 
 ### Table Row Pagination
 
 **Effort:** 2–3 days | **File:** `src/core/mormot.ui.report.pas`
 
-Currently a table row that is taller than the remaining page space triggers a full
-page break before the row. Allow the row to split across pages: emit partial cell
-content on the current page, continue on the next page.
+A table row taller than the remaining page space currently forces a full page
+break before the row. Allow the row to split: emit partial cell content on the
+current page and continue on the next. Interacts with Bugfix 2 — a split row's
+cells must stay inside one `TR` element referencing both pages.
+
+### TTC Font Collections
+
+**Effort:** 1 day | **Files:** `src/platform/unix/mormot.pdf.freetype.pas`,
+`src/core/mormot.pdf.types.pas`
+
+Only face index 0 of a `.ttc` is reachable because `TPdfFontMap` has no face
+index. Add one so the remaining faces can be selected by name.
+
+### Font Subsetting for RTL and CJK
+
+**Effort:** 3–5 days | **File:** `src/core/mormot.ui.pdf.pas`
+
+`EmbeddedWholeTtf := False` is opt-in and unreliable for RTL (GSUB-substituted
+glyph IDs are not tracked) and unsafe for CJK — see `.claude/skills/fonts.md`
+§9–10. Tracking shaped glyph IDs through the HarfBuzz/Uniscribe path would make
+subsetting safe and remove the file-size cost of Priority 6 step 3.
+
+### RTL Shaper Advance Path — Test Coverage
+
+**Effort:** 0.5 day | **File:** `tests/`
+
+Linux fonts (Noto Naskh Arabic) resolve shaped glyphs through the CMAP, so the
+shaper's own advance path is never exercised. Add a test against a font without
+Arabic presentation forms — see `.claude/skills/fonts.md` §10.
+
+### EMF/MetaFile and GDI+ Gradients
+
+Windows-only (`TPdfDocumentGdi`), not portable. No work planned.
 
 ---
 
 ## Summary Table
 
-| ID | Feature | Effort | Files |
+### Open
+
+| ID | Item | Effort | Files |
 |---|---|---|---|
-| P1-A | Fix fonts.md §10b status | 5 min | .claude/skills/fonts.md |
-| P1-B | CJK on Linux/macOS | 0.5 day | chinese_demo, freetype.pas |
-| P1-C | PDF 1.7 output ✅ | DONE | mormot.ui.pdf.pas, mormot.pdf.types.pas, report.pas |
-| P2-A | HarfBuzz RTL on Linux/macOS ✅ | DONE | harfbuzz.pas (new), types.pas, pdf.pas |
-| P2-C | Font zoom in preview ✅ | DONE | mormot.ui.report.pas |
-| P3 | Tagged PDF (text tags) ✅ | DONE | mormot.ui.pdf.pas, mormot.ui.report.pas |
-| R-1 | AES-128 encryption ✅ | DONE | mormot.ui.pdf.pas (TPdfEncryptionAES128) |
-| R-2 | xref streams ✅ | DONE | mormot.ui.pdf.pas (TPdfTrailer.ToCrossReference, pdf15+) |
-| R-3 | Object streams ✅ | DONE | mormot.ui.pdf.pas (TPdfTrailer.ToCrossReference, pdf15+) |
-| R-4 | XMP metadata ✅ | DONE | mormot.ui.pdf.pas (AddPage lazy setup + SaveToStreamDirectBegin) |
-| R-5 | Table structure tags ✅ | DONE | mormot.ui.pdf.pas, mormot.ui.report.pas (dckBeginTR/EndTR) |
-| R-6 | Figure tags + /Alt ✅ | DONE | mormot.ui.pdf.pas (BeginStructContent AAltText), report.pas |
-| R-7 | Transparency ✅ | DONE | mormot.ui.pdf.pas (SetFillAlpha/SetStrokeAlpha + ExtGState) |
-| R-8 | Line height property ✅ | DONE | mormot.ui.report.pas (LineHeightFactor property) |
-| R-9 | Table header repeat ✅ | DONE | mormot.ui.report.pas (fTableSavedHeaders, auto-repeat on page break) |
+| B-1 | Nested struct tags (tables, lists) | 2–3 days | mormot.ui.pdf.pas, mormot.ui.report.pas |
+| B-2 | Tags at line breaks | 1–2 days | mormot.ui.report.pas, mormot.ui.pdf.pas |
+| B-3 | Tags on inline text | 1–2 days | mormot.ui.report.pas |
+| B-4 | Wrong text bounding boxes in graphics (Linux/macOS) | 1–2 days | mormot.ui.pdfcanvas.pas |
+| B-5 | Divergent line/inline spacing across platforms | 2–3 days | mormot.ui.report.pas, mormot.ui.pdfcanvas.pas |
+| P-6 | Font embedding for Tagged PDF | 1–2 days | mormot.ui.pdf.pas, mormot.ui.report.pas |
+| R-10 | Table row pagination | 2–3 days | mormot.ui.report.pas |
+| R-11 | TTC face index | 1 day | mormot.pdf.freetype.pas, mormot.pdf.types.pas |
+| R-12 | Subsetting for RTL/CJK | 3–5 days | mormot.ui.pdf.pas |
+| R-13 | RTL shaper advance test | 0.5 day | tests/ |
+
+**Execution order** (agreed): one fix at a time, each verified on all three
+platforms before the next begins — see [Working Method](#working-method).
+
+| Step | ID | Rationale for this position |
+|---|---|---|
+| 1 | B-1 | Builds the element tree and multi-MCID support that B-2 and B-3 need |
+| 2 | B-2 | Needs B-1's tree; introduces multi-MCID leaves |
+| 3 | B-3 | Needs B-1's tree; reuses B-2's `BlockId` |
+| 4 | B-5 | **Before B-4**: decides what `LineHeightFactor` multiplies, which changes every existing layout and would invalidate any B-4 verification done earlier |
+| 5 | B-4 | Thin adapter over the measurement abstraction B-5 builds |
+| 6 | P-6 | Last: until it lands, PAC reports font-embedding errors on every run |
+
+The remaining R-items are independent and unscheduled.
+
+### Completed Work
+
+| ID | Feature | Files |
+|---|---|---|
+| P1-A | fonts.md §10b status corrected | .claude/skills/fonts.md |
+| P1-B | CJK on Linux/macOS (per-platform `CJK_FONT`) | chinese_demo, freetype.pas |
+| P1-C | PDF 1.7 output (`FileFormat`, PDF/A + Tagged auto-upgrade) | mormot.ui.pdf.pas, mormot.pdf.types.pas, report.pas |
+| P2-A | HarfBuzz RTL shaping on Linux/macOS | harfbuzz.pas (new), types.pas, pdf.pas |
+| P2-C | Font zoom in preview (`FontScale`) | mormot.ui.report.pas |
+| P3 | Tagged PDF — text structure tags | mormot.ui.pdf.pas, mormot.ui.report.pas |
+| R-1 | AES-128 encryption (`TPdfEncryptionAES128`) | mormot.ui.pdf.pas |
+| R-2 | Cross-reference streams (pdf15+) | mormot.ui.pdf.pas |
+| R-3 | Object streams (pdf15+) | mormot.ui.pdf.pas |
+| R-4 | XMP metadata | mormot.ui.pdf.pas |
+| R-5 | Table structure tags (`dckBeginTR`/`dckEndTR`) | mormot.ui.pdf.pas, mormot.ui.report.pas |
+| R-6 | Figure tags + `/Alt` | mormot.ui.pdf.pas, report.pas |
+| R-7 | Transparency (`SetFillAlpha`/`SetStrokeAlpha`) | mormot.ui.pdf.pas |
+| R-8 | `LineHeightFactor` property | mormot.ui.report.pas |
+| R-9 | Table header repeat on page break | mormot.ui.report.pas |
+
+Note on R-5/R-6: table and figure tags are *emitted* but land flat in the
+structure tree — B-1 completes them.
