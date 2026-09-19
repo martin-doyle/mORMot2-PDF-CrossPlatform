@@ -15,8 +15,9 @@ engine, in `single` precision. Tagged output now selects the PDF/UA font mode
 itself — embedded TrueType, whole face, with a `/ToUnicode` CMap on the WinAnsi
 instance — and refuses to be switched on after the layout has been measured.
 The first PAC 2024 run on Windows then reported five PDF/UA errors in the
-Linux-built `markdown_demo.pdf` — B-7 … B-11, now **Priority 1** (see
-[Priority 1 — PAC 2024 Findings](#priority-1--pac-2024-findings-b-7--b-11)).
+Linux-built `markdown_demo.pdf` — B-7 … B-11, now fixed and green in PAC — plus
+B-12 in `pdf_demo`, which is still open, all **Priority 1** (see
+[Priority 1 — PAC 2024 Findings](#priority-1--pac-2024-findings-b-7--b-12--b-7--b-11-done-2026-09-19-b-12-open)).
 After them come the R-items.
 
 Completed items are archived in [Completed Work](#completed-work) at the end of
@@ -1159,7 +1160,7 @@ requires.
 
 ---
 
-## Priority 1 — PAC 2024 Findings (B-7 … B-11)
+## Priority 1 — PAC 2024 Findings (B-7 … B-12) — B-7 … B-11 **DONE (2026-09-19)**, B-12 open
 
 **Reported 2026-09-19.** First PAC 2024 run on Windows against the
 **Linux-built** `markdown_demo.pdf` after Step 6 — the run the Working Method
@@ -1174,6 +1175,7 @@ every R-item.
 | B-9 | Path object not tagged | Page content streams |
 | B-10 | Title missing in document's XMP metadata | XMP metadata stream (+ `/Info`) |
 | B-11 | Table header cell has no associated subcells | Struct tree, `TH` elements |
+| B-12 | Operator 'RG' not allowed in this current state (`pdf_demo`, found by the run after Step 10) | `TPdfVclCanvas` line drawing |
 
 **Evidence.** Each finding was reproduced in
 `examples/markdown_demo/bin/aarch64-linux/markdown_demo.pdf` (2026-09-19 10:06,
@@ -1364,6 +1366,125 @@ Windows** against the Linux-built file — the reported error has to disappear
 and no new one may appear — and a third run on macOS. After Step 10,
 `markdown_demo.pdf` should pass PAC with no errors.
 
+### Result (Steps 7–10)
+
+Implemented together on request rather than one step at a time, so a single PAC
+run covers all four. Each fix touches its own code, so a new PAC finding can
+still be traced to one B-ID.
+
+**Causes confirmed from the source.**
+
+- **B-8/B-10:** the Tagged XMP packet was written in `SaveToStreamDirectBegin`,
+  but `fMetaData` is only created on the first tagged `AddPage`.
+  `TGDIPages.ExportPdfStream` streams page by page and calls `Begin` first, so
+  the packet was skipped, and the first page flush then wrote the stream empty.
+  `pdf_demo` (`SaveToStream`, pages before `Begin`) was never affected.
+- **B-7:** the enum had no `DisplayDocTitle`. Also,
+  `TPdfCatalog.GetViewerPreference` read the misspelt key `ViewerPreference`,
+  so it always returned `[]`.
+
+| Change | Location |
+|---|---|
+| New method `WriteTaggedMetadata`, called in `SaveToStreamDirectEnd` after `SerializeStructTree`. The stream is `fSaveAtTheEnd`, so no page flush can write it early | `mormot.ui.pdf.pas` |
+| `pdfuaid:part` is also added to the PDF/A packet when the document is tagged | `mormot.ui.pdf.pas` |
+| `/Info` fields go into XMP escaped (`XmpText`): a title like `R&D` used to make the packet unparsable | `mormot.ui.pdf.pas` |
+| Tagged export with an empty `Title`: the first H1 becomes the title | `mormot.ui.report.pas` `ExportPdfStream` |
+| `vpDisplayDocTitle` appended to `TPdfViewerPreference`. A tagged document sets it on the first `AddPage`. Getter key fixed | `mormot.ui.pdf.pas` |
+| Every `TH` gets `/A <</O/Table/Scope/Column>>` | `mormot.ui.pdf.pas` `SerializeStructTree` |
+| Repeated header row: recorded as `dckBeginTR` with `Color = 2`, rendered inside `BeginArtifact`/`EndArtifact` with no struct elements | `mormot.ui.report.pas` |
+| Path construction operators (`m l c v y re`) open `/Artifact BMC` when tagged and no region is open. Painting operators and `n` close it. `Do` outside a region is handled the same way. `SetPage` closes a path left open | `mormot.ui.pdf.pas` `TPdfCanvas` |
+| Public `BeginArtifact`/`EndArtifact` (raise on misuse), delegated by `TPdfDocumentVcl` | `mormot.ui.pdf.pas`, `mormot.ui.pdfcanvas.pas` |
+| Running page header and footer are rendered as artifacts | `mormot.ui.report.pas` |
+| `TestTaggedStreamedMetadata`, `TestTaggedDecorationIsArtifact`, `TestTaggedArtifactMisuseRaises`, `TestTaggedRepeatedHeaderAndTitle` | `tests/` |
+
+**Measured on Linux (`markdown_demo_linux_fix7.pdf`).**
+
+| Check | Before | After |
+|---|---|---|
+| Catalog `/ViewerPreferences` | missing | `<</DisplayDocTitle true>>` |
+| XMP stream | `Length 0` | 977 bytes, `pdfuaid:part` = 1 |
+| `dc:title` / `/Info /Title` | missing / `()` | `Markdown-Style Formatting Demo` (from the H1) |
+| `TH` with `/Scope` | 0 of 8 | 8 of 8 |
+| Path operators outside marked content | 336 on 2 pages | 0; 336 `/Artifact` sequences |
+| BDC/BMC/EMC balance per page | balanced | balanced |
+
+`pdf_demo` also passes all five checks (4 `TH`; the figure's paths stay inside
+`/Figure`). Full test suite: 150/150 assertions.
+
+The repeated-header path is covered by a test only: `markdown_demo`'s tables do
+not paginate.
+
+**PAC 2024 on Windows, 2026-09-19:** `markdown_demo_linux_fix7.pdf` passes with
+no errors. `pdf_demo_linux_fix7.pdf` shows none of B-7 … B-11 but reports one
+older defect, now B-12 (Step 11). **Still open:** macOS.
+
+---
+
+### Step 11 — B-12: Graphics State Operators Inside a Path Object — **Priority 1**
+
+**Effort:** 0.5 day | **File:** `src/core/mormot.ui.pdfcanvas.pas`, possibly
+`src/core/mormot.ui.report.pas` | **Demo:** `pdf_demo`
+
+#### Symptom
+
+PAC 2024 on `pdf_demo_linux_fix7.pdf`: *"Operator 'RG' not allowed in this
+current state"*. The three sample lines on page 2 are written as:
+
+```
+30 722 m
+0 0 0 RG      <- stroke colour between m and l
+0.75 w        <- line width, same place
+412.5 722 l
+S
+```
+
+ISO 32000-1 §8.2 (Figure 9) allows only path construction operators between `m`
+and the painting operator. `RG` and `w` are graphics state operators and must
+come before the `m`.
+
+**This is not a regression from Steps 7–10.** `pdf_demo_linux_fix5.pdf` and
+`_fix6.pdf` contain exactly the same sequence. PAC never reported it before:
+until B-6 it stopped at the parse error on this page, and afterwards it had not
+been run against `pdf_demo` again.
+
+#### Cause (confirmed from the source)
+
+`TPdfVclCanvas.DoMoveTo` calls `SyncPen` and writes `m` straight away.
+`DoLineTo` calls `SyncPen` **again** before its `l`. `SyncPen` only skips the
+output when `fStateValid` is true, and only `SyncFont` sets that flag. So
+before the first text on a page, every `SyncPen` writes `RG` + `w`, and it
+lands inside the open path. Even with `fStateValid` set, a `Pen` change between
+`MoveTo` and `LineTo` would do the same.
+
+There is a second defect in the same pair. `DoLineTo` strokes at once (`S`), so
+the path is finished after the first `LineTo`. For a `MoveTo` followed by
+several `LineTo` calls (the `TCanvas` idiom for a connected line), every
+further `l` has no current point, which is invalid as well. `pdf_demo` does not
+do this (each `LineTo` has its own `MoveTo`), but `TGDIPages` `dckDrawLine`
+uses the same pair.
+
+#### Steps
+
+1. `DoMoveTo` stops writing to the PDF. `TCanvas` already keeps `PenPos`.
+2. `DoLineTo` writes the whole path object in the legal order: `SyncPen`, then
+   `m` from the current pen position, `l` to the target, `S`. Each `LineTo` is
+   then one complete path object, which also fixes the chained case. Settle
+   first whether LCL's `TCanvas.LineTo` updates `PenPos` before or after calling
+   `DoLineTo`.
+3. Check the other shape methods (`Rectangle`, `Ellipse`, `RoundRect`,
+   `Polyline`, `Polygon`, `FillAndStroke`): all of them sync pen and brush
+   before the first construction operator. Confirm that no painting helper
+   writes state operators in between.
+4. Test: from a tagged and an untagged document, no graphics state operator
+   (`RG rg G g K k w J j M d gs cs CS`) appears between a path construction
+   operator and the painting operator that ends it; a chained
+   `MoveTo`/`LineTo`/`LineTo` writes an `m` before each `l`.
+
+#### Verification
+
+Rebuild `pdf_demo`, then run PAC 2024 on Windows: no *"not allowed in this
+current state"* finding. `markdown_demo` has to stay green.
+
 ---
 
 ## Rest — Remaining Items
@@ -1487,11 +1608,12 @@ Windows-only (`TPdfDocumentGdi`), not portable. No work planned.
 
 | ID | Item | Prio | Effort | Files |
 |---|---|---|---|---|
-| B-7 | `DisplayDocTitle` not set (PAC) | **1** | 0.5 day | mormot.ui.pdf.pas |
-| B-8 | PDF/UA identifier missing — XMP stream empty (PAC) | **1** | 0.5–1 day (with B-10) | mormot.ui.pdf.pas |
-| B-9 | Path objects not tagged — table cell graphics (PAC) | **1** | 1–2 days | mormot.ui.pdf.pas, mormot.ui.pdfcanvas.pas, mormot.ui.report.pas |
-| B-10 | Title missing in XMP metadata (PAC) | **1** | with B-8 | mormot.ui.pdf.pas, mormot.ui.report.pas, demos |
-| B-11 | Table header cells without associated cells — no `/Scope` (PAC) | **1** | 0.5–1 day | mormot.ui.pdf.pas, mormot.ui.report.pas |
+| B-7 | `DisplayDocTitle` not set (PAC) — fixed, PAC green on Windows | **1** | 0.5 day | mormot.ui.pdf.pas |
+| B-8 | PDF/UA identifier missing — XMP stream empty (PAC) — fixed, PAC green on Windows | **1** | 0.5–1 day (with B-10) | mormot.ui.pdf.pas |
+| B-9 | Path objects not tagged — table cell graphics (PAC) — fixed, PAC green on Windows | **1** | 1–2 days | mormot.ui.pdf.pas, mormot.ui.pdfcanvas.pas, mormot.ui.report.pas |
+| B-10 | Title missing in XMP metadata (PAC) — fixed, PAC green on Windows | **1** | with B-8 | mormot.ui.pdf.pas, mormot.ui.report.pas |
+| B-11 | Table header cells without associated cells — no `/Scope` (PAC) — fixed, PAC green on Windows | **1** | 0.5–1 day | mormot.ui.pdf.pas, mormot.ui.report.pas |
+| B-12 | `RG`/`w` inside a path object: `TPdfVclCanvas.DoMoveTo`/`DoLineTo` (PAC, `pdf_demo`) | **1** | 0.5 day | mormot.ui.pdfcanvas.pas |
 | R-10 | Table row pagination | — | 2–3 days | mormot.ui.report.pas |
 | R-11 | TTC face index | — | 1 day | mormot.pdf.freetype.pas, mormot.pdf.types.pas |
 | R-12 | Font subsetting on POSIX via hb-subset (88% smaller PDFs; also fixes RTL) | **3** | 2–3 days | new mormot.pdf.hbsubset.pas, mormot.pdf.types.pas, mormot.ui.pdf.pas |
@@ -1516,8 +1638,9 @@ platforms before the next begins — see [Working Method](#working-method).
 | 8 | B-7 | Trivial, but only meaningful once a title exists |
 | 9 | B-11 | Struct-tree attributes only; no change to content streams |
 | 10 | B-9 | Last: touches the same `BDC`/`EMC` code as B-1 … B-3 |
+| 11 | B-12 | Found by the PAC run after Step 10; older than B-7 … B-11 |
 
-The remaining R-items are independent and unscheduled; they follow Step 10.
+The remaining R-items are independent and unscheduled; they follow Step 11.
 
 ### Completed Work
 
