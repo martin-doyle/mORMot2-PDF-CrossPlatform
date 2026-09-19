@@ -1677,6 +1677,13 @@ index. Add one so the remaining faces can be selected by name.
 **Effort:** 2–3 days | **Files:** new `src/platform/unix/mormot.pdf.hbsubset.pas`,
 `src/core/mormot.pdf.types.pas`, `src/core/mormot.ui.pdf.pas`
 
+> **Step-by-step plan:** [R12_PLAN.md](R12_PLAN.md), on branch
+> `feature/r12-posix-subset`. It corrects three points below: tagged documents
+> force the whole face, so the 88% figure needs a separate decision (F-1). The
+> `hb_face`/`hb_blob`/`hb_set` symbols live in `libharfbuzz.so.0`, not in the
+> subset library (F-2). And the input must be the union of the glyph set and the
+> unicode set, not the glyph set alone (F-4).
+
 **Revised 2026-09-19.** The original entry assumed subsetting existed on all
 platforms and only needed shaped glyph IDs tracked through it. It does not: the
 subsetting branch in `PrepareForSaving` sits inside `{$ifdef USE_UNISCRIBE}`,
