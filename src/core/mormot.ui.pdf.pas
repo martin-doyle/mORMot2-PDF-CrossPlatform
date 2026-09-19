@@ -6863,6 +6863,8 @@ begin
 end;
 
 function TPdfFontTrueType.GetWideCharWidth(aWideChar: WideChar): integer;
+var
+  i: integer;
 begin
   if fUnicode then
   begin // we need fUsedWide[] to be the used glyphs
@@ -6877,7 +6879,12 @@ begin
     else
       result := fDefaultWidth
   else
-    result := fUsedWide[FindOrAddUsedWideChar(aWideChar)].Width;
+  begin
+    // FindOrAddUsedWideChar may reallocate fUsedWide[]: call it before
+    // indexing, or the array address is read first and becomes stale
+    i := FindOrAddUsedWideChar(aWideChar);
+    result := fUsedWide[i].Width;
+  end;
 end;
 
 type
