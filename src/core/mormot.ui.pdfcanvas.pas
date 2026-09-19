@@ -481,13 +481,19 @@ end;
 
 procedure TPdfVclCanvas.DoMoveTo(X, Y: integer);
 begin
-  SyncPen;
-  fPdfCanvas.MoveTo(PxToPtX(X), PxToPtY(Y));
+  // nothing to write: TFPCustomCanvas.MoveTo already stores PenPos, and an
+  // 'm' written here would open a path which the pen settings of the next
+  // LineTo end up inside - PAC: "Operator 'RG' not allowed" (ROADMAP B-12)
 end;
 
 procedure TPdfVclCanvas.DoLineTo(X, Y: integer);
 begin
+  // one complete path object per segment, in the order ISO 32000-1 8.2
+  // requires: graphics state first, then m + l, then the painting operator
+  // - PenPos is still the start point here, TFPCustomCanvas.LineTo moves it
+  // afterwards, so a chained MoveTo/LineTo/LineTo stays connected
   SyncPen;
+  fPdfCanvas.MoveTo(PxToPtX(PenPos.X), PxToPtY(PenPos.Y));
   fPdfCanvas.LineTo(PxToPtX(X), PxToPtY(Y));
   fPdfCanvas.Stroke;
 end;

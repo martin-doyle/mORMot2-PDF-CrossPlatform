@@ -31,6 +31,7 @@ type
     procedure TestTaggedStreamedMetadata;
     procedure TestTaggedDecorationIsArtifact;
     procedure TestTaggedArtifactMisuseRaises;
+    procedure TestLineToWritesCompletePath;
   end;
 
 implementation
@@ -40,6 +41,124 @@ begin
   SetLength(result, Stream.Size);
   Stream.Position := 0;
   Stream.Read(pointer(result)^, Stream.Size);
+end;
+
+// count the ISO 32000-1 8.2 violations in an uncompressed PDF without text:
+// a graphics state operator inside a path object, or an 'l' without a
+// current point (ROADMAP B-12)
+function PathOrderViolations(const s: RawByteString): integer;
+const
+  CONSTRUCT: array[0..6] of RawByteString = ('m', 're', 'l', 'c', 'v', 'y', 'h');
+  PAINT: array[0..10] of RawByteString = ('S', 's', 'f', 'F', 'f*', 'B', 'B*',
+    'b', 'b*', 'n', 'W n');
+  STATE: array[0..12] of RawByteString = ('RG', 'rg', 'G', 'g', 'K', 'k', 'w',
+    'J', 'j', 'M', 'd', 'gs', 'CS');
+var
+  lines: TStringList;
+  i, sp: integer;
+  line, op: RawByteString;
+  inPath: boolean;
+
+  function IsOp(const ops: array of RawByteString): boolean;
+  var
+    k: integer;
+  begin
+    result := true;
+    for k := 0 to high(ops) do
+      if op = ops[k] then
+        exit;
+    result := false;
+  end;
+
+begin
+  result := 0;
+  inPath := false;
+  lines := TStringList.Create;
+  try
+    lines.Text := string(s);
+    for i := 0 to lines.Count - 1 do
+    begin
+      line := RawByteString(Trim(lines[i]));
+      sp := length(line);
+      while (sp > 0) and (line[sp] <> ' ') do
+        dec(sp);
+      op := copy(line, sp + 1, maxInt);
+      if IsOp(CONSTRUCT) then
+      begin
+        if (op = 'l') and not inPath then
+          inc(result); // no current point: the previous path was painted
+        if op <> 'h' then
+          inPath := true;
+      end
+      else if IsOp(PAINT) then
+        inPath := false
+      else if inPath and IsOp(STATE) then
+        inc(result);
+    end;
+  finally
+    lines.Free;
+  end;
+end;
+
+function CountMoveTo(const s: RawByteString): integer;
+var
+  p: integer;
+begin
+  result := 0;
+  p := Pos(RawByteString(' m'#10), s);
+  while p > 0 do
+  begin
+    inc(result);
+    p := Pos(RawByteString(' m'#10), s, p + 1);
+  end;
+end;
+
+procedure TPdfSmokeTests.TestLineToWritesCompletePath;
+var
+  PDF: TPdfDocumentVcl;
+  Stream: TMemoryStream;
+  s: RawByteString;
+  tagged: boolean;
+begin
+  for tagged := false to true do
+  begin
+    Stream := TMemoryStream.Create;
+    try
+      PDF := TPdfDocumentVcl.Create(false, 0, pdfaNone);
+      try
+        PDF.CompressionMethod := cmNone;
+        PDF.Tagged := tagged;
+        PDF.AddPage;
+        { the pdf_demo pattern: pen set, then MoveTo + LineTo - SyncPen used
+          to write RG/w between the m and the l (PAC: "Operator 'RG' not
+          allowed in this current state") }
+        PDF.VclCanvas.Pen.Color := clNavy;
+        PDF.VclCanvas.Pen.Width := 2;
+        PDF.VclCanvas.MoveTo(10, 10);
+        PDF.VclCanvas.LineTo(200, 10);
+        { a connected line whose pen changes half way: each segment needs
+          its own m, the old code wrote a bare l after the first S }
+        PDF.VclCanvas.MoveTo(10, 50);
+        PDF.VclCanvas.LineTo(200, 50);
+        PDF.VclCanvas.Pen.Width := 4;
+        PDF.VclCanvas.LineTo(200, 150);
+        { with psClear nothing is drawn, and no path is left open }
+        PDF.VclCanvas.Pen.Style := psClear;
+        PDF.VclCanvas.MoveTo(10, 200);
+        PDF.VclCanvas.LineTo(200, 200);
+        PDF.SaveToStream(Stream);
+      finally
+        PDF.Free;
+      end;
+      s := StreamToRaw(Stream);
+      CheckEqual(0, PathOrderViolations(s),
+        'no state operator inside a path, no l without a current point');
+      CheckEqual(3, CountMoveTo(s),
+        'one m per drawn segment, none for the psClear line');
+    finally
+      Stream.Free;
+    end;
+  end;
 end;
 
 procedure TPdfSmokeTests.TestTaggedStreamedMetadata;

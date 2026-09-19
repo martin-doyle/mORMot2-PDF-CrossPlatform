@@ -401,7 +401,7 @@ Text: `TextOut`, `TextWidth`, `TextHeight`
 Shapes: `Rectangle`, `Ellipse`, `RoundRect`, `FillRect`
 Sub-pixel (TPdfVclCanvas only, `single` instead of `integer`):
 `TextOutFrac`, `TextWidthFrac`, `TextHeightFrac`, `RectangleFrac`
-Lines: `MoveTo`, `LineTo`, `Polyline`, `Polygon`
+Lines: `MoveTo`, `LineTo`, `Polyline`, `Polygon` — `MoveTo` only moves `PenPos`; each `LineTo` writes one complete path object (`RG w` → `m` from `PenPos` → `l` → `S`), so pen changes never land inside a path (B-12)
 Images: `Draw`, `StretchDraw`
 Font: `Name`, `Size`, `Style` (fsBold/fsItalic/fsUnderline/fsStrikeOut), `Color`
 Pen: `Color`, `Width`, `Style` (psSolid/psClear)
