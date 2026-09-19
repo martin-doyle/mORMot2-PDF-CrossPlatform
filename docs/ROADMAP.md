@@ -16,8 +16,8 @@ itself — embedded TrueType, whole face, with a `/ToUnicode` CMap on the WinAns
 instance — and refuses to be switched on after the layout has been measured.
 The first PAC 2024 run on Windows then reported five PDF/UA errors in the
 Linux-built `markdown_demo.pdf` — B-7 … B-11, now fixed and green in PAC — plus
-B-12 and B-13 in `pdf_demo`, all **Priority 1** (see
-[Priority 1 — PAC 2024 Findings](#priority-1--pac-2024-findings-b-7--b-13--done-2026-09-19)).
+B-12 … B-14 and W-1 in `pdf_demo`, all **Priority 1** (see
+[Priority 1 — PAC 2024 Findings](#priority-1--pac-2024-findings-b-7--b-14-w-1--b-7--b-13-done-2026-09-19-b-14--w-1-open)).
 After them come the R-items.
 
 Completed items are archived in [Completed Work](#completed-work) at the end of
@@ -1160,7 +1160,7 @@ requires.
 
 ---
 
-## Priority 1 — PAC 2024 Findings (B-7 … B-13) — **DONE (2026-09-19)**
+## Priority 1 — PAC 2024 Findings (B-7 … B-14, W-1) — B-7 … B-13 **DONE (2026-09-19)**, B-14 + W-1 open
 
 **Reported 2026-09-19.** First PAC 2024 run on Windows against the
 **Linux-built** `markdown_demo.pdf` after Step 6 — the run the Working Method
@@ -1177,6 +1177,8 @@ every R-item.
 | B-11 | Table header cell has no associated subcells | Struct tree, `TH` elements |
 | B-12 | Operator 'RG' not allowed in this current state (`pdf_demo`, found by the run after Step 10) | `TPdfVclCanvas` line drawing |
 | B-13 | Figure element on a single page with no bounding box (`pdf_demo`, found by the run after Step 11) | Struct tree, `Figure` elements |
+| B-14 | Headings are present without bookmark — quality (`pdf_demo`) | `pdf_demo`: no outline |
+| W-1 | Possibly inappropriate use of figure structure element — warning (`pdf_demo`) | `pdf_demo`: text inside the `Figure` |
 
 **Evidence.** Each finding was reproduced in
 `examples/markdown_demo/bin/aarch64-linux/markdown_demo.pdf` (2026-09-19 10:06,
@@ -1568,6 +1570,55 @@ All B-7 … B-12 checks still pass on both `fix9` files. Full test suite:
 
 ---
 
+### Step 13 — B-14 + W-1: The Remaining PAC Findings in `pdf_demo` — **Priority 1**
+
+**Effort:** 0.5 day together | **File:** `examples/pdf_demo/pdf_demo_crossplat.lpr`
+(demo only; no engine change) | **Demo:** `pdf_demo`
+
+With B-13 fixed, PAC 2024 (2026-09-19) reports no error in either demo.
+`markdown_demo` is fully green. `pdf_demo` has one quality finding and one
+warning left. Both come from how the demo uses the low-level API, not from the
+engine.
+
+#### B-14 — "Headings are present without bookmark (document outline)" (quality)
+
+**Confirmed in `pdf_demo_linux_fix9.pdf`:** one `H1` struct element, no
+`/Outlines` in the catalog. `pdf_demo` creates `TPdfDocumentVcl.Create` with
+the default `AUseOutlines = false` and never calls `CreateOutline`.
+`TGDIPages` builds the outline from its headings itself
+(`AddHeadingsToOutline`), which is why `markdown_demo` passes.
+
+The engine cannot do this automatically: `BeginStructContent(psrH1)` does not
+receive the heading text, so there is no title for an outline entry.
+
+Steps:
+1. `pdf_demo` creates the document with outlines on and adds one
+   `CreateOutline(title, 1, Y)` per heading, at the heading's position.
+2. `pdf-engine.md`: note that a tagged document built with the low-level API
+   needs one outline entry per heading, and that `TGDIPages` does this itself.
+
+#### W-1 — "Possibly inappropriate use of figure structure element" (warning)
+
+**Confirmed:** the `Figure` region on page 2 holds 16 path objects **and 10
+text-showing operators**: the numbers 1–10 of the "text with bounding boxes"
+sample, drawn with `TextOut` inside the figure. PAC warns when a `Figure`
+contains real text. Readers get the `/Alt` of a figure instead of its content,
+so that text is hidden from them.
+
+Steps:
+1. Keep the `Figure` for the rectangles and lines only.
+2. Tag the text-bounds sample outside it as its own `P`. Its measured boxes are
+   then drawn outside any struct region and become artifacts automatically
+   (B-9).
+3. Update the `/Alt` text of the figure (it no longer contains "text bounds").
+
+#### Verification
+
+PAC 2024 on Windows against the rebuilt `pdf_demo`: no errors, no warnings, no
+quality findings. `markdown_demo` has to stay green.
+
+---
+
 ## Rest — Remaining Items
 
 Lower priority than the bugfixes above.
@@ -1696,6 +1747,8 @@ Windows-only (`TPdfDocumentGdi`), not portable. No work planned.
 | B-11 | Table header cells without associated cells — no `/Scope` (PAC) — fixed, PAC green on Windows | **1** | 0.5–1 day | mormot.ui.pdf.pas, mormot.ui.report.pas |
 | B-12 | `RG`/`w` inside a path object: `TPdfVclCanvas.DoMoveTo`/`DoLineTo` (PAC, `pdf_demo`) — fixed, PAC green on Windows | **1** | 0.5 day | mormot.ui.pdfcanvas.pas |
 | B-13 | `Figure` without `/BBox` layout attribute (PAC, `pdf_demo`) — fixed, PAC green on Windows | **1** | 0.5 day | mormot.ui.pdf.pas |
+| B-14 | Headings without bookmarks — `pdf_demo` builds no outline (PAC quality) | **1** | 0.25 day | pdf_demo_crossplat.lpr, pdf-engine.md |
+| W-1 | Text inside a `Figure` — `pdf_demo` (PAC warning) | **1** | 0.25 day | pdf_demo_crossplat.lpr |
 | R-10 | Table row pagination | — | 2–3 days | mormot.ui.report.pas |
 | R-11 | TTC face index | — | 1 day | mormot.pdf.freetype.pas, mormot.pdf.types.pas |
 | R-12 | Font subsetting on POSIX via hb-subset (88% smaller PDFs; also fixes RTL) | **3** | 2–3 days | new mormot.pdf.hbsubset.pas, mormot.pdf.types.pas, mormot.ui.pdf.pas |
@@ -1722,8 +1775,9 @@ platforms before the next begins — see [Working Method](#working-method).
 | 10 | B-9 | Last: touches the same `BDC`/`EMC` code as B-1 … B-3 |
 | 11 | B-12 | Found by the PAC run after Step 10; older than B-7 … B-11 |
 | 12 | B-13 | Found by the PAC run after Step 11 |
+| 13 | B-14 + W-1 | Last PAC findings; demo-only changes in one file, so done together |
 
-The remaining R-items are independent and unscheduled; they follow Step 12.
+The remaining R-items are independent and unscheduled; they follow Step 13.
 
 ### Completed Work
 
