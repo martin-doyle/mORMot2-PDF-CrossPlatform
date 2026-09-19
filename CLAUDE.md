@@ -200,7 +200,7 @@ lazbuild examples/rtl_demo/rtl_demo.lpi -B
 
 ## Open Items
 
-- **Font subsetting**: **Windows only** — the branch is inside `{$ifdef USE_UNISCRIBE}`, which is undefined for `OSPOSIX`, so Linux/macOS always embed the complete face and `EmbeddedWholeTtf` has no effect there. On Windows it is the default (`EmbeddedWholeTtf = False`) and must be turned off (`:= True`) for RTL/Arabic (GSUB glyph IDs not tracked) and CJK; `Tagged` does that automatically — see `.claude/skills/fonts.md` §3, §9–10
+- **Font subsetting**: **Windows only** — the branch is inside `{$ifdef USE_UNISCRIBE}`, which is undefined for `OSPOSIX`, so Linux/macOS always embed the complete face and `EmbeddedWholeTtf` has no effect there. On Windows it is the default (`EmbeddedWholeTtf = False`) and must be turned off (`:= True`) for RTL/Arabic (GSUB glyph IDs not tracked) and CJK; `Tagged` does that automatically — see `.claude/skills/fonts.md` §3, §9–10. A POSIX subsetter via `libharfbuzz-subset` is planned as R-12, priority 3 (measured: 88% smaller PDFs, and it solves the RTL case) — see `docs/ROADMAP.md`
 - **RTL / Arabic text**: HarfBuzz delivers correct ligatures on Linux/macOS; Windows uses Uniscribe — see `.claude/skills/fonts.md` §10
 - **Testing RTL**: Linux fonts (Noto Naskh Arabic) resolve shaped glyphs through the CMAP, so they never exercise the shaper's own advance path. Validate RTL work against a font without Arabic presentation forms — see `.claude/skills/fonts.md` §10
 - **TTC collections**: only face index 0 is reachable; `TPdfFontMap` has no face index, so the other faces of a `.ttc` cannot be selected by name

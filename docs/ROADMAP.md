@@ -1177,14 +1177,85 @@ cells must stay inside one `TR` element referencing both pages.
 Only face index 0 of a `.ttc` is reachable because `TPdfFontMap` has no face
 index. Add one so the remaining faces can be selected by name.
 
-### Font Subsetting for RTL and CJK
+### R-12 — Font Subsetting on POSIX via hb-subset — **Priority 3**
 
-**Effort:** 3–5 days | **File:** `src/core/mormot.ui.pdf.pas`
+**Effort:** 2–3 days | **Files:** new `src/platform/unix/mormot.pdf.hbsubset.pas`,
+`src/core/mormot.pdf.types.pas`, `src/core/mormot.ui.pdf.pas`
 
-`EmbeddedWholeTtf := False` is opt-in and unreliable for RTL (GSUB-substituted
-glyph IDs are not tracked) and unsafe for CJK — see `.claude/skills/fonts.md`
-§9–10. Tracking shaped glyph IDs through the HarfBuzz/Uniscribe path would make
-subsetting safe and remove the file-size cost of Priority 6 step 3.
+**Revised 2026-09-19.** The original entry assumed subsetting existed on all
+platforms and only needed shaped glyph IDs tracked through it. It does not: the
+subsetting branch in `PrepareForSaving` sits inside `{$ifdef USE_UNISCRIBE}`,
+undefined for `OSPOSIX`, so Linux and macOS always embed the complete face and
+`EmbeddedWholeTtf` is a no-op there. There is no POSIX subsetter to fix — there
+is one to add. Hand-rolling one (rebuilding `glyf`/`loca`/`hmtx`/`cmap` and
+renumbering glyph IDs) is out of scope; `libharfbuzz-subset` does it, and the
+project already loads HarfBuzz for shaping.
+
+#### Measured Saving
+
+Taken from the real `/FontFile2` streams of `markdown_demo.pdf` (7 streams,
+1,408,537 of 1,427,247 bytes — **98.7% of the file is font data**), subset to
+the full WinAnsi set with `libharfbuzz-subset.so.0` and re-deflated:
+
+| Case | full, deflated | subset, deflated | saved |
+|---|---|---|---|
+| The 7 Liberation streams of `markdown_demo` | 1,409 KB | 169 KB | **88.0%** |
+| CJK, 27 hanzi (DroidSansFallback, 49,382 glyphs) | 2,132 KB | 3.5 KB | 99.8% |
+| Arabic, 10 base letters (NotoNaskhArabic) | 85 KB | 9.0 KB | 89.4% |
+
+`markdown_demo.pdf` would drop from 1.43 MB to roughly 187 KB.
+
+#### Why This Also Settles the RTL Problem
+
+The Arabic figure above was produced by passing **only the 10 base letters**, no
+presentation forms — the subset came back with **56 glyphs**. `hb-subset`
+performs the GSUB closure itself, which is exactly what `CreateFontPackage`
+cannot do and the reason the original entry called subsetting unreliable for RTL.
+
+#### Why the Integration Is Small
+
+Subsetting normally renumbers glyph IDs, which would invalidate the Identity-H
+codes, the `/W` array and the shaped IDs HarfBuzz hands us.
+`HB_SUBSET_FLAGS_RETAIN_GIDS` keeps them, and after deflate it is almost free:
+
+| Face | renumbered | retain-gids |
+|---|---|---|
+| LiberationSans | 23,947 B | 24,107 B (+0.7%) |
+| NotoNaskhArabic | 9,046 B | 9,276 B (+2.5%) |
+| DroidSansFallback | 2,180 B | 3,260 B (still 99.8% saved) |
+
+So **no glyph-ID mapping is needed anywhere in the PDF engine**. The change is
+to swap the font bytes immediately before `GetOrCreateFontFile2`.
+
+#### Steps
+
+1. New unit `mormot.pdf.hbsubset.pas`: dynamic load of
+   `libharfbuzz-subset.so.0` / `libharfbuzz-subset.0.dylib`, eight entry points
+   (`hb_subset_input_create_or_fail`, `hb_subset_input_unicode_set`,
+   `hb_subset_input_glyph_set`, `hb_subset_input_set_flags`, `hb_subset_or_fail`,
+   `hb_face_create`, `hb_face_reference_blob`, `hb_blob_get_data`).
+   `mormot.pdf.harfbuzz.pas` is the template for the loading and failure handling.
+2. Register it as an optional `IPdfFontSubsetter`, the way the other backends are
+   registered — no `{$ifdef}` inside `mormot.ui.pdf.pas`.
+3. Call it in `PrepareForSaving` when `not EmbeddedWholeTtf` and the interface is
+   available; when it is not, fall through to the whole face, i.e. today's
+   behaviour. Windows keeps `CreateFontPackage` — `libharfbuzz-subset.dll` is not
+   normally present there.
+4. Tests, then verification on all three platforms.
+
+#### Two Integration Traps
+
+- The WinAnsi and Unicode instances **share one stream** via
+  `GetOrCreateFontFile2`. The subset input has to be the union of both
+  instances' used sets, or one of them loses its glyphs.
+- For shaped Arabic, `hb_subset_input_glyph_set()` is the right input, not the
+  unicode set: the RTL path registers glyph IDs, not code points
+  (`fUsedWideChar` can be empty there — `fonts.md` §9).
+
+#### Not Yet Verified
+
+The figures above are sizes and glyph counts. **Nothing was rendered.** Whether
+the subsets display correctly has to be checked during implementation.
 
 ### RTL Shaper Advance Path — Test Coverage
 
@@ -1204,12 +1275,15 @@ Windows-only (`TPdfDocumentGdi`), not portable. No work planned.
 
 ### Open
 
-| ID | Item | Effort | Files |
-|---|---|---|---|
-| R-10 | Table row pagination | 2–3 days | mormot.ui.report.pas |
-| R-11 | TTC face index | 1 day | mormot.pdf.freetype.pas, mormot.pdf.types.pas |
-| R-12 | Subsetting for RTL/CJK | 3–5 days | mormot.ui.pdf.pas |
-| R-13 | RTL shaper advance test | 0.5 day | tests/ |
+| ID | Item | Prio | Effort | Files |
+|---|---|---|---|---|
+| R-10 | Table row pagination | — | 2–3 days | mormot.ui.report.pas |
+| R-11 | TTC face index | — | 1 day | mormot.pdf.freetype.pas, mormot.pdf.types.pas |
+| R-12 | Font subsetting on POSIX via hb-subset (88% smaller PDFs; also fixes RTL) | **3** | 2–3 days | new mormot.pdf.hbsubset.pas, mormot.pdf.types.pas, mormot.ui.pdf.pas |
+| R-13 | RTL shaper advance test | — | 0.5 day | tests/ |
+
+Only R-12 carries an agreed priority so far; `—` means unprioritised, not
+lower-ranked.
 
 **Execution order** (agreed): one fix at a time, each verified on all three
 platforms before the next begins — see [Working Method](#working-method).
