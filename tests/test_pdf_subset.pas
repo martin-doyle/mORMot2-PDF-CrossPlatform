@@ -55,7 +55,8 @@ type
     // - aText holds UTF-8 bytes in a string, as TPdfVclCanvas.TextOut expects:
     // a RawUtf8 parameter would be converted to the system code page first
     function BuildPdf(const aFont: string; const aText: string;
-      aWhole, aTagged, aBold: boolean): RawByteString;
+      aWhole, aTagged, aBold: boolean;
+      aPdfA: TPdfALevel = pdfaNone): RawByteString;
     function SansFont: string;
   published
     procedure TestSubsetEmbeddedIsSmaller;
@@ -64,6 +65,7 @@ type
     procedure TestSubsetTagIsDeterministic;
     procedure TestSubsetFallbackWithoutSubsetter;
     procedure TestTaggedStillWholeFace;
+    procedure TestPdfA1StillWholeFace;
   end;
 
 /// number of non-overlapping occurrences of Sub in s
@@ -449,14 +451,15 @@ begin
 end;
 
 function TPdfSubsetEngineTests.BuildPdf(const aFont: string;
-  const aText: string; aWhole, aTagged, aBold: boolean): RawByteString;
+  const aText: string; aWhole, aTagged, aBold: boolean;
+  aPdfA: TPdfALevel): RawByteString;
 var
   PDF: TPdfDocumentVcl;
   Stream: TMemoryStream;
 begin
   Stream := TMemoryStream.Create;
   try
-    PDF := TPdfDocumentVcl.Create(false, 0, pdfaNone);
+    PDF := TPdfDocumentVcl.Create(false, 0, aPdfA);
     try
       PDF.CompressionMethod := cmNone; // keep the font file readable
       if aTagged then
@@ -601,6 +604,20 @@ begin
   whole := BuildPdf(SansFont, 'Hello', true, false, false);
   Check(FirstFontFile(tagged) = FirstFontFile(whole),
     'Tagged embeds the whole face (ROADMAP Step 6)');
+end;
+
+procedure TPdfSubsetEngineTests.TestPdfA1StillWholeFace;
+var
+  pdfa1, whole: RawByteString;
+begin
+  // PDF/A-1 would need a /CIDSet for a subset, which is not written
+  pdfa1 := BuildPdf(SansFont, 'Hello', false, false, false, pdfa1B);
+  whole := BuildPdf(SansFont, 'Hello', true, false, false);
+  Check(FirstFontFile(pdfa1) = FirstFontFile(whole),
+    'PDF/A-1 embeds the whole face');
+  {$ifndef MSWINDOWS}
+  CheckEqual(FirstSubsetTag(pdfa1), '', 'no subset tag');
+  {$endif MSWINDOWS}
 end;
 
 end.

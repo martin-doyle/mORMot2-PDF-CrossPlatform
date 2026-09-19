@@ -8910,8 +8910,11 @@ begin
     with TPdfFontTrueType(fFontList.List[i]) do
       if fTrueTypeFontsIndex <> 0 then // not a TPdfFontTrueType otherwise
         fSubsetIndex := 0;
+  // PDF/A-1 (6.3.5) requires a /CIDSet for every subset CIDFont, which this
+  // engine does not write: such documents keep embedding the whole face
   if (PdfFontSubsetter = nil) or
-     fEmbeddedWholeTtf then
+     fEmbeddedWholeTtf or
+     (fPdfA in [pdfa1A, pdfa1B]) then
     exit;
   // 1. group the WinAnsi fonts by face, and merge their used glyphs
   for i := 0 to fFontList.Count - 1 do
