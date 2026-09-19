@@ -448,16 +448,17 @@ TPdfDocument.SaveToStream / SaveToFile
     WinAnsi font branch (builds /Widths, embeds font file):
       /FirstChar, /LastChar, /Widths from fWinAnsiUsed + ABC widths
 
-      EmbeddedWholeTtf = true (default):
+      EmbeddedWholeTtf = true (set by Tagged; otherwise not the default):
         GetFontData(DC, 0, 0, nil, 0)         → query total byte count
         GetFontData(DC, 0, 0, Buf, Size)      → read full TTF bytes
         embed as /FontFile2                   ← GSUB glyph IDs valid; Arabic works
                                                (overlapping widths only)
 
-      EmbeddedWholeTtf = false (subset mode):
+      EmbeddedWholeTtf = false (subset mode) — WINDOWS ONLY:
+        the branch is inside {$ifdef USE_UNISCRIBE}, undefined for OSPOSIX, so
+        Linux/macOS fall through to the whole face regardless of the flag
         input: code points from fWinAnsiUsed + fUsedWideChar
-        {Windows}  CreateFontPackage(input) → subset TTF
-        {Other}    SubsetTtf(input) → subset TTF
+        CreateFontPackage(input) → subset TTF (else: whole face)
         if input empty (GSUB-only Arabic): degenerate subset → boxes in output
         embed as /FontFile2
 ```

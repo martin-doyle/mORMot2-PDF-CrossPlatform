@@ -375,12 +375,16 @@ Font embedding decision:
     TPdfStream for byte-identical data, so Regular and Bold resolving to the
     same physical file embed it once, not twice
 
-  if EmbeddedWholeTtf = false (opt-in):
-    input: Unicode code points from fWinAnsiUsed + fUsedWideChar
-    Windows: CreateFontPackage(input) → subset TTF bytes
-    Other:   SubsetTtf(input) → subset TTF bytes
-    if fUsedWideChar.Count = 0 and fGlyphMin/fGlyphMax = 0:
-      0 code points passed → degenerate/unusable subset → boxes in output
+  if EmbeddedWholeTtf = false (the default):
+    Windows only - the whole branch sits inside {$ifdef USE_UNISCRIBE}, which
+    mormot.ui.pdf.pas undefines for OSPOSIX, so Linux/macOS never reach it and
+    always embed the complete face. There is no POSIX subsetter; the flag is a
+    no-op there.
+      input: Unicode code points from fWinAnsiUsed + fUsedWideChar
+      CreateFontPackage(input) → subset TTF bytes (FontSub.dll, resolved via
+        HasCreateFontPackage; falls back to the whole face if absent)
+      if fUsedWideChar.Count = 0 and fGlyphMin/fGlyphMax = 0:
+        0 code points passed → degenerate/unusable subset → boxes in output
 ```
 
 ---
