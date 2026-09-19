@@ -18,6 +18,7 @@ uses
   mormot.core.test,
   test_pdf_crossplatform,
   test_pdf_smoke,
+  test_pdf_subset,
   test_report_crossplatform,
   test_coordinates,
   test_report_coordinates;
@@ -32,7 +33,7 @@ type
 
 procedure TIntegrationTests.TestPDF;
 begin
-  AddCase([TPdfCrossPlatTests, TPdfSmokeTests]);
+  AddCase([TPdfCrossPlatTests, TPdfSmokeTests, TPdfSubsetTests]);
 end;
 
 procedure TIntegrationTests.TestReport;
