@@ -17,7 +17,7 @@ instance — and refuses to be switched on after the layout has been measured.
 The first PAC 2024 run on Windows then reported five PDF/UA errors in the
 Linux-built `markdown_demo.pdf` — B-7 … B-11, now fixed and green in PAC — plus
 B-12 … B-14 and W-1 in `pdf_demo`, all **Priority 1** (see
-[Priority 1 — PAC 2024 Findings](#priority-1--pac-2024-findings-b-7--b-14-w-1--b-7--b-13-done-2026-09-19-b-14--w-1-open)).
+[Priority 1 — PAC 2024 Findings](#priority-1--pac-2024-findings-b-7--b-14-w-1--done-2026-09-19-w-1-accepted)).
 After them come the R-items.
 
 Completed items are archived in [Completed Work](#completed-work) at the end of
@@ -1160,7 +1160,7 @@ requires.
 
 ---
 
-## Priority 1 — PAC 2024 Findings (B-7 … B-14, W-1) — B-7 … B-13 **DONE (2026-09-19)**, B-14 + W-1 open
+## Priority 1 — PAC 2024 Findings (B-7 … B-14, W-1) — **DONE (2026-09-19)**, W-1 accepted
 
 **Reported 2026-09-19.** First PAC 2024 run on Windows against the
 **Linux-built** `markdown_demo.pdf` after Step 6 — the run the Working Method
@@ -1178,7 +1178,7 @@ every R-item.
 | B-12 | Operator 'RG' not allowed in this current state (`pdf_demo`, found by the run after Step 10) | `TPdfVclCanvas` line drawing |
 | B-13 | Figure element on a single page with no bounding box (`pdf_demo`, found by the run after Step 11) | Struct tree, `Figure` elements |
 | B-14 | Headings are present without bookmark — quality (`pdf_demo`) | `pdf_demo`: no outline |
-| W-1 | Possibly inappropriate use of figure structure element — warning (`pdf_demo`) | `pdf_demo`: text inside the `Figure` |
+| W-1 | Possibly inappropriate use of figure structure element — warning (`pdf_demo`) | `pdf_demo`'s vector `Figure` — not caused by its text; accepted |
 
 **Evidence.** Each finding was reproduced in
 `examples/markdown_demo/bin/aarch64-linux/markdown_demo.pdf` (2026-09-19 10:06,
@@ -1570,7 +1570,7 @@ All B-7 … B-12 checks still pass on both `fix9` files. Full test suite:
 
 ---
 
-### Step 13 — B-14 + W-1: The Remaining PAC Findings in `pdf_demo` — **Priority 1**
+### Step 13 — B-14 + W-1: The Remaining PAC Findings in `pdf_demo` — **DONE (2026-09-19)**; W-1 accepted
 
 **Effort:** 0.5 day together | **File:** `examples/pdf_demo/pdf_demo_crossplat.lpr`
 (demo only; no engine change) | **Demo:** `pdf_demo`
@@ -1616,6 +1616,38 @@ Steps:
 
 PAC 2024 on Windows against the rebuilt `pdf_demo`: no errors, no warnings, no
 quality findings. `markdown_demo` has to stay green.
+
+#### Result (Step 13)
+
+**B-14 — fixed.** The document is created with `AUseOutlines = true`, and a
+`CreateOutline` follows the `H1`, at `DefaultPageHeight − 40 px × 72/96`.
+In `pdf_demo_linux_fix10.pdf` the catalog has `/Outlines`, and the entry points
+at page 1, `/XYZ 0 812`. PAC 2024 on Windows: the quality finding is gone.
+
+**W-1 — accepted, not fixed.** The plan above was implemented first
+(`pdf_demo_linux_fix10.pdf`). The `Figure` had 0 text operators, the numbers
+were one `P` with 10 MCIDs, and their boxes were artifacts. **PAC kept the
+warning anyway**, and now also lists it under WCAG. The text was therefore not
+what PAC's heuristic reacts to, and splitting the figure gains nothing.
+
+**Decided (2026-09-19):** this is a special case of text in an image, and it is
+not worth more time. The whole drawing is one `Figure` again, the numbers
+included. Its `/Alt` describes all of it (rectangles, lines, the numbers 1–10
+in growing sizes inside their measured boxes), and the demo documents the
+accepted warning in a comment. `pdf_demo_linux_fix11.pdf`: one `Figure` with
+10 text operators and 16 path objects, `/BBox[27.75 589 414.75 812.75]`, and
+the outline from B-14.
+
+| Change | Location |
+|---|---|
+| Outline on, `CreateOutline` after the `H1` | `pdf_demo_crossplat.lpr` |
+| `Figure` `/Alt` describes the whole drawing; comment on the accepted PAC warning | `pdf_demo_crossplat.lpr` |
+| Code sample updated | `docs/DEMOS.md` |
+| Outline duty of low-level callers; text inside a `Figure` and the W-1 warning | `.claude/skills/pdf-engine.md` |
+
+All B-7 … B-13 checks pass on `fix11`. No path operator is out of order.
+**PAC status:** `markdown_demo` fully green. `pdf_demo` is free of errors and
+quality findings, with one accepted warning. **Still open:** macOS.
 
 ---
 
@@ -1747,8 +1779,8 @@ Windows-only (`TPdfDocumentGdi`), not portable. No work planned.
 | B-11 | Table header cells without associated cells — no `/Scope` (PAC) — fixed, PAC green on Windows | **1** | 0.5–1 day | mormot.ui.pdf.pas, mormot.ui.report.pas |
 | B-12 | `RG`/`w` inside a path object: `TPdfVclCanvas.DoMoveTo`/`DoLineTo` (PAC, `pdf_demo`) — fixed, PAC green on Windows | **1** | 0.5 day | mormot.ui.pdfcanvas.pas |
 | B-13 | `Figure` without `/BBox` layout attribute (PAC, `pdf_demo`) — fixed, PAC green on Windows | **1** | 0.5 day | mormot.ui.pdf.pas |
-| B-14 | Headings without bookmarks — `pdf_demo` builds no outline (PAC quality) | **1** | 0.25 day | pdf_demo_crossplat.lpr, pdf-engine.md |
-| W-1 | Text inside a `Figure` — `pdf_demo` (PAC warning) | **1** | 0.25 day | pdf_demo_crossplat.lpr |
+| B-14 | Headings without bookmarks — `pdf_demo` builds no outline (PAC quality) — fixed, PAC green on Windows | **1** | 0.25 day | pdf_demo_crossplat.lpr, pdf-engine.md |
+| W-1 | "Possibly inappropriate use of figure" — `pdf_demo` (PAC warning, also WCAG) — accepted, documented in the demo | **1** | 0.25 day | pdf_demo_crossplat.lpr |
 | R-10 | Table row pagination | — | 2–3 days | mormot.ui.report.pas |
 | R-11 | TTC face index | — | 1 day | mormot.pdf.freetype.pas, mormot.pdf.types.pas |
 | R-12 | Font subsetting on POSIX via hb-subset (88% smaller PDFs; also fixes RTL) | **3** | 2–3 days | new mormot.pdf.hbsubset.pas, mormot.pdf.types.pas, mormot.ui.pdf.pas |

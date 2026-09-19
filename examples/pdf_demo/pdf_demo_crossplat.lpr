@@ -47,10 +47,12 @@ var
   SerifFont: String;
   MonoFont: String;
 begin
+  // AUseOutlines = true: PDF/UA wants a bookmark per heading, and the
+  // low-level API leaves the outline to the caller (TGDIPages builds its own)
   {$if defined(FPC) or not defined(MSWINDOWS)}
-  Doc := TPdfDocumentVcl.Create;
+  Doc := TPdfDocumentVcl.Create(true);
   {$else}
-  Doc := TPdfDocumentGDI.Create;
+  Doc := TPdfDocumentGDI.Create(true);
   {$ifend}
   try
     // Tagged PDF (ISO 32000-1 §14) — must be set BEFORE AddPage and before the
@@ -78,6 +80,10 @@ begin
     C.Font.Color := $800000;
     C.TextOut(40, 40, 'mORMot2 PDF Cross-Platform Test');
     Doc.EndStructContent;
+    // its bookmark: TopPosition is in PDF points from the page bottom, the
+    // heading sits 40 px (96 dpi) below the top edge
+    Doc.CreateOutline('mORMot2 PDF Cross-Platform Test', 1,
+      Doc.DefaultPageHeight - 40 * 72 / 96);
 
     // Font samples — Tagged PDF: paragraph (P)
     Doc.BeginStructContent(psrP);
@@ -111,8 +117,16 @@ begin
     Doc.AddPage;
     C := Doc.VclCanvas;
 
-    // Vector graphics — Tagged PDF: figure (with /Alt text for screen readers)
-    Doc.BeginStructContent(psrFigure, 'Vector graphics: rectangles, lines, text bounds');
+    // Vector graphics — Tagged PDF: one figure (with /Alt text for screen
+    // readers) for the whole page, the numbers included: they are part of the
+    // drawing (text in an image), so a reader gets the /Alt instead of them
+    // - PAC 2024 keeps a warning here, also listed under WCAG: "Possibly
+    // inappropriate use of figure structure element". It stays when the
+    // numbers are moved out of the figure, so it is accepted (ROADMAP W-1)
+    Doc.BeginStructContent(psrFigure,
+      'Vector graphics: three filled rectangles, three lines of increasing ' +
+      'width, and the numbers 1 to 10 in growing font sizes, each inside its ' +
+      'measured bounding box');
 
     // Rectangles with Brush + Pen
     C.Brush.Color := $DCDCFF;

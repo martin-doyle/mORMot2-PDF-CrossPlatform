@@ -63,6 +63,10 @@ begin
   C.Font.Color := $800000;
   C.TextOut(40, 40, 'mORMot2 PDF Cross-Platform Test');
   Doc.EndStructContent;
+  // one bookmark per heading (PDF/UA); the document was created with
+  // TPdfDocumentVcl.Create(true), i.e. with outlines on
+  Doc.CreateOutline('mORMot2 PDF Cross-Platform Test', 1,
+    Doc.DefaultPageHeight - 40 * 72 / 96);   // PDF points from the bottom
 
   Doc.BeginStructContent(psrP);
   C.Font.Style := [];
@@ -75,12 +79,20 @@ begin
   // --- Page 2: Vector graphics ---
   Doc.AddPage;
   C := Doc.VclCanvas;   // always get a fresh canvas after AddPage
-  Doc.BeginStructContent(psrFigure, 'Vector graphics: rectangles, lines, text bounds');
+  // one figure for the whole drawing, the text samples included (text in an
+  // image): a reader gets the /Alt instead, so it describes the numbers too
+  Doc.BeginStructContent(psrFigure,
+    'Vector graphics: three filled rectangles, three lines of increasing ' +
+    'width, and the numbers 1 to 10 in growing font sizes, each inside its ' +
+    'measured bounding box');
   C.Brush.Color := $DCDCFF;
   C.Pen.Color   := $C80000;
   C.Rectangle(40, 40, 190, 120);
   C.MoveTo(40, 160); C.LineTo(550, 160);
+  // ... the numbers 1..10 with their measured boxes ...
   Doc.EndStructContent;
+  // PAC 2024 warns "Possibly inappropriate use of figure structure element"
+  // here, with or without the text inside: accepted, see ROADMAP W-1
 
   // --- Page 3: Table with Tagged PDF structure ---
   Doc.AddPage;
