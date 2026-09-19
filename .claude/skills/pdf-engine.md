@@ -515,6 +515,7 @@ When `Tagged = true`:
 - A `StructTreeRoot` with `Document` root, leaf StructElems, and `ParentTree` number tree is serialized at `SaveToStreamDirectEnd`
 - The catalog gets `/ViewerPreferences <</DisplayDocTitle true>>`, and the XMP packet (`pdfuaid:part` 1, `dc:title` = `Info.Title`) is written at `SaveToStreamDirectEnd`. Set `Info.Title`: PDF/UA needs one
 - Every `TH` gets `/A <</O/Table/Scope/Column>>`
+- A `Figure` on one page gets `/A <</O/Layout/BBox[l b r t]>>`. `TPdfCanvas` collects it from the path points (widened by half the line width), from `TextOut`/`TextOutW` (width from the font engine; descent approximated as ¼ size) and from `DrawXObject`. Points drawn under a `ConcatToCTM` that is still active are ignored, because they are not in page space
 - **Artifacts:** a path object (`m l c v y re` … paint/`n`) or an image `Do` drawn while no struct region is open is wrapped in `/Artifact BMC … EMC` automatically. Inside a region (e.g. `Figure`) it stays real content. For other skipped content, e.g. a repeated table header or a running page header, use `Canvas.BeginArtifact`/`EndArtifact` (also on `TPdfDocumentVcl`). Do not open a struct element inside it: `BeginArtifact` inside a region and an unmatched `EndArtifact` raise `EPdfInvalidOperation`
 
 ### High-Level: TPdfDocumentVcl wrapper

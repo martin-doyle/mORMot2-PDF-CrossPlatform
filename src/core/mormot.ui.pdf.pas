@@ -1951,6 +1951,14 @@ type
     /// true while a path object is wrapped in /Artifact BMC by
     // BeginPathArtifact, until its painting operator (ROADMAP B-9)
     fPathArtifact: boolean;
+    /// current line width, to widen a Figure's /BBox by half a stroke
+    fLineWidth: single;
+    /// number of open GSave (q) on the current page
+    fGStateDepth: integer;
+    /// fGStateDepth + 1 at which ConcatToCTM changed the CTM, 0 if unchanged
+    // - coordinates are then no longer in page space and cannot extend a
+    // Figure's /BBox
+    fCTMDepth: integer;
     /// if text must be rendered from right to left (RTL paragraph direction)
     // - used by Uniscribe (Windows) and HarfBuzz (Unix/macOS) shaping paths
     fRightToLeftText: boolean;
@@ -1977,6 +1985,10 @@ type
     // closes the sequence of BeginPathArtifact - called by the operators
     // which end a path object, i.e. painting and 'n'
     procedure EndPathArtifact;
+    // extend the /BBox of every Figure open on the struct stack (B-13)
+    procedure ExtendFigure(x1, y1, x2, y2: single);
+    // extend it by one path point, widened by half the line width
+    procedure ExtendFigurePoint(x, y: single);
     // wrapper calling I2X/S2X and I2Y/S2Y for conversion
     procedure LineToI(x, y: integer);
     procedure LineToS(x, y: single);
@@ -8333,9 +8345,15 @@ type
     AltText: RawUtf8;
     /// indirect dictionary, assigned in SerializeStructTree
     Dic: TPdfDictionary;
+    /// true once BBox* hold the extent of what was drawn inside a Figure
+    HasBBox: boolean;
+    /// extent of a Figure in PDF user space, written as its /BBox layout
+    // attribute (PDF/UA-1 7.3, PAC: "Figure element ... with no bounding box")
+    BBoxLeft, BBoxBottom, BBoxRight, BBoxTop: single;
     destructor Destroy; override;
     procedure AddKid(aKid: TPdfStructElement);
     procedure AddMCID(aMCID, aPageIndex: integer);
+    procedure ExtendBBox(x1, y1, x2, y2: single);
   end;
 
 const
@@ -8374,6 +8392,41 @@ begin
   aKid.Parent := self;
 end;
 
+procedure TPdfStructElement.ExtendBBox(x1, y1, x2, y2: single);
+var
+  tmp: single;
+begin
+  if x1 > x2 then
+  begin
+    tmp := x1;
+    x1 := x2;
+    x2 := tmp;
+  end;
+  if y1 > y2 then
+  begin
+    tmp := y1;
+    y1 := y2;
+    y2 := tmp;
+  end;
+  if not HasBBox then
+  begin
+    HasBBox := true;
+    BBoxLeft := x1;
+    BBoxBottom := y1;
+    BBoxRight := x2;
+    BBoxTop := y2;
+    exit;
+  end;
+  if x1 < BBoxLeft then
+    BBoxLeft := x1;
+  if y1 < BBoxBottom then
+    BBoxBottom := y1;
+  if x2 > BBoxRight then
+    BBoxRight := x2;
+  if y2 > BBoxTop then
+    BBoxTop := y2;
+end;
+
 procedure TPdfStructElement.AddMCID(aMCID, aPageIndex: integer);
 begin
   if MCIDCount = length(MCIDs) then
@@ -8393,7 +8446,7 @@ procedure TPdfDocument.SerializeStructTree;
 var
   i, j, pageIdx, maxPage, mcid: integer;
   elem: TPdfStructElement;
-  docDic, parentTreeDic: TPdfDictionary;
+  docDic, parentTreeDic, attr: TPdfDictionary;
   kidsArr, numsArr, pageArr, mcrArr: TPdfArray;
   page: TPdfPage;
   maxMCID: integer;
@@ -8411,6 +8464,17 @@ var
        (cardinal(pg) < cardinal(fRawPages.Count)) then
       result.AddItem('Pg', TPdfPage(fRawPages.List[pg]));
     result.AddItem('MCID', aElem.MCIDs[aIndex]);
+  end;
+
+  function FigureOnOnePage(aElem: TPdfStructElement): boolean;
+  var
+    m: integer;
+  begin
+    result := false;
+    for m := 0 to aElem.MCIDCount - 1 do
+      if aElem.MCIDPages[m] <> aElem.PageIndex then
+        exit;
+    result := true;
   end;
 
   // /K of an element which has kids: kid references and own MCR dicts merged
@@ -8494,7 +8558,19 @@ begin
     // associated subcells") - a TH is only emitted in a header row, i.e. it
     // heads its column (ROADMAP B-11)
     if elem.Role = psrTH then
-      elem.Dic.AddItem('A', TPdfRawText.Create('<</O/Table/Scope/Column>>'));
+      elem.Dic.AddItem('A', TPdfRawText.Create('<</O/Table/Scope/Column>>'))
+    // PDF/UA-1 7.3: a Figure on one page needs its bounding box (PAC: "Figure
+    // element on a single page with no bounding box", ROADMAP B-13)
+    else if (elem.Role = psrFigure) and
+            elem.HasBBox and
+            FigureOnOnePage(elem) then
+    begin
+      attr := TPdfDictionary.Create(fXRef);
+      attr.AddItem('O', 'Layout');
+      attr.AddItem('BBox', TPdfArray.CreateReals(fXRef, [elem.BBoxLeft,
+        elem.BBoxBottom, elem.BBoxRight, elem.BBoxTop]));
+      elem.Dic.AddItem('A', attr);
+    end;
     if (not PDF_STRUCT_CONTAINER[elem.Role]) and
        (elem.Kids = nil) then
       if elem.MCIDCount = 1 then
@@ -9436,6 +9512,10 @@ procedure TPdfCanvas.SetPage(APage: TPdfPage);
 begin
   // a path left unpainted must not carry its /Artifact into the next page
   EndPathArtifact;
+  // every content stream starts with the default graphics state
+  fLineWidth := 1;
+  fGStateDepth := 0;
+  fCTMDepth := 0;
   fPage := APage;
   fPageFontList := fPage.GetResources('Font');
   fContents := TPdfStream(fPage.ValueByName('Contents'));
@@ -9995,6 +10075,9 @@ procedure TPdfCanvas.TextOut(X, Y: single; const Text: PdfString);
 begin
   if fContents <> nil then
   begin
+    // descent approximated by a quarter of the size: a layout hint only
+    ExtendFigure(X, Y - fPage.FontSize / 4, X + TextWidth(Text),
+      Y + fPage.FontSize);
     fContents.Writer.Add('BT'#10).AddWithSpace(X).AddWithSpace(Y).Add('Td'#10);
     ShowText(Text);
     fContents.Writer.Add('ET'#10);
@@ -10005,6 +10088,8 @@ procedure TPdfCanvas.TextOutW(X, Y: single; PW: PWideChar);
 begin
   if fContents <> nil then
   begin
+    ExtendFigure(X, Y - fPage.FontSize / 4, X + UnicodeTextWidth(PW),
+      Y + fPage.FontSize);
     fContents.Writer.Add('BT'#10).AddWithSpace(X).AddWithSpace(Y).Add('Td'#10);
     ShowText(PW);
     fContents.Writer.Add('ET'#10);
@@ -10144,6 +10229,7 @@ procedure TPdfCanvas.DrawXObject(X, Y, AWidth, AHeight: single;
   const AXObjectName: PdfString);
 begin
   DrawXObjectPrepare(AXObjectName);
+  ExtendFigure(X, Y, X + AWidth, Y + AHeight);
   GSave;
   ConcatToCTM(AWidth, 0, 0, AHeight, X, Y);
   ExecuteXObject(AXObjectName);
@@ -10154,6 +10240,7 @@ procedure TPdfCanvas.DrawXObjectEx(X, Y, AWidth, AHeight: single;
   ClipX, ClipY, ClipWidth, ClipHeight: single; const AXObjectName: PdfString);
 begin
   DrawXObjectPrepare(AXObjectName);
+  ExtendFigure(X, Y, X + AWidth, Y + AHeight);
   GSave;
   Rectangle(ClipX, ClipY, ClipWidth, ClipHeight);
   Clip;
@@ -10169,18 +10256,25 @@ end;
 
 procedure TPdfCanvas.GSave;
 begin
+  inc(fGStateDepth);
   if fContents <> nil then
     fContents.Writer.Add('q'#10);
 end;
 
 procedure TPdfCanvas.GRestore;
 begin
+  if fGStateDepth > 0 then
+    dec(fGStateDepth);
+  if fCTMDepth > fGStateDepth + 1 then
+    fCTMDepth := 0; // the q which saved the untransformed CTM was restored
   if fContents <> nil then
     fContents.Writer.Add('Q'#10);
 end;
 
 procedure TPdfCanvas.ConcatToCTM(a, b, c, d, e, f: single; Decimals: cardinal);
 begin
+  if fCTMDepth = 0 then
+    fCTMDepth := fGStateDepth + 1;
   if fContents <> nil then
     fContents.Writer.AddWithSpace(a, Decimals).AddWithSpace(b, Decimals).
       AddWithSpace(c, Decimals).AddWithSpace(d, Decimals).
@@ -10224,6 +10318,7 @@ end;
 
 procedure TPdfCanvas.SetLineWidth(linewidth: single);
 begin
+  fLineWidth := linewidth;
   if fContents <> nil then
     fContents.Writer.AddWithSpace(linewidth).Add('w'#10);
 end;
@@ -10240,6 +10335,7 @@ end;
 procedure TPdfCanvas.MoveTo(x, y: single);
 begin
   BeginPathArtifact;
+  ExtendFigurePoint(x, y);
   if fContents <> nil then
     fContents.Writer.AddWithSpace(x).AddWithSpace(y).Add('m'#10);
 end;
@@ -10247,6 +10343,7 @@ end;
 procedure TPdfCanvas.LineTo(x, y: single);
 begin
   BeginPathArtifact;
+  ExtendFigurePoint(x, y);
   if fContents <> nil then
     fContents.Writer.AddWithSpace(x).AddWithSpace(y).Add('l'#10);
 end;
@@ -10254,6 +10351,9 @@ end;
 procedure TPdfCanvas.CurveToC(x1, y1, x2, y2, x3, y3: single);
 begin
   BeginPathArtifact;
+  ExtendFigurePoint(x1, y1);
+  ExtendFigurePoint(x2, y2);
+  ExtendFigurePoint(x3, y3);
   if fContents <> nil then
     fContents.Writer.AddWithSpace(x1).AddWithSpace(y1).
       AddWithSpace(x2).AddWithSpace(y2).
@@ -10263,6 +10363,8 @@ end;
 procedure TPdfCanvas.CurveToV(x2, y2, x3, y3: single);
 begin
   BeginPathArtifact;
+  ExtendFigurePoint(x2, y2);
+  ExtendFigurePoint(x3, y3);
   if fContents <> nil then
     fContents.Writer.AddWithSpace(x2).AddWithSpace(y2).
       AddWithSpace(x3).AddWithSpace(y3).Add('v'#10);
@@ -10271,6 +10373,8 @@ end;
 procedure TPdfCanvas.CurveToY(x1, y1, x3, y3: single);
 begin
   BeginPathArtifact;
+  ExtendFigurePoint(x1, y1);
+  ExtendFigurePoint(x3, y3);
   if fContents <> nil then
     fContents.Writer.AddWithSpace(x1).AddWithSpace(y1).
       AddWithSpace(x3).AddWithSpace(y3).Add('y'#10);
@@ -10279,6 +10383,8 @@ end;
 procedure TPdfCanvas.Rectangle(x, y, width, height: single);
 begin
   BeginPathArtifact;
+  ExtendFigurePoint(x, y);
+  ExtendFigurePoint(x + width, y + height);
   if fContents <> nil then
     fContents.Writer.AddWithSpace(x).AddWithSpace(y).
       AddWithSpace(width).AddWithSpace(height).Add('re'#10);
@@ -11082,6 +11188,30 @@ begin
   fPathArtifact := false;
   if fContents <> nil then
     fContents.Writer.Add('EMC'#10);
+end;
+
+procedure TPdfCanvas.ExtendFigure(x1, y1, x2, y2: single);
+var
+  i: PtrInt;
+  elem: TPdfStructElement;
+begin
+  if not fDoc.fTagged or
+     (fCTMDepth <> 0) then
+    exit;
+  for i := 0 to fDoc.fStructStack.Count - 1 do
+  begin
+    elem := TPdfStructElement(fDoc.fStructStack.List[i]);
+    if elem.Role = psrFigure then
+      elem.ExtendBBox(x1, y1, x2, y2);
+  end;
+end;
+
+procedure TPdfCanvas.ExtendFigurePoint(x, y: single);
+var
+  half: single;
+begin
+  half := fLineWidth / 2;
+  ExtendFigure(x - half, y - half, x + half, y + half);
 end;
 
 procedure TPdfCanvas.BeginArtifact;

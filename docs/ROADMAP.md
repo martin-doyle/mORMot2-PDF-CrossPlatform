@@ -16,8 +16,8 @@ itself — embedded TrueType, whole face, with a `/ToUnicode` CMap on the WinAns
 instance — and refuses to be switched on after the layout has been measured.
 The first PAC 2024 run on Windows then reported five PDF/UA errors in the
 Linux-built `markdown_demo.pdf` — B-7 … B-11, now fixed and green in PAC — plus
-B-12 in `pdf_demo`, which is still open, all **Priority 1** (see
-[Priority 1 — PAC 2024 Findings](#priority-1--pac-2024-findings-b-7--b-12--b-7--b-11-done-2026-09-19-b-12-open)).
+B-12 and B-13 in `pdf_demo`, all **Priority 1** (see
+[Priority 1 — PAC 2024 Findings](#priority-1--pac-2024-findings-b-7--b-13--done-2026-09-19)).
 After them come the R-items.
 
 Completed items are archived in [Completed Work](#completed-work) at the end of
@@ -1160,7 +1160,7 @@ requires.
 
 ---
 
-## Priority 1 — PAC 2024 Findings (B-7 … B-12) — B-7 … B-11 **DONE (2026-09-19)**, B-12 open
+## Priority 1 — PAC 2024 Findings (B-7 … B-13) — **DONE (2026-09-19)**
 
 **Reported 2026-09-19.** First PAC 2024 run on Windows against the
 **Linux-built** `markdown_demo.pdf` after Step 6 — the run the Working Method
@@ -1176,6 +1176,7 @@ every R-item.
 | B-10 | Title missing in document's XMP metadata | XMP metadata stream (+ `/Info`) |
 | B-11 | Table header cell has no associated subcells | Struct tree, `TH` elements |
 | B-12 | Operator 'RG' not allowed in this current state (`pdf_demo`, found by the run after Step 10) | `TPdfVclCanvas` line drawing |
+| B-13 | Figure element on a single page with no bounding box (`pdf_demo`, found by the run after Step 11) | Struct tree, `Figure` elements |
 
 **Evidence.** Each finding was reproduced in
 `examples/markdown_demo/bin/aarch64-linux/markdown_demo.pdf` (2026-09-19 10:06,
@@ -1420,7 +1421,7 @@ older defect, now B-12 (Step 11). **Still open:** macOS.
 
 ---
 
-### Step 11 — B-12: Graphics State Operators Inside a Path Object — **Priority 1**
+### Step 11 — B-12: Graphics State Operators Inside a Path Object — **DONE (2026-09-19)**
 
 **Effort:** 0.5 day | **File:** `src/core/mormot.ui.pdfcanvas.pas`, possibly
 `src/core/mormot.ui.report.pas` | **Demo:** `pdf_demo`
@@ -1484,6 +1485,86 @@ uses the same pair.
 
 Rebuild `pdf_demo`, then run PAC 2024 on Windows: no *"not allowed in this
 current state"* finding. `markdown_demo` has to stay green.
+
+#### Result (Step 11)
+
+**Settled question.** `TFPCustomCanvas.MoveTo` stores `PenPos` *before* it calls
+`DoMoveTo`. `TFPCustomCanvas.LineTo` calls `DoLineTo` while `PenPos` is still
+the start point, and moves it afterwards. For `psClear` it does not call
+`DoLineTo` at all. So the old `m` from `DoMoveTo` was also left as an open,
+never-painted path whenever the pen was clear.
+
+| Change | Location |
+|---|---|
+| `DoMoveTo` writes nothing | `mormot.ui.pdfcanvas.pas` |
+| `DoLineTo`: `SyncPen`, `m` at `PenPos`, `l`, `S` — one complete path object per segment | `mormot.ui.pdfcanvas.pas` |
+| Step 3 check: `Rectangle`, `RectangleFrac`, `Ellipse`, `RoundRect`, `Polyline` and `Polygon` sync pen and brush before the first construction operator; `TPdfCanvas.Ellipse`/`RoundRect` and `FillAndStroke` write path and painting operators only. No change needed | — |
+| `TestLineToWritesCompletePath`, tagged and untagged: no state operator inside a path, no `l` without a current point, one `m` per drawn segment, none for `psClear` | `tests/test_pdf_smoke.pas` |
+
+The test was run against the old `TPdfVclCanvas` first: 5 violations per
+document, so it detects the defect.
+
+| PDF | Path objects | Operators out of order |
+|---|---|---|
+| `pdf_demo_linux_fix7.pdf` | 22 | 6 |
+| `pdf_demo_linux_fix8.pdf` | 22 | **0** |
+| `markdown_demo_linux_fix8.pdf` | 336 | 0 |
+
+The B-7 … B-11 checks still pass on both `fix8` files. Full test suite:
+154/154 assertions.
+
+**PAC 2024 on Windows, 2026-09-19:** the finding is gone from
+`pdf_demo_linux_fix8.pdf`, and `markdown_demo_linux_fix8.pdf` stays green.
+Instead, PAC reported the next check on `pdf_demo`, now B-13. **Still open:**
+macOS.
+
+---
+
+### Step 12 — B-13: Figure Without a Bounding Box — **DONE (2026-09-19)**
+
+**Effort:** 0.5 day | **File:** `src/core/mormot.ui.pdf.pas` | **Demo:** `pdf_demo`
+
+#### Symptom
+
+PAC 2024 on `pdf_demo_linux_fix8.pdf`: *"Figure element on a single page with no
+bounding box"*. The `Figure` on page 2 (rectangles, lines, text with measured
+boxes) had `/Alt` since B-6, but no layout attributes. PDF/UA-1 7.3 asks for
+the `BBox` layout attribute on a `Figure` that fits on one page. Assistive
+technology uses it to locate the figure, for example for magnification.
+`markdown_demo` has no figure, so it was never affected.
+
+#### Cause
+
+The struct tree knew nothing about geometry. `TPdfStructElement` held roles,
+MCIDs and `/Alt`, but not the extent of what was drawn inside it.
+
+#### Change
+
+| Change | Location |
+|---|---|
+| `TPdfStructElement.HasBBox` + `BBoxLeft/Bottom/Right/Top`, `ExtendBBox` | `mormot.ui.pdf.pas` |
+| `TPdfCanvas.ExtendFigure`: every `Figure` open on the struct stack grows by what is drawn. Sources: path points from `m l c v y re`, widened by half the current line width (tracked in `SetLineWidth`); `TextOut`/`TextOutW`, with the width from the font engine and the descent approximated as ¼ of the font size; `DrawXObject`/`DrawXObjectEx`, the image rectangle | `mormot.ui.pdf.pas` |
+| CTM guard: `GSave`/`GRestore` count the `q` depth. After `ConcatToCTM`, points are ignored until the `Q` that restores the untransformed CTM, because they are not in page space. `SetPage` resets line width, depth and guard | `mormot.ui.pdf.pas` |
+| `SerializeStructTree`: a `Figure` whose MCIDs all lie on its own page gets `/A <</O/Layout/BBox[l b r t]>>`. A figure split across pages gets none; PDF/UA only asks for it on one page | `mormot.ui.pdf.pas` |
+| `TestTaggedDecorationIsArtifact` also checks the `/BBox` and its left edge (7.125 = 7.5 pt − half the 0.75 pt pen) | `tests/test_pdf_smoke.pas` |
+
+A report image (`dckDrawBitmap`) is covered as well: `StretchDraw` draws it via
+`DrawXObject`.
+
+#### Result on Linux (`pdf_demo_linux_fix9.pdf`)
+
+`/A<</O/Layout/BBox[27.75 589 414.75 812.75]>>`. Checked against the drawing:
+
+- **left 27.75** = the 6 px line starting at 30 pt, minus half of its 4.5 pt width
+- **right 414.75** = its end at 412.5 pt, plus 2.25
+- **top 812.75** = the upper edge of the rectangles, plus half of their 1.5 pt pen
+
+All B-7 … B-12 checks still pass on both `fix9` files. Full test suite:
+156/156 assertions.
+
+**PAC 2024 on Windows, 2026-09-19:** the error is gone from
+`pdf_demo_linux_fix9.pdf`, and `markdown_demo_linux_fix9.pdf` stays green.
+**Still open:** macOS.
 
 ---
 
@@ -1613,7 +1694,8 @@ Windows-only (`TPdfDocumentGdi`), not portable. No work planned.
 | B-9 | Path objects not tagged — table cell graphics (PAC) — fixed, PAC green on Windows | **1** | 1–2 days | mormot.ui.pdf.pas, mormot.ui.pdfcanvas.pas, mormot.ui.report.pas |
 | B-10 | Title missing in XMP metadata (PAC) — fixed, PAC green on Windows | **1** | with B-8 | mormot.ui.pdf.pas, mormot.ui.report.pas |
 | B-11 | Table header cells without associated cells — no `/Scope` (PAC) — fixed, PAC green on Windows | **1** | 0.5–1 day | mormot.ui.pdf.pas, mormot.ui.report.pas |
-| B-12 | `RG`/`w` inside a path object: `TPdfVclCanvas.DoMoveTo`/`DoLineTo` (PAC, `pdf_demo`) | **1** | 0.5 day | mormot.ui.pdfcanvas.pas |
+| B-12 | `RG`/`w` inside a path object: `TPdfVclCanvas.DoMoveTo`/`DoLineTo` (PAC, `pdf_demo`) — fixed, PAC green on Windows | **1** | 0.5 day | mormot.ui.pdfcanvas.pas |
+| B-13 | `Figure` without `/BBox` layout attribute (PAC, `pdf_demo`) — fixed, PAC green on Windows | **1** | 0.5 day | mormot.ui.pdf.pas |
 | R-10 | Table row pagination | — | 2–3 days | mormot.ui.report.pas |
 | R-11 | TTC face index | — | 1 day | mormot.pdf.freetype.pas, mormot.pdf.types.pas |
 | R-12 | Font subsetting on POSIX via hb-subset (88% smaller PDFs; also fixes RTL) | **3** | 2–3 days | new mormot.pdf.hbsubset.pas, mormot.pdf.types.pas, mormot.ui.pdf.pas |
@@ -1639,8 +1721,9 @@ platforms before the next begins — see [Working Method](#working-method).
 | 9 | B-11 | Struct-tree attributes only; no change to content streams |
 | 10 | B-9 | Last: touches the same `BDC`/`EMC` code as B-1 … B-3 |
 | 11 | B-12 | Found by the PAC run after Step 10; older than B-7 … B-11 |
+| 12 | B-13 | Found by the PAC run after Step 11 |
 
-The remaining R-items are independent and unscheduled; they follow Step 11.
+The remaining R-items are independent and unscheduled; they follow Step 12.
 
 ### Completed Work
 

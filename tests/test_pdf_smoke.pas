@@ -204,7 +204,8 @@ var
   PDF: TPdfDocumentVcl;
   Stream: TMemoryStream;
   s: RawByteString;
-  fig, emc, art: integer;
+  fig, emc, art, bb, code: integer;
+  left: double;
 begin
   Stream := TMemoryStream.Create;
   try
@@ -241,6 +242,15 @@ begin
       'a path inside a Figure region stays real content');
     Check(Pos(RawByteString('/A <</O/Table/Scope/Column>>'), s) > 0,
       'a TH names the column it heads (B-11)');
+    { Rectangle(10, 50, 100, 100) px = 7.5..75 pt wide, widened by half the
+      0.75 pt pen: PAC wants the bounding box of a one-page Figure (B-13) }
+    Check(Pos(RawByteString('/O/Layout/BBox['), s) > 0,
+      'the Figure carries its /BBox layout attribute');
+    bb := Pos(RawByteString('/BBox['), s);
+    Val(string(copy(s, bb + 6, Pos(RawByteString(' '), s, bb) - bb - 6)),
+      left, code);
+    Check((bb > 0) and (code = 0) and (abs(left - 7.125) < 0.01),
+      'the /BBox starts at the left edge of the drawing minus half the pen');
   finally
     Stream.Free;
   end;
