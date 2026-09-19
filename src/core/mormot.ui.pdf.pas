@@ -9515,9 +9515,11 @@ begin
   // non-embedded base-14 Type1 faces cannot provide
   fStandardFontsReplace := false;
   fEmbeddedTtf := true;
-  // a subset drops glyphs and with them the /ToUnicode round-trip tagging
-  // depends on (Windows only: POSIX always embeds the whole face)
-  fEmbeddedWholeTtf := true;
+  // CreateFontPackage (Windows) drops shaped glyphs and with them the
+  // /ToUnicode round-trip tagging depends on, so the whole face is embedded
+  // there; PdfFontSubsetter keeps glyph IDs and every glyph drawn (R-12), and
+  // PDF/UA allows subsets - set EmbeddedWholeTtf afterwards to override
+  fEmbeddedWholeTtf := PdfFontSubsetter = nil;
 end;
 
 

@@ -64,7 +64,7 @@ type
     procedure TestSubsetUnionOfStyles;
     procedure TestSubsetTagIsDeterministic;
     procedure TestSubsetFallbackWithoutSubsetter;
-    procedure TestTaggedStillWholeFace;
+    procedure TestTaggedSubsetKeepsToUnicode;
     procedure TestPdfA1StillWholeFace;
   end;
 
@@ -596,14 +596,24 @@ begin
   {$endif MSWINDOWS}
 end;
 
-procedure TPdfSubsetEngineTests.TestTaggedStillWholeFace;
+procedure TPdfSubsetEngineTests.TestTaggedSubsetKeepsToUnicode;
 var
   tagged, whole: RawByteString;
 begin
   tagged := BuildPdf(SansFont, 'Hello', false, true, false);
   whole := BuildPdf(SansFont, 'Hello', true, false, false);
-  Check(FirstFontFile(tagged) = FirstFontFile(whole),
-    'Tagged embeds the whole face (ROADMAP Step 6)');
+  if PdfFontSubsetter = nil then
+  begin
+    Check(FirstFontFile(tagged) = FirstFontFile(whole),
+      'without a subsetter Tagged embeds the whole face (ROADMAP Step 6)');
+    exit;
+  end;
+  // PDF/UA allows subsets, and retained glyph IDs keep the round-trip
+  Check(FirstSubsetTag(tagged) <> '', 'tagged output is subset');
+  Check(length(FirstFontFile(tagged)) * 10 < length(FirstFontFile(whole)),
+    'and much smaller');
+  Check(Pos(RawByteString('/ToUnicode'), tagged) > 0,
+    'WinAnsi ToUnicode CMap still written (pdffonts: uni=yes)');
 end;
 
 procedure TPdfSubsetEngineTests.TestPdfA1StillWholeFace;
