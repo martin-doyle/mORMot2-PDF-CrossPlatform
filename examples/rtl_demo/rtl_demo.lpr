@@ -88,7 +88,9 @@ begin
   Doc := TPdfDocumentVcl.Create;
   try
     Doc.EmbeddedTTF      := true;
-    Doc.EmbeddedWholeTtf := true;  // full font stream — shaped GSUB IDs stay valid
+    // full font stream: required on Windows, where CreateFontPackage drops the
+    // shaped GSUB glyphs; Linux/macOS could subset safely (ROADMAP R-12)
+    Doc.EmbeddedWholeTtf := true;
     Doc.Info.Title       := 'Arabic RTL Demo';
     Doc.DefaultPaperSize := mormot.ui.pdf.psA4;
     GetReportFonts(Doc.EmbeddedTTF, SansFont, SerifFont, MonoFont);

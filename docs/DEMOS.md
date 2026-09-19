@@ -29,9 +29,11 @@ Shows how to produce a 3-page PDF from TCanvas commands using `TPdfDocumentVcl` 
 - Tagged PDF accessibility marks (`Doc.Tagged := True` auto-raises `FileFormat` to `pdf17`)
 - Tagged output implies **embedded TrueType fonts**: PDF/UA does not allow the
   viewer's own non-embedded base-14 faces, so `Tagged := True` turns
-  `EmbeddedTTF` on and `StandardFontsReplace` off. The whole face is embedded
-  (no subset), which is what makes the demo PDF a few hundred KB rather than a
-  few KB — the price of a reliable `/ToUnicode` round-trip.
+  `EmbeddedTTF` on and `StandardFontsReplace` off. On Linux/macOS the faces
+  are embedded as subsets through `libharfbuzz-subset`, which keeps glyph IDs
+  and therefore the `/ToUnicode` round-trip (ROADMAP R-12: the demo PDF is
+  about 19 KB). Windows has no such subsetter and embeds the whole face
+  (a few hundred KB).
 - Struct roles: `psrH1` for headings, `psrP` for body text, `psrFigure` for graphics, `psrTable / psrTR / psrTH / psrTD` for tables
 
 **Core pattern:**
@@ -403,7 +405,7 @@ Shows how to render Chinese (CJK) text with `TPdfDocumentVcl`. CJK ideographs re
 - `EmbeddedWholeTtf := True` embeds the complete TTF binary (required for full CJK CMAP coverage)
 - Root cause of the historic CJK failure: `lfCharSet = ANSI_CHARSET` restricted CMAP to Latin only; the fix passes `Font.Charset` (DEFAULT_CHARSET) via `TPdfVclCanvas.SyncFont`
 - Why CJK PDFs are large: Microsoft YaHei / WQY covers 28,000+ ideographs (~17 MB TTF); the whole font is embedded
-- Font subsetting (`EmbeddedWholeTtf := False`) is safe only for Latin; avoid for CJK
+- Font subsetting (`EmbeddedWholeTtf := False`) is safe for CJK on Linux/macOS (hb-subset, ROADMAP R-12: 2.3 MB → 11 KB); on Windows `CreateFontPackage` is safe only for Latin, so the demo keeps the whole face
 - Platform-specific CJK fonts: Microsoft YaHei (Windows) / Hiragino Sans GB (macOS) / WQY MicroHei (Linux)
 
 **Font requirements:**
@@ -465,7 +467,7 @@ examples/chinese_demo/bin/x86_64-linux/chinese_demo
 # -> produces output_chinese.pdf (~10–17 MB due to whole-TTF embedding)
 ```
 
-**Note:** The large file size is expected. YaHei / WQY covers 28,000+ CJK glyphs, and the whole font is embedded. Subsetting is not yet reliable for CJK and would only reduce output to a few KB if it works.
+**Note:** The large file size is expected. YaHei / WQY covers 28,000+ CJK glyphs, and the whole font is embedded. On Linux/macOS `EmbeddedWholeTtf := False` reduces the output to a few KB (hb-subset); the demo keeps the whole face because Windows' `CreateFontPackage` is not reliable for CJK.
 
 ---
 
@@ -480,7 +482,7 @@ Shows Arabic right-to-left text in two sections: an unshared isolated-letter bas
 - Section 1 (no shaper): isolated Arabic letters verify the CMAP fix and per-glyph advance widths
 - Section 2 (shaper): contextual Arabic letter forms (connected ligatures) via Uniscribe or HarfBuzz
 - Why HarfBuzz: FreeType alone cannot perform Arabic GSUB substitutions; `mormot.pdf.harfbuzz` must be registered
-- `EmbeddedWholeTtf := True` required — shaped GSUB glyph IDs stay valid only when the whole font is embedded
+- `EmbeddedWholeTtf := True` required on Windows — `CreateFontPackage` drops the shaped GSUB glyphs. On Linux/macOS a subset is safe: hb-subset receives the shaped glyph IDs themselves (ROADMAP R-12)
 - Platform-specific Arabic fonts: Tahoma (Windows) / Geeza Pro (macOS) / Noto Naskh Arabic (Linux)
 
 **Font and library requirements:**

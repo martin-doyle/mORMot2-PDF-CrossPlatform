@@ -18,7 +18,9 @@ The first PAC 2024 run on Windows then reported five PDF/UA errors in the
 Linux-built `markdown_demo.pdf` — B-7 … B-11, now fixed and green in PAC — plus
 B-12 … B-14 and W-1 in `pdf_demo`, all **Priority 1** (see
 [Priority 1 — PAC 2024 Findings](#priority-1--pac-2024-findings-b-7--b-14-w-1--done-2026-09-19-w-1-accepted)).
-After them come the R-items.
+After them come the R-items. R-12 (font subsetting on POSIX) is implemented
+on branch `feature/r12-posix-subset` and accepted on Linux; macOS, Windows and
+PAC are outstanding — see [R-12](#r-12--font-subsetting-on-posix-via-hb-subset--implemented-on-linux-2026-09-19).
 
 Completed items are archived in [Completed Work](#completed-work) at the end of
 this document.
@@ -1672,17 +1674,38 @@ cells must stay inside one `TR` element referencing both pages.
 Only face index 0 of a `.ttc` is reachable because `TPdfFontMap` has no face
 index. Add one so the remaining faces can be selected by name.
 
-### R-12 — Font Subsetting on POSIX via hb-subset — **Priority 3**
+### R-12 — Font Subsetting on POSIX via hb-subset — **IMPLEMENTED on Linux (2026-09-19)**
 
 **Effort:** 2–3 days | **Files:** new `src/platform/unix/mormot.pdf.hbsubset.pas`,
 `src/core/mormot.pdf.types.pas`, `src/core/mormot.ui.pdf.pas`
 
-> **Step-by-step plan:** [R12_PLAN.md](R12_PLAN.md), on branch
+> **Step-by-step plan and full results:** [R12_PLAN.md](R12_PLAN.md), on branch
 > `feature/r12-posix-subset`. It corrects three points below: tagged documents
 > force the whole face, so the 88% figure needs a separate decision (F-1). The
 > `hb_face`/`hb_blob`/`hb_set` symbols live in `libharfbuzz.so.0`, not in the
 > subset library (F-2). And the input must be the union of the glyph set and the
 > unicode set, not the glyph set alone (F-4).
+
+#### Result (R-12)
+
+| PDF (Linux) | Before | After | Pages / text |
+|---|---|---|---|
+| `markdown_demo.pdf` (tagged) | 1,428,389 B | 46,407 B (−96.8%) | pixel-identical, `pdftotext` identical |
+| `output_crossplat.pdf` (tagged) | 800,923 B | 19,256 B (−97.6%) | pixel-identical, identical |
+| CJK variant (`EmbeddedWholeTtf := False`) | 2,309,640 B | 10,848 B (−99.5%) | pixel-identical, identical |
+| RTL variant (`EmbeddedWholeTtf := False`) | 500,092 B | 15,090 B (−97.0%) | pixel-identical, identical |
+
+Every face `emb=yes sub=yes`, and `uni=yes` wherever it was before. Tagged
+documents subset too (plan Step 10, a separate commit): hb-subset keeps glyph
+IDs, so `/ToUnicode` stays valid. PDF/A-1, symbol fonts and CFF faces keep
+the whole face. Windows is unchanged by design. Test suite: 196/196 assertions.
+Found on the way: `chinese_demo` and `rtl_demo` crashed on aarch64
+(`GetWideCharWidth` indexed `fUsedWide[]` before the call that reallocates it);
+fixed in its own commit.
+
+**Outstanding before the merge:** PAC 2024 on the Linux-built tagged PDFs
+(`markdown_demo_linux_r12.pdf`, `pdf_demo_linux_r12.pdf`), macOS verification
+(Geeza Pro exercises the PUA glyph path), Windows regression run.
 
 **Revised 2026-09-19.** The original entry assumed subsetting existed on all
 platforms and only needed shaped glyph IDs tracked through it. It does not: the
@@ -1790,7 +1813,7 @@ Windows-only (`TPdfDocumentGdi`), not portable. No work planned.
 | W-1 | "Possibly inappropriate use of figure" — `pdf_demo` (PAC warning, also WCAG) — accepted, documented in the demo | **1** | 0.25 day | pdf_demo_crossplat.lpr |
 | R-10 | Table row pagination | — | 2–3 days | mormot.ui.report.pas |
 | R-11 | TTC face index | — | 1 day | mormot.pdf.freetype.pas, mormot.pdf.types.pas |
-| R-12 | Font subsetting on POSIX via hb-subset (88% smaller PDFs; also fixes RTL) | **3** | 2–3 days | new mormot.pdf.hbsubset.pas, mormot.pdf.types.pas, mormot.ui.pdf.pas |
+| R-12 | Font subsetting on POSIX via hb-subset — implemented on Linux (97–99.5% smaller PDFs, tagged included); macOS, Windows, PAC outstanding | **3** | 2–3 days | new mormot.pdf.hbsubset.pas, mormot.pdf.types.pas, mormot.ui.pdf.pas |
 | R-13 | RTL shaper advance test | — | 0.5 day | tests/ |
 
 B-7 … B-11 and R-12 carry agreed priorities; `—` means unprioritised, not

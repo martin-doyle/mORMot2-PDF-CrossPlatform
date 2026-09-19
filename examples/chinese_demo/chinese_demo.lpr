@@ -10,8 +10,10 @@
 // File size note: EmbeddedWholeTtf=true embeds the complete TTF binary.
 // Microsoft YaHei covers 28,000+ CJK ideographs (~17 MB); that is why a
 // CJK PDF is ~10x larger than a Latin or Arabic PDF using a smaller font.
-// Subsetting (EmbeddedWholeTtf=false) is safe only for Latin text; CJK
-// subsetting would reduce size to a few KB but is not yet reliable.
+// Subsetting (EmbeddedWholeTtf=false) is reliable on Linux/macOS, where
+// hb-subset keeps every glyph drawn (ROADMAP R-12: 2.3 MB -> 11 KB here);
+// Windows' CreateFontPackage is not reliable for CJK, so the demo keeps the
+// whole face on every platform.
 //
 // Font requirement:
 //   Windows : Microsoft YaHei — pre-installed on Vista+ (all locales)
@@ -123,6 +125,6 @@ begin
   WriteLn('Font used : ', CJK_FONT, '  (EmbeddedWholeTtf=true)');
   WriteLn('');
   WriteLn('Large file size is expected: YaHei/WQY covers 28000+ CJK glyphs (~17 MB TTF).');
-  WriteLn('Subsetting (EmbeddedWholeTtf=false) would reduce this to a few KB,');
-  WriteLn('but is not yet reliable for CJK — use whole-TTF embedding for now.');
+  WriteLn('Subsetting (EmbeddedWholeTtf=false) reduces this to a few KB on');
+  WriteLn('Linux/macOS (hb-subset); on Windows keep whole-TTF embedding for CJK.');
 end.

@@ -1,10 +1,12 @@
 # R-12 — Font Subsetting on POSIX via hb-subset — Implementation Plan
 
 **Branch:** `feature/r12-posix-subset` (created from `main` @ `3537752`)
-**Roadmap entry:** [ROADMAP.md › R-12](ROADMAP.md#r-12--font-subsetting-on-posix-via-hb-subset--priority-3)
+**Roadmap entry:** [ROADMAP.md › R-12](ROADMAP.md#r-12--font-subsetting-on-posix-via-hb-subset--implemented-on-linux-2026-09-19)
 **Priority:** 3 | **Effort:** 3–4 days (the roadmap said 2–3; Step 10 and the
 shared-stream pre-pass were not in that estimate)
-**Status:** planned, 2026-09-19 — no code written yet
+**Status:** implemented and accepted on Linux, 2026-09-19 (Steps 0–10, 13).
+Open: Step 11 (macOS), Step 12 (Windows), PAC 2024 for Step 10, Step 14 (merge).
+Results in §7, deviations from the plan in §9.
 
 This plan turns the roadmap entry into ordered, individually verifiable steps.
 It follows the [Working Method](ROADMAP.md#working-method): one step at a time,
@@ -162,7 +164,20 @@ the following, and Step 1 settles them. **Each needs an explicit "yes"
 before the file is opened.**
 
 | # | Question | File | Why it matters |
-|---|---|---|---|
+|**Answers (Step 1, read from the source):**
+
+| # | Answer |
+|---|---|
+| U-1 | `SaveToStreamDirectEnd` (also reached from `SaveToStream`) loops over `fFontList` and calls `PrepareForSaving` for every font with `fTrueTypeFontsIndex <> 0`; all pages are drawn by then. `PrepareFontSubsets` now runs right before that loop. WinAnsi instances precede their Unicode peers in `fFontList` (the peer is created lazily later), so the CIDFont can copy the already-prefixed name |
+| U-2 | `GetOrCreateFontFile2(const aTtf: PdfString)`: key is `crc32c` + a full byte compare, the stream copies the bytes. Subset bytes shared per face therefore deduplicate unchanged |
+| U-3 | `/BaseFont` and `/FontName` are written in the `TPdfFontTrueType` constructor and rewritten in `PrepareForSaving`; the CIDFont copies the WinAnsi `/BaseFont` ("may have been prefixed"), the Type0 font keeps the plain name |
+| U-4 | Windows prefixes via `TPdfName.AppendPrefix` — **random** (`Random32`) and only on the WinAnsi font and descriptor. POSIX uses a deterministic tag instead and also prefixes the Type0 font; the Windows path is untouched |
+| U-5 | `mormot.pdf.harfbuzz` loads `libharfbuzz.so.0` in `initialization`, registers only if all symbols resolve, and keeps its handle private. The subsetter follows the same pattern with its own handles |
+| U-6 | A plain global `PdfTextShaper` set in `initialization`; `PdfFontSubsetter` mirrors it |
+| U-7 | `SetTagged` set `fEmbeddedWholeTtf := true` unconditionally; nothing resets it later, so a caller can override it after `Tagged` |
+| U-8 | `mormot.ui.pdf` itself uses `mormot.pdf.freetype` on POSIX, so `mormot.pdf.hbsubset` went there too: no demo or project needs a `uses` change |
+
+---|---|---|---|
 | U-1 | Where exactly does the save routine call `PrepareForSaving`, in which order over `fFontList`, and is text output finished at that point? | `src/core/mormot.ui.pdf.pas` (`SaveToStream*`, `PrepareForSaving`) | Placement of the pre-pass (F-5) |
 | U-2 | Signature and hash/lookup of `GetOrCreateFontFile2`: what is the key, and who owns the buffer? | same | Keying the subset cache by source face |
 | U-3 | Where `/BaseFont` and `/FontName` are written for the WinAnsi, Type0 and CIDFont objects, and whether they are written before or after the font file is known | same | Where the subset tag goes (F-6) |
@@ -556,31 +571,59 @@ After rebasing onto `main`.
 
 ---
 
-## 7. Result Table (filled in during implementation)
+## 7. Result Table
 
-| Document (Linux) | Baseline | After Step 9 | After Step 10 | macOS after | Windows |
+Linux, Debian 13 aarch64, HarfBuzz 10.2.0. "Variant" = the demo built in a
+scratch tree with `EmbeddedWholeTtf := False` (chinese, rtl) or untagged
+(markdown). Every row: all pages pixel-identical to the baseline at 110 dpi,
+`pdftotext` identical.
+
+| Document | Baseline | After Step 9 | After Step 10 | macOS | Windows |
 |---|---|---|---|---|---|
-| `markdown_demo.pdf` (tagged) | 1.43 MB | unchanged (F-1) | | | unchanged |
-| `markdown_demo` untagged variant | | | — | | — |
-| `output_crossplat.pdf` (tagged) | 0.80 MB | unchanged (F-1) | | | unchanged |
-| `output_chinese.pdf` | | | — | | unchanged |
-| `output_rtl.pdf` | | | — | | unchanged |
-| Tuning: without dropping layout tables | | | | | |
-| Tuning: without `NO_HINTING` | | | | | |
+| `markdown_demo.pdf` (tagged) | 1,428,389 | unchanged (F-1) | **46,407 (−96.8%)** | open | open |
+| `markdown_demo` untagged variant | 1,426,620 | 44,695 (−96.9%) | — | open | — |
+| `output_crossplat.pdf` (tagged) | 800,923 | unchanged (F-1) | **19,256 (−97.6%)** | open | open |
+| `output_chinese` variant | 2,309,640 | 10,848 (−99.5%) | — | open | — |
+| `output_rtl` variant | 500,092 | 15,090 (−97.0%) | — | open | — |
+| Tuning: layout tables kept (md / cjk / rtl variants) | | 46,773 / 11,413 / 17,047 | | | |
+| Tuning: hinting kept (md / cjk / rtl variants) | | 83,765 / 14,724 / 29,052 | | | |
+
+The tuning variants render identically too, so the defaults (drop both) stay.
+That RTL renders identically **without** the GSUB closure confirms the glyph
+set carries every shaped glyph. `pdffonts`: every face `emb=yes sub=yes`;
+`uni=yes` wherever it was before, on all faces of the tagged demos.
+Test suite: 156 → 196 assertions, all green.
 
 ---
 
 ## 8. Acceptance Criteria for R-12
 
-- [ ] On Linux and macOS, `EmbeddedWholeTtf = False` embeds a subset
-      (`pdffonts`: `sub=yes`) and the document is pixel-identical to the
-      whole-face output
-- [ ] `pdftotext` output unchanged for every demo
-- [ ] One `/FontFile2` per physical face, as before
-- [ ] Without `libharfbuzz-subset` the output equals today's, with no error
-- [ ] Windows output unchanged
-- [ ] Tagged documents: either subset and PAC-green (Step 10 accepted), or
-      whole face and documented why
-- [ ] `test_runner` green on all three platforms; new tests skip cleanly where
-      the library is missing
-- [ ] Skills, `CLAUDE.md`, `DEMOS.md` and `ROADMAP.md` updated
+- [x] On Linux, `EmbeddedWholeTtf = False` embeds a subset (`sub=yes`) and the
+      document is pixel-identical to the whole-face output — [ ] macOS
+- [x] `pdftotext` output unchanged for every demo (Linux)
+- [x] One `/FontFile2` per physical face, as before (`TestSubsetUnionOfStyles`)
+- [x] Without a subsetter the output equals today's, with no error
+      (`TestSubsetFallbackWithoutSubsetter`; not yet tried with the library
+      really absent)
+- [ ] Windows output unchanged — by construction (no subsetter registered), to
+      be confirmed by a Windows build and run
+- [ ] Tagged documents subset and PAC-green — subset done, PAC pending
+- [x] `test_runner` green on Linux — [ ] macOS, [ ] Windows
+- [x] Skills, `CLAUDE.md`, `DEMOS.md` and `ROADMAP.md` updated
+
+---
+
+## 9. Deviations From the Plan
+
+| Plan | What was done, and why |
+|---|---|
+| Load the library lazily on first use (Step 3) | Loaded in `initialization`, registered only when complete — like the shaper. `PdfFontSubsetter <> nil` then means "usable", which Step 10 relies on |
+| Demos add `mormot.pdf.hbsubset` to their `uses` (Step 13) | `mormot.ui.pdf` uses it on POSIX, next to the FreeType backend (U-8) |
+| Engine tests in `test_pdf_smoke.pas` (Step 8) | Second class `TPdfSubsetEngineTests` in `test_pdf_subset.pas`, next to the sfnt readers it needs; only the Tagged assertion in `test_pdf_smoke.pas` changed |
+| Test: subset keeps `numGlyphs` | Wrong assumption: retain-gids cuts glyphs after the highest kept ID, so `numGlyphs` shrinks — IDs never move, which is what matters |
+| Test: glyph-only requests get no cmap entry | Wrong assumption: hb-subset adds cmap entries for requested glyphs as well; harmless. F-4 still holds: WinAnsi glyphs are not in the glyph set, so their code points are required |
+| Not planned | **PDF/A-1 keeps the whole face**: 6.3.5 requires `/CIDSet` for subset CIDFonts, which the engine does not write. Before R-12 POSIX never subset, so this avoids turning PDF/A-1 output invalid |
+| Not planned | **Symbol fonts keep the whole face**: their glyphs are reached through the `(3,0)` cmap, which a unicode-set request does not describe |
+| Not planned | **Crash fix** found during Step 0: `chinese_demo`/`rtl_demo` crashed on aarch64 (`fUsedWide[FindOrAddUsedWideChar(c)]` read the array address before the call reallocated it). Separate commit `48f286b` |
+| Step 0 baseline for the tagged demos only | All four demos embed the whole face on purpose (two tagged, two with `EmbeddedWholeTtf := True`), so the checks ran on variants built in a scratch tree; the demos keep their settings, only their comments were corrected |
+

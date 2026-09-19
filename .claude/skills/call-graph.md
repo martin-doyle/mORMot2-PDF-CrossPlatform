@@ -431,7 +431,20 @@ AddGlyphs(OutGlyphs, count, Canvas) (pdf.pas:5573):
 ### 4d — Font Serialization at Save (`pdf.pas:6568`)
 
 ```
-TPdfDocument.SaveToStream / SaveToFile
+TPdfDocument.SaveToStream / SaveToFile → SaveToStreamDirectEnd
+  TPdfDocument.PrepareFontSubsets                 (R-12, runs first)
+    exit unless PdfFontSubsetter <> nil (POSIX + libharfbuzz-subset)
+                and not EmbeddedWholeTtf and PdfA not in [pdfa1A, pdfa1B]
+    for every WinAnsi TPdfFontTrueType that IsEmbedded and not IsSymbolic:
+      GetFaceData → whole face (PdfPlatformFont.GetFontData, tag 0)
+      group by face bytes (crc32c + compare) in fFontSubsets[]
+        ← Regular + Bold of one .ttc face land in the same entry
+      AddToSubsetRequest: Unicodes += fWinAnsiUsed (via WinAnsi table) +
+                          fUsedWideChar; Glyphs += fUsedWide[].Glyph
+      fSubsetIndex := entry + 1
+    per entry: PdfFontSubsetter.Subset(Face, Request) → Subset bytes
+               Tag := 'ABCDEF+' from crc32c(Subset)   (deterministic)
+               failure (CFF, error) → Subset = '' → whole face
   for every font in fFontList:
     TPdfFontTrueType.PrepareForSaving
 
@@ -448,19 +461,22 @@ TPdfDocument.SaveToStream / SaveToFile
     WinAnsi font branch (builds /Widths, embeds font file):
       /FirstChar, /LastChar, /Widths from fWinAnsiUsed + ABC widths
 
-      EmbeddedWholeTtf = true (set by Tagged; otherwise not the default):
+      if IsEmbedded:
         GetFontData(DC, 0, 0, nil, 0)         → query total byte count
         GetFontData(DC, 0, 0, Buf, Size)      → read full TTF bytes
-        embed as /FontFile2                   ← GSUB glyph IDs valid; Arabic works
-                                               (overlapping widths only)
 
-      EmbeddedWholeTtf = false (subset mode) — WINDOWS ONLY:
-        the branch is inside {$ifdef USE_UNISCRIBE}, undefined for OSPOSIX, so
-        Linux/macOS fall through to the whole face regardless of the flag
-        input: code points from fWinAnsiUsed + fUsedWideChar
-        CreateFontPackage(input) → subset TTF (else: whole face)
-        if input empty (GSUB-only Arabic): degenerate subset → boxes in output
-        embed as /FontFile2
+        GetSubset <> nil (POSIX, prepared above):
+          ttf := Subset bytes; prefix /FontName and /BaseFont with Tag
+          (the Unicode instance copies the prefixed name to its CIDFont and
+           Type0 /BaseFont - WinAnsi instances are prepared first)
+
+        else EmbeddedWholeTtf = false — WINDOWS ONLY ({$ifdef USE_UNISCRIBE}):
+          input: code points from fWinAnsiUsed + fUsedWideChar
+          CreateFontPackage(input) → subset TTF (else: whole face)
+          if input empty (GSUB-only Arabic): degenerate subset → boxes in output
+
+        GetOrCreateFontFile2(ttf) → one /FontFile2 per distinct byte string
+  fFontSubsets := nil
 ```
 
 ### 4e — CJK Text Rendering Path (`UseUniscribe=false`)
@@ -665,7 +681,9 @@ TPdfDocument.SetTagged(true)
   fTagged := true
   fFileFormat raised to pdf17
   PDF/UA font mode: fStandardFontsReplace := false; fEmbeddedTtf := true;
-                    fEmbeddedWholeTtf := true
+                    fEmbeddedWholeTtf := PdfFontSubsetter = nil
+                    ← POSIX subsets (retain-gids keeps /ToUnicode valid, R-12);
+                      Windows embeds the whole face
   Catalog: /MarkInfo << /Marked true >> /Lang 'en' /StructTreeRoot→fStructTree
 
 TPdfDocument.AddPage
