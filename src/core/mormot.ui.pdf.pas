@@ -90,6 +90,7 @@ uses
   mormot.pdf.gdi,        // registers GDI backend via RegisterPdfPlatform()
   {$else}
   mormot.pdf.freetype,   // registers FreeType2 backend via RegisterPdfPlatform()
+  mormot.pdf.hbsubset,   // registers PdfFontSubsetter when libharfbuzz-subset loads
   {$endif OSWINDOWS}
   mormot.pdf.types,      // platform-neutral interfaces and records
   {$ifdef USE_GRAPHICS_UNIT}
