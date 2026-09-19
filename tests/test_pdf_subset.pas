@@ -11,7 +11,9 @@ unit test_pdf_subset;
 interface
 
 uses
+  Classes,
   SysUtils,
+  Graphics,
   mormot.core.base,
   mormot.core.os,
   mormot.core.text,
@@ -20,7 +22,9 @@ uses
   {$ifndef MSWINDOWS}
   mormot.pdf.hbsubset,
   {$endif MSWINDOWS}
-  mormot.ui.pdf;
+  mormot.ui.pdf,
+  mormot.ui.pdfcanvas,
+  mormot.ui.report;     // GetReportFonts
 
 type
   /// IPdfFontSubsetter test cases
@@ -42,6 +46,32 @@ type
     procedure TestSubsetRejectsCff;
     procedure TestSubsetRejectsGarbage;
   end;
+
+  /// font subsetting through TPdfDocument, on the saved PDF
+  TPdfSubsetEngineTests = class(TSynTestCase)
+  protected
+    // render aText with aFont (regular, and bold if aBold) into an
+    // uncompressed PDF; aWhole = EmbeddedWholeTtf
+    // - aText holds UTF-8 bytes in a string, as TPdfVclCanvas.TextOut expects:
+    // a RawUtf8 parameter would be converted to the system code page first
+    function BuildPdf(const aFont: string; const aText: string;
+      aWhole, aTagged, aBold: boolean): RawByteString;
+    function SansFont: string;
+  published
+    procedure TestSubsetEmbeddedIsSmaller;
+    procedure TestSubsetSharedStreamAndTag;
+    procedure TestSubsetUnionOfStyles;
+    procedure TestSubsetTagIsDeterministic;
+    procedure TestSubsetFallbackWithoutSubsetter;
+    procedure TestTaggedStillWholeFace;
+  end;
+
+/// number of non-overlapping occurrences of Sub in s
+function CountOf(const Sub, s: RawByteString): integer;
+/// the bytes of the first /FontFile2 stream of an uncompressed PDF
+function FirstFontFile(const Pdf: RawByteString): RawByteString;
+/// the first '/ABCDEF+' subset tag of a PDF name, as 'ABCDEF+', or ''
+function FirstSubsetTag(const Pdf: RawByteString): RawByteString;
 
 // minimal sfnt readers, shared with the engine-level tests
 
@@ -160,6 +190,62 @@ begin
         result := (cardinal(result) + delta) and $ffff;
     end;
     exit;
+  end;
+end;
+
+
+function CountOf(const Sub, s: RawByteString): integer;
+var
+  p: PtrInt;
+begin
+  result := 0;
+  p := PosEx(Sub, s, 1);
+  while p > 0 do
+  begin
+    inc(result);
+    p := PosEx(Sub, s, p + length(Sub));
+  end;
+end;
+
+function FirstFontFile(const Pdf: RawByteString): RawByteString;
+var
+  p, q, len: PtrInt;
+begin
+  result := '';
+  p := Pos(RawByteString('/Length1 '), Pdf);
+  if p = 0 then
+    exit;
+  inc(p, 9);
+  len := 0;
+  while Pdf[p] in ['0'..'9'] do
+  begin
+    len := len * 10 + ord(Pdf[p]) - 48;
+    inc(p);
+  end;
+  q := PosEx(RawByteString(#10'stream'#10), Pdf, p);
+  if q > 0 then
+    result := copy(Pdf, q + 8, len);
+end;
+
+
+function FirstSubsetTag(const Pdf: RawByteString): RawByteString;
+var
+  p, i: PtrInt;
+  ok: boolean;
+begin
+  result := '';
+  p := PosEx('+', Pdf, 8);
+  while p > 0 do
+  begin
+    ok := Pdf[p - 7] = '/';
+    for i := p - 6 to p - 1 do
+      ok := ok and (Pdf[i] in ['A'..'Z']);
+    if ok then
+    begin
+      result := copy(Pdf, p - 6, 7);
+      exit;
+    end;
+    p := PosEx('+', Pdf, p + 1);
   end;
 end;
 
@@ -350,6 +436,171 @@ begin
     Check(SfntGlyphLength(sub, 1) <= 0, 'garbage produced a glyph')
   else
     CheckEqual(sub, '', 'failure must not return data');
+end;
+
+
+{ TPdfSubsetEngineTests }
+
+function TPdfSubsetEngineTests.SansFont: string;
+var
+  serif, mono: string;
+begin
+  GetReportFonts(true, result, serif, mono);
+end;
+
+function TPdfSubsetEngineTests.BuildPdf(const aFont: string;
+  const aText: string; aWhole, aTagged, aBold: boolean): RawByteString;
+var
+  PDF: TPdfDocumentVcl;
+  Stream: TMemoryStream;
+begin
+  Stream := TMemoryStream.Create;
+  try
+    PDF := TPdfDocumentVcl.Create(false, 0, pdfaNone);
+    try
+      PDF.CompressionMethod := cmNone; // keep the font file readable
+      if aTagged then
+        PDF.Tagged := true
+      else
+      begin
+        PDF.EmbeddedTTF := true;
+        PDF.EmbeddedWholeTtf := aWhole;
+      end;
+      PDF.AddPage;
+      if aTagged then
+        PDF.BeginStructContent(psrP);
+      PDF.VclCanvas.Font.Name := aFont;
+      PDF.VclCanvas.Font.Size := 12;
+      PDF.VclCanvas.TextOut(20, 20, aText);
+      if aBold then
+      begin
+        PDF.VclCanvas.Font.Style := [fsBold];
+        PDF.VclCanvas.TextOut(20, 60, aText + '!');
+      end;
+      if aTagged then
+        PDF.EndStructContent;
+      PDF.SaveToStream(Stream);
+    finally
+      PDF.Free;
+    end;
+    SetLength(result, Stream.Size);
+    Stream.Position := 0;
+    Stream.Read(pointer(result)^, Stream.Size);
+  finally
+    Stream.Free;
+  end;
+end;
+
+procedure TPdfSubsetEngineTests.TestSubsetEmbeddedIsSmaller;
+var
+  whole, sub: RawByteString;
+begin
+  if PdfFontSubsetter = nil then
+  begin
+    Check(true, 'SKIP: no IPdfFontSubsetter registered');
+    exit;
+  end;
+  whole := BuildPdf(SansFont, 'Hello World', true, false, false);
+  sub := BuildPdf(SansFont, 'Hello World', false, false, false);
+  Check(length(sub) * 4 < length(whole), FormatUtf8('subset PDF % bytes, whole %',
+    [length(sub), length(whole)]));
+  Check(copy(FirstFontFile(sub), 1, 4) = #0#1#0#0, 'embedded subset is an sfnt');
+end;
+
+procedure TPdfSubsetEngineTests.TestSubsetSharedStreamAndTag;
+var
+  pdf, ttf, tag: RawByteString;
+begin
+  if PdfFontSubsetter = nil then
+  begin
+    Check(true, 'SKIP: no IPdfFontSubsetter registered');
+    exit;
+  end;
+  // Latin runs through the WinAnsi instance, Omega through the Type0 one
+  pdf := BuildPdf(SansFont, 'Hello '#$CE#$A9, false, false, false);
+  CheckEqual(CountOf('/Length1 ', pdf), 1, 'one font file for both instances');
+  CheckEqual(CountOf('/FontFile2 ', pdf), 1, 'one shared /FontDescriptor');
+  // TrueType + Type0 /BaseFont, CIDFontType2 /BaseFont, /FontName
+  tag := FirstSubsetTag(pdf);
+  Check(tag <> '', 'subset tag present');
+  CheckEqual(CountOf('/' + tag, pdf), 4,
+    'the same tag on all fonts and the descriptor');
+  ttf := FirstFontFile(pdf);
+  Check(SfntGlyphLength(ttf, SfntCmapLookup(ttf, ord('H'))) > 0, 'H kept');
+  Check(SfntGlyphLength(ttf, SfntCmapLookup(ttf, $03A9)) > 0, 'Omega kept');
+  CheckEqual(SfntCmapLookup(ttf, ord('Z')), 0, 'Z dropped from the cmap');
+end;
+
+procedure TPdfSubsetEngineTests.TestSubsetUnionOfStyles;
+var
+  pdf, ttf: RawByteString;
+begin
+  if PdfFontSubsetter = nil then
+  begin
+    Check(true, 'SKIP: no IPdfFontSubsetter registered');
+    exit;
+  end;
+  // Droid Sans Fallback has no bold face: Bold resolves to the same file, so
+  // the Regular and Bold fonts share one face and must share one subset
+  pdf := BuildPdf('Droid Sans Fallback', #$E4#$B8#$AD, false, false, true);
+  if Pos(RawByteString('DroidSansFallback'), pdf) = 0 then
+  begin
+    Check(true, 'SKIP: Droid Sans Fallback not installed');
+    exit;
+  end;
+  CheckEqual(CountOf('/Length1 ', pdf), 1, 'Regular and Bold share one file');
+  ttf := FirstFontFile(pdf);
+  Check(SfntGlyphLength(ttf, SfntCmapLookup(ttf, $4E2D)) > 0, 'CJK glyph kept');
+  Check(SfntGlyphLength(ttf, SfntCmapLookup(ttf, ord('!'))) > 0,
+    '! drawn only in Bold, yet kept in the shared subset');
+end;
+
+procedure TPdfSubsetEngineTests.TestSubsetTagIsDeterministic;
+var
+  a, b: RawByteString;
+begin
+  if PdfFontSubsetter = nil then
+  begin
+    Check(true, 'SKIP: no IPdfFontSubsetter registered');
+    exit;
+  end;
+  a := BuildPdf(SansFont, 'Same input', false, false, false);
+  b := BuildPdf(SansFont, 'Same input', false, false, false);
+  Check(FirstSubsetTag(a) <> '', 'tag present');
+  CheckEqual(FirstSubsetTag(a), FirstSubsetTag(b), 'same input, same tag');
+  Check(FirstFontFile(a) = FirstFontFile(b), 'same input, same subset bytes');
+end;
+
+procedure TPdfSubsetEngineTests.TestSubsetFallbackWithoutSubsetter;
+var
+  saved: IPdfFontSubsetter;
+  whole, sub: RawByteString;
+begin
+  saved := PdfFontSubsetter;
+  PdfFontSubsetter := nil;
+  try
+    whole := BuildPdf(SansFont, 'Hello', true, false, false);
+    sub := BuildPdf(SansFont, 'Hello', false, false, false);
+  finally
+    PdfFontSubsetter := saved;
+  end;
+  {$ifdef MSWINDOWS}
+  Check(true, 'Windows subsets through CreateFontPackage, not through this');
+  {$else}
+  Check(FirstFontFile(sub) = FirstFontFile(whole),
+    'without a subsetter the whole face is embedded, as before R-12');
+  CheckEqual(FirstSubsetTag(sub), '', 'and no subset tag is written');
+  {$endif MSWINDOWS}
+end;
+
+procedure TPdfSubsetEngineTests.TestTaggedStillWholeFace;
+var
+  tagged, whole: RawByteString;
+begin
+  tagged := BuildPdf(SansFont, 'Hello', false, true, false);
+  whole := BuildPdf(SansFont, 'Hello', true, false, false);
+  Check(FirstFontFile(tagged) = FirstFontFile(whole),
+    'Tagged embeds the whole face (ROADMAP Step 6)');
 end;
 
 end.

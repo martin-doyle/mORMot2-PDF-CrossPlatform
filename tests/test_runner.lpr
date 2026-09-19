@@ -33,7 +33,8 @@ type
 
 procedure TIntegrationTests.TestPDF;
 begin
-  AddCase([TPdfCrossPlatTests, TPdfSmokeTests, TPdfSubsetTests]);
+  AddCase([TPdfCrossPlatTests, TPdfSmokeTests, TPdfSubsetTests,
+    TPdfSubsetEngineTests]);
 end;
 
 procedure TIntegrationTests.TestReport;
