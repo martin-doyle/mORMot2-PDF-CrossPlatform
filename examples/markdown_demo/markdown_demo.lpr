@@ -325,8 +325,12 @@ begin
     Report.UseOutlines := true;
     Report.PaperSize := psA4;
     Report.Orientation := poPortrait;
-    Report.ExportPdfEmbeddedTTF := False;
-    Report.ExportPdfStandardFonts := not Report.ExportPdfEmbeddedTTF;
+    { ExportPdfTagged := True wraps all draw commands in struct elements and
+      auto-raises FileFormat to pdf17 (ISO 32000-1). It also selects the PDF/UA
+      font mode — embedded TrueType instead of the base-14 Type1 faces — which
+      is why it has to be set before anything is drawn: the export font flags
+      decide which metrics the layout is measured with. }
+    Report.ExportPdfTagged := True;
     Report.GetExportFonts(SansFont, SerifFont, MonoFont);
 
     { === PAGE 1: Standard layout with 15mm margins === }
@@ -359,10 +363,7 @@ begin
 
     Report.EndDoc;
 
-    { Export to PDF.
-      ExportPdfTagged := True wraps all draw commands in struct elements and
-      auto-raises FileFormat to pdf17 (ISO 32000-1) — no need to set it manually. }
-    Report.ExportPdfTagged := True;
+    { Export to PDF — ExportPdfTagged was set before drawing, see above. }
     MS := TMemoryStream.Create;
     try
       if Report.ExportPdfStream(MS) then

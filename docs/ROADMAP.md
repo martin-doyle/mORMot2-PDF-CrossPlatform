@@ -4,15 +4,17 @@ This document describes all planned improvements with full technical background,
 affected files, implementation steps, and verification criteria.
 
 **Current baseline:** All previously planned features (P1-A … P3, R-1 … R-9) plus
-Steps 1, 2, 3, 4 and 5 (B-1, B-2, B-3, B-5, B-4) are implemented. The structure tree is now
+Steps 1 to 6 (B-1, B-2, B-3, B-5, B-4, B-6, P-6) are implemented. The structure tree is now
 properly nested, with `Table > TR > TH|TD` and `L > LI > LBody` as real
 hierarchy levels; a wrapped paragraph is one `P` instead of one `P` per line —
 across a page break as well; and a sentence with inline styling is one `P` whose
 styled runs are `Span` kids, in reading order. Layout is measured with the PDF
 font engine instead of the LCL, so line breaking and inline advances no longer
 depend on the widgetset, and `TPdfVclCanvas` measures text with the same font
-engine, in `single` precision. The open work is font embedding for tagged
-output.
+engine, in `single` precision. Tagged output now selects the PDF/UA font mode
+itself — embedded TrueType, whole face, with a `/ToUnicode` CMap on the WinAnsi
+instance — and refuses to be switched on after the layout has been measured.
+What remains are the R-items, plus PDF/UA validation on Windows and macOS.
 
 Completed items are archived in [Completed Work](#completed-work) at the end of
 this document.
@@ -77,7 +79,9 @@ Linux run of `pdf_demo`. What that **confirmed**:
   quantised to 0.75pt (1 px @ 96 DPI) and `bold` misses its AFM width by 0.72pt~~
   — **fixed in Step 4**; the `bold` figure is corrected there (the original
   1.71pt used the Helvetica *regular* widths)
-- P-6: every tagged PDF currently produced embeds nothing (`emb=no`, `uni=no`)
+- ~~P-6: every tagged PDF currently produced embeds nothing (`emb=no`, `uni=no`)~~
+  — **fixed in Step 6**; the `uni=no` traced to the WinAnsi `/ToUnicode` CMap
+  being gated on PDF/A
 - ~~B-6: `pdf_demo.pdf` page 2 is unparsable — `/Alt` is written as a bare
   token, so Acrobat reports a damaged page and PAC aborts with "unexpected
   token"~~ — **fixed in Step 5b**
@@ -961,10 +965,17 @@ from there, and for the PDF/UA checks PAC could never reach before.
 
 ---
 
-## Step 6 — P-6: Font Embedding for Tagged PDF
+## Step 6 — P-6: Font Embedding for Tagged PDF — **DONE (2026-09-19)**
 
 **Effort:** 1–2 days | **Files:** `src/core/mormot.ui.pdf.pas`,
 `src/core/mormot.ui.report.pas` | **Demos:** `pdf_demo`, `markdown_demo`
+
+> **Revised 2026-09-19, after Steps 4 and 5 landed.** The original plan put the
+> embedding switch into `SetTagged` and stopped there. Steps 4/5 moved layout
+> measurement into the PDF font engine, which makes the *timing* of that switch
+> the decisive question — see "Why the original plan no longer works" below.
+> The revision was written against the source, so the three unknowns the first
+> version carried are now settled and recorded here.
 
 ### Technical Background
 
@@ -992,42 +1003,100 @@ project currently produces would fail PDF/UA** on the embedding and
 Unicode-mapping rules. `uni=no` also means text extraction has no reliable
 `/ToUnicode` round-trip, which is why step 2 matters as much as step 1.
 
+### Why the Original Plan No Longer Works
+
+Three findings, each verified in the source:
+
+1. **The switch fires too late.** Since Step 4, `TGDIPages.SetupPdfMeasureFont`
+   (`mormot.ui.report.pas:1005`) passes `fExportPdfStandardFonts` to
+   `TPdfFontMeasurer.SetFont`, so that flag decides **which metrics the line
+   breaker uses while the page is being recorded**. `Tagged` is only set inside
+   `ExportPdfStream` (`mormot.ui.report.pas:2972`), long after the last
+   `RenderPage`. Flipping embedding from within `SetTagged` would therefore
+   break lines with Helvetica AFM widths and then set them in Liberation Sans —
+   reintroducing exactly the divergence Step 4 removed. **The flag has to be
+   decided before the first draw command, not at export time.**
+
+2. **The flag alone changes nothing; the font *names* are resolved earlier.**
+   `pdf_demo_crossplat.lpr:58` calls `GetReportFonts(False, …)` and gets
+   `Helvetica`/`Times`/`Courier`, then sets `Tagged := True` on line 61. A
+   `fEmbeddedTtf := true` behind its back leaves those base-14 names in place;
+   `Helvetica` does not exist on Linux, so `FontFallBackName` silently takes
+   over. Something would be embedded — not the intended face. The demos must
+   ask for the font names *after* declaring the document tagged.
+
+3. **The proposed exception would break every existing caller.** Both tagged
+   demos set precisely the forbidden pair
+   (`pdf_demo_crossplat.lpr:57`, `markdown_demo.lpr:329`), and
+   `ExportPdfStream` itself assigns `StandardFontsReplace` *before* `Tagged`
+   (`mormot.ui.report.pas:2970`/`2972`), so an unconditional raise in
+   `SetTagged` would fire on every tagged export. Tagged output selects the
+   font mode; it does not veto a flag the caller set earlier.
+
+### Settled Unknowns
+
+| Question | Answer (from source) |
+|---|---|
+| Is `SetTagged` a real setter? | Yes, `mormot.ui.pdf.pas:9151`; it only raises `fFileFormat` to `pdf17`. |
+| Does the WinAnsi instance get a `/ToUnicode`? | **No.** `mormot.ui.pdf.pas:7170` gates it on `fDoc.fPdfA <> pdfaNone`. The Unicode/CID instance writes one unconditionally (`:7000`). Latin tagged text runs through the WinAnsi instance, so today it has no Unicode round-trip — this is the `uni=no` in `pdffonts`. |
+| Does `EmbeddedWholeTtf` matter cross-platform? | Only on Windows. The subsetting branch sits inside `{$ifdef USE_UNISCRIBE}` (`mormot.ui.pdf.pas:7138`); POSIX always embeds the complete face. Its default is `false`, not `true` as `fonts.md` §3 states — that line needs correcting. |
+
 ### Steps
 
-1. **Couple embedding to `Tagged` in `SetTagged`** (`mormot.ui.pdf.pas`):
+1. **Make the font mode part of declaring a document tagged, at the point where
+   it still affects measurement.**
+
+   `TPdfDocument.SetTagged` (`mormot.ui.pdf.pas:9151`) — refuse the switch once
+   pages exist, then select the PDF/UA-capable font mode:
    ```pascal
    procedure TPdfDocument.SetTagged(Value: boolean);
    begin
+     if Value and (fRawPages.Count > 0) then
+       raise ESynException.Create('TPdfDocument.Tagged must be set before the ' +
+         'first AddPage: it selects the fonts the document is measured with');
      fTagged := Value;
-     if Value then
-     begin
-       if fFileFormat < pdf17 then
-         fFileFormat := pdf17;         // existing behaviour
-       fEmbeddedTtf := true;           // PDF/UA needs embedded fonts
-     end;
+     if not Value then
+       exit;
+     if fFileFormat < pdf17 then
+       fFileFormat := pdf17;         // existing behaviour
+     fStandardFontsReplace := false; // PDF/UA forbids non-embedded base-14
+     fEmbeddedTtf := true;
+     fEmbeddedWholeTtf := true;      // a subset breaks the Unicode round-trip
    end;
    ```
-   Do **not** silently clear `StandardFontsReplace` — instead raise
-   `ESynException` if both `Tagged` and `StandardFontsReplace` are set, so the
-   conflict surfaces at development time rather than at validation time.
+   The guard replaces the originally proposed "raise when both flags are set":
+   it catches the case that actually corrupts output (deciding too late) instead
+   of a combination the caller cannot avoid.
 
-2. **Guarantee `/ToUnicode` for every embedded font.** Verify it is written for
-   both the WinAnsi and the Unicode instance of the dual-instance model
-   (`.claude/skills/fonts.md` §1) — a missing `/ToUnicode` on either makes text
-   unextractable and fails PDF/UA.
+2. **Pull the same decision forward in `TGDIPages`** (`mormot.ui.report.pas`):
+   turn `ExportPdfTagged` into `SetExportPdfTagged`, which forces
+   `fExportPdfEmbeddedTTF := True` / `fExportPdfStandardFonts := False`, and
+   raises when `fPageCount > 0` — i.e. when commands have already been recorded
+   with the other metrics. `markdown_demo` then inherits embedding without
+   demo-side flags, and Step 4's measurement invariant holds.
 
-3. **Use whole-TTF embedding while `Tagged` is on.** Subsetting is documented as
-   unreliable for RTL and unsafe for CJK (`fonts.md` §9–10); a subset that drops
-   glyphs also breaks the Unicode round-trip that tagging depends on. Set
-   `EmbeddedWholeTtf := true` when `Tagged` is enabled, and document the file-size
-   trade-off.
+3. **Write `/ToUnicode` for the WinAnsi instance of a tagged document.**
+   `mormot.ui.pdf.pas:7170`: widen the condition from
+   `fDoc.fPdfA <> pdfaNone` to `(fDoc.fPdfA <> pdfaNone) or fDoc.fTagged`.
+   The CMap builder below it is already correct and needs no change. Without
+   this, `pdffonts` keeps reporting `uni=no` for Latin text even once the face
+   is embedded.
 
-4. **Pass it through `TGDIPages`** (`mormot.ui.report.pas`): when
-   `ExportPdfTagged = true`, set embedding on the created `TPdfDocument` so
-   `markdown_demo` inherits it without demo-side changes.
+4. **Update the demos to ask for fonts in the new order:** set
+   `Doc.Tagged := True` / `Report.ExportPdfTagged := True` **first**, then call
+   `GetReportFonts(Doc.EmbeddedTTF, …)` / `Report.GetExportFonts(…)`, and drop
+   the now-contradictory manual `EmbeddedTTF := False` /
+   `StandardFontsReplace := True` lines. Affected:
+   `examples/pdf_demo/pdf_demo_crossplat.lpr:56-61` and
+   `examples/markdown_demo/markdown_demo.lpr:328-330` + `:365`.
 
-5. **Update the demos** to drop any now-redundant manual embedding flags, and note
-   in `docs/DEMOS.md` that tagged export implies embedded fonts.
+5. **Document it:** note in `docs/DEMOS.md` and `CLAUDE.md` that tagged export
+   implies embedded TrueType fonts (and the resulting file-size trade-off), and
+   correct the `EmbeddedWholeTtf` default in `.claude/skills/fonts.md` §3.
+
+6. **Regression test** in `tests/test_pdf_smoke.pas`: a tagged document must
+   carry a `/FontFile2` and a `/ToUnicode` for the WinAnsi font, and
+   `Tagged := true` after `AddPage` must raise.
 
 ### Verification
 
@@ -1040,7 +1109,50 @@ veraPDF --flavour ua1 markdown_demo.pdf
 
 - No non-embedded font in any tagged PDF
 - Copy/paste out of the PDF returns the original text (proves `/ToUnicode`)
-- `Tagged := true` together with `StandardFontsReplace := true` raises a clear error
+- Setting `Tagged` after the first page raises a clear error
+- Line breaks are unchanged between a tagged and an untagged run *of the same
+  font configuration* — the Step 4 invariant. Tagged output legitimately breaks
+  differently from a base-14 run, because it is measured with the TTF face it
+  actually embeds.
+
+**Tooling limit on this machine:** `veraPDF`, `qpdf` and `mutool` are still
+absent (see Evidence Base); only `pdffonts`/`pdfinfo` are available. The
+`emb`/`uni` criterion is checkable here, full PDF/UA-1 validation is not — that
+runs on Windows with PAC 2024.
+
+### Result (Step 6)
+
+Implemented as revised, on Linux:
+
+| Change | Location |
+|---|---|
+| `Tagged` refuses to switch once pages exist, then selects the PDF/UA font mode | `mormot.ui.pdf.pas` `SetTagged` |
+| WinAnsi `/ToUnicode` CMap widened from PDF/A-only to `or fDoc.fTagged` | `mormot.ui.pdf.pas` `PrepareForSaving` |
+| `ExportPdfTagged` became `SetExportPdfTagged`: forces the export font flags, raises once `fPageCount > 0` | `mormot.ui.report.pas` |
+| `Tagged` assigned before the font flags in `ExportPdfStream`, so the two cannot contradict | `mormot.ui.report.pas` |
+| Demos ask for font names after declaring the document tagged | `pdf_demo_crossplat.lpr`, `markdown_demo.lpr` |
+| `TestTaggedImpliesEmbeddedFonts`, `TestTaggedAfterAddPageRaises` | `tests/test_pdf_smoke.pas` |
+
+**Measured on Linux** (`pdffonts`), the two tagged demos:
+
+| PDF | Before | After |
+|---|---|---|
+| `markdown_demo.pdf` | 7 base-14 faces, all `emb=no uni=no` | 9 Liberation faces, all `emb=yes uni=yes`; 1.43 MB |
+| `output_crossplat.pdf` | Helvetica/Helvetica-Bold/Times-Roman/Courier, all `emb=no uni=no` | 4 Liberation faces, all `emb=yes uni=yes`; 0.80 MB |
+
+`pdftotext` returns the original text including `ä ö ü ß €`, which is the
+`/ToUnicode` round-trip PDF/UA asks for. The untagged demos are deliberately
+untouched: `output_chinese.pdf` and `output_rtl.pdf` still show `uni=no` on
+their WinAnsi instances, since the new CMap is gated on `fTagged`. Full test
+suite: 137/137 assertions.
+
+The file-size growth is the whole-face embedding and is intended — a subset
+would drop glyphs and with them the round-trip.
+
+**Accepted on Linux on 2026-09-19.** Still open: `veraPDF --flavour ua1` and
+PAC 2024 have not run — both need hosts this machine does not provide — so
+verification on Windows and macOS remains outstanding, as the Working Method
+requires.
 
 ---
 
@@ -1094,7 +1206,6 @@ Windows-only (`TPdfDocumentGdi`), not portable. No work planned.
 
 | ID | Item | Effort | Files |
 |---|---|---|---|
-| P-6 | Font embedding for Tagged PDF | 1–2 days | mormot.ui.pdf.pas, mormot.ui.report.pas |
 | R-10 | Table row pagination | 2–3 days | mormot.ui.report.pas |
 | R-11 | TTC face index | 1 day | mormot.pdf.freetype.pas, mormot.pdf.types.pas |
 | R-12 | Subsetting for RTL/CJK | 3–5 days | mormot.ui.pdf.pas |
@@ -1111,7 +1222,7 @@ platforms before the next begins — see [Working Method](#working-method).
 | ~~4~~ | ~~B-5~~ | **Done** — layout now measured with the PDF font engine; `LineHeightFactor` multiplies the font size |
 | ~~5~~ | ~~B-4~~ | **Done** — `TextWidthFrac`/`TextHeightFrac` measure with the PDF font engine; a thin adapter over `TPdfFontMeasurer`, as planned |
 | ~~5b~~ | ~~B-6~~ | **Done** — unscheduled: `/Alt` is a PDF string; written bare it broke the page for every parser, and it never reached the `StructElem` |
-| 6 | P-6 | Last: until it lands, PAC reports font-embedding errors on every run |
+| ~~6~~ | ~~P-6~~ | **Done** — tagged output selects the PDF/UA font mode before the layout is measured, and the WinAnsi `/ToUnicode` CMap is no longer PDF/A-only |
 
 The remaining R-items are independent and unscheduled.
 

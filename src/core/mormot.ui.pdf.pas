@@ -7167,8 +7167,11 @@ begin
           end;
         end;
       end;
-      // PDF/A requires ToUnicode CMap for all fonts, including WinAnsi
-      if (fDoc.fPdfA <> pdfaNone) and
+      // PDF/A and PDF/UA (i.e. Tagged) require a ToUnicode CMap for all fonts,
+      // including WinAnsi - without it pdffonts reports uni=no and text
+      // extraction has no reliable round-trip
+      if ((fDoc.fPdfA <> pdfaNone) or
+          fDoc.fTagged) and
          (fFirstChar <> 0) then
       begin
         tounicode := TPdfStream.Create(fDoc);
@@ -9150,9 +9153,25 @@ end;
 
 procedure TPdfDocument.SetTagged(Value: boolean);
 begin
+  // the font mode decides which metrics the whole document is measured with,
+  // so switching it once pages exist would break lines with one face and set
+  // them with another (see ROADMAP Step 6)
+  if Value and
+     (fRawPages.Count > 0) then
+    raise ESynException.Create('TPdfDocument.Tagged must be set before the ' +
+      'first AddPage: it selects the fonts the document is measured with');
   fTagged := Value;
-  if fTagged and (fFileFormat < pdf17) then
+  if not fTagged then
+    exit;
+  if fFileFormat < pdf17 then
     fFileFormat := pdf17;
+  // PDF/UA requires every glyph to map back to Unicode, which the viewer's own
+  // non-embedded base-14 Type1 faces cannot provide
+  fStandardFontsReplace := false;
+  fEmbeddedTtf := true;
+  // a subset drops glyphs and with them the /ToUnicode round-trip tagging
+  // depends on (Windows only: POSIX always embeds the whole face)
+  fEmbeddedWholeTtf := true;
 end;
 
 

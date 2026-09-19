@@ -26,9 +26,74 @@ type
     procedure TestPdfDifferentSizes;
     procedure TestVclCanvasTextMetrics;
     procedure TestTaggedAltTextIsPdfString;
+    procedure TestTaggedImpliesEmbeddedFonts;
+    procedure TestTaggedAfterAddPageRaises;
   end;
 
 implementation
+
+procedure TPdfSmokeTests.TestTaggedImpliesEmbeddedFonts;
+var
+  PDF: TPdfDocumentVcl;
+  Stream: TMemoryStream;
+  s: RawByteString;
+begin
+  Stream := TMemoryStream.Create;
+  try
+    PDF := TPdfDocumentVcl.Create(false, 0, pdfaNone);
+    try
+      PDF.CompressionMethod := cmNone; // so the objects stay readable
+      { PDF/UA needs embedded fonts with a Unicode round-trip, so Tagged picks
+        the font mode itself - the caller must not have to (ROADMAP Step 6) }
+      PDF.Tagged := true;
+      Check(PDF.EmbeddedTTF, 'Tagged turns embedding on');
+      Check(not PDF.StandardFontsReplace, 'Tagged drops the base-14 Type1 mode');
+      Check(PDF.EmbeddedWholeTtf, 'Tagged embeds the whole face, not a subset');
+      PDF.AddPage;
+      PDF.BeginStructContent(psrP);
+      PDF.VclCanvas.Font.Size := 12;
+      PDF.VclCanvas.TextOut(20, 20, 'Hello');
+      PDF.EndStructContent;
+      PDF.SaveToStream(Stream);
+    finally
+      PDF.Free;
+    end;
+    SetLength(s, Stream.Size);
+    Stream.Position := 0;
+    Stream.Read(pointer(s)^, Stream.Size);
+    Check(Pos(RawByteString('/FontFile2'), s) > 0,
+      'the face is embedded (pdffonts: emb=yes)');
+    { the Latin text above runs through the WinAnsi instance, whose ToUnicode
+      CMap used to be written for PDF/A only - without it pdffonts says uni=no }
+    Check(Pos(RawByteString('/ToUnicode'), s) > 0,
+      'WinAnsi ToUnicode CMap (pdffonts: uni=yes)');
+  finally
+    Stream.Free;
+  end;
+end;
+
+procedure TPdfSmokeTests.TestTaggedAfterAddPageRaises;
+var
+  PDF: TPdfDocumentVcl;
+  Raised: boolean;
+begin
+  PDF := TPdfDocumentVcl.Create(false, 0, pdfaNone);
+  try
+    PDF.AddPage;
+    Raised := false;
+    try
+      { too late: the page was measured with the other font mode }
+      PDF.Tagged := true;
+    except
+      on E: Exception do
+        Raised := true;
+    end;
+    Check(Raised, 'Tagged after AddPage is refused');
+    Check(not PDF.Tagged, 'and leaves the document untagged');
+  finally
+    PDF.Free;
+  end;
+end;
 
 procedure TPdfSmokeTests.TestTaggedAltTextIsPdfString;
 const

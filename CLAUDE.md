@@ -156,6 +156,12 @@ Two modes — do not mix:
 | Type1 (no embedding) | `StandardFontsReplace := True` | Helvetica, Times, Courier |
 | TrueType (with embedding) | `EmbeddedTTF := True` | OS-specific via `GetReportFonts()` |
 
+**Tagged PDF selects the mode itself.** `Tagged := True` / `ExportPdfTagged := True`
+forces the TrueType mode with whole-face embedding, because PDF/UA does not allow
+non-embedded base-14 fonts and a subset breaks the `/ToUnicode` round-trip. Both
+have to be set **before the first page is drawn** — the font flags decide which
+metrics the layout is measured with — and both raise `ESynException` if set later.
+
 Full details including dual-instance model, CMAP loading, text rendering chains, and RTL/Arabic limitations: `.claude/skills/fonts.md`
 
 ### Platform Abstraction

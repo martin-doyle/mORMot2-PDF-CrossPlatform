@@ -25,9 +25,13 @@ Shows how to produce a 3-page PDF from TCanvas commands using `TPdfDocumentVcl` 
 - Draw text, rectangles, lines and polygons
 - Create multi-page PDFs (`AddPage` / get fresh `VclCanvas`)
 - Measure text (`TextWidth` / `TextHeight`)
-- Standard fonts (Helvetica / Times / Courier) via `StandardFontsReplace := True`
 - Manual low-level table: header row, data rows with alternating colors
 - Tagged PDF accessibility marks (`Doc.Tagged := True` auto-raises `FileFormat` to `pdf17`)
+- Tagged output implies **embedded TrueType fonts**: PDF/UA does not allow the
+  viewer's own non-embedded base-14 faces, so `Tagged := True` turns
+  `EmbeddedTTF` on and `StandardFontsReplace` off. The whole face is embedded
+  (no subset), which is what makes the demo PDF a few hundred KB rather than a
+  few KB — the price of a reliable `/ToUnicode` round-trip.
 - Struct roles: `psrH1` for headings, `psrP` for body text, `psrFigure` for graphics, `psrTable / psrTR / psrTH / psrTD` for tables
 
 **Core pattern:**
@@ -38,12 +42,13 @@ uses mormot.pdf.types, mormot.ui.pdf, mormot.ui.pdfcanvas, mormot.ui.report;
 var Doc: TPdfDocumentVcl; C: TCanvas;
 begin
   Doc := TPdfDocumentVcl.Create;
-  Doc.EmbeddedTTF          := False;
-  Doc.StandardFontsReplace := True;
-  // Tagged PDF — must be set BEFORE AddPage.
-  // Auto-raises FileFormat to pdf17 (ISO 32000-1); no need for Doc.FileFormat := pdf17.
+  // Tagged PDF — must be set BEFORE AddPage and before the font names are
+  // resolved. It auto-raises FileFormat to pdf17 (ISO 32000-1) and selects the
+  // PDF/UA font mode: EmbeddedTTF on, StandardFontsReplace off.
   Doc.Tagged          := True;
   Doc.DefaultLanguage := 'en';
+  // asked afterwards, so the names match the mode Tagged just selected
+  GetReportFonts(Doc.EmbeddedTTF, SansFont, SerifFont, MonoFont);
   Doc.Info.Title      := 'mORMot2 PDF Cross-Platform Demo';
   Doc.DefaultPaperSize := mormot.ui.pdf.psA4;
 
@@ -141,7 +146,10 @@ uses mormot.ui.report;
 var Report: TGDIPages; SansFont, SerifFont, MonoFont: string;
 begin
   Report := TGDIPages.Create(nil);
-  Report.ExportPdfEmbeddedTTF := False;
+  // ExportPdfTagged wraps all draw commands in struct elements, auto-raises
+  // FileFormat to pdf17, and selects the PDF/UA font mode. Set it first: it
+  // decides which font the layout below is measured with.
+  Report.ExportPdfTagged := True;
   Report.GetExportFonts(SansFont, SerifFont, MonoFont);  // platform-correct fonts
 
   Report.PaperSize    := psA4;
@@ -205,6 +213,8 @@ Shows the full format system of `TGDIPages`: headings with PDF bookmarks, inline
 - Automatic table header repetition on page break (R-9): 20-row table triggers a visible page break
 - `LineHeightFactor` for configurable line spacing — `1.1` (standard) vs. `1.4` (open) across two page configs
 - `ExportPdfTagged` for automatic Tagged PDF accessibility marks; auto-raises `FileFormat` to `pdf17`
+  and selects the PDF/UA font mode (embedded TrueType). It has to be set **before the first
+  drawing command**, because the export font flags decide which metrics the layout is measured with.
 - Different page configurations (margins, font, size, `LineHeightFactor`) within one document
 - `ExportPdfStream` for stream-based PDF output
 
@@ -264,9 +274,6 @@ begin
 
   Report.EndDoc;
 
-  // ExportPdfTagged wraps all draw commands in struct elements and
-  // auto-raises FileFormat to pdf17 — no need to set it manually.
-  Report.ExportPdfTagged := True;
   MS := TMemoryStream.Create;
   if Report.ExportPdfStream(MS) then
     MS.SaveToFile('markdown_demo.pdf');

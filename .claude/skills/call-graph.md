@@ -228,12 +228,15 @@ TGDIPages.ShowPreviewForm
 TGDIPages.ExportPdfStream(aDest: TStream)
   │
   │  Doc := TPdfDocumentVcl.Create(UseOutlines, 0, ExportPdfLevel)
-  │  Doc.EmbeddedTtf           := ExportPdfEmbeddedTTF
-  │  Doc.StandardFontsReplace  := ExportPdfStandardFonts
   │  Doc.FileFormat            := ExportPdfFileFormat   (default pdf13; set pdf17 for ISO 32000-1)
   │  if ExportPdfTagged:
-  │    Doc.Tagged  := True          ← auto-raises FileFormat to pdf17
+  │    Doc.Tagged  := True          ← raises FileFormat to pdf17 AND picks the
+  │                                   PDF/UA font mode (see Path 10)
   │    Doc.DefaultLanguage := ExportPdfLanguage
+  │  Doc.EmbeddedTtf           := ExportPdfEmbeddedTTF
+  │  Doc.StandardFontsReplace  := ExportPdfStandardFonts
+  │    ↑ assigned after Tagged, and SetExportPdfTagged has already aligned them,
+  │      so the two cannot contradict each other
   │  Doc.Info.Title/Author/Subject := ...
   │  Doc.NewDoc
   │
@@ -656,8 +659,12 @@ Entries accumulate in the page's ExtGState resource dict across multiple calls. 
 
 ```
 TPdfDocument.SetTagged(true)
+  raises ESynException if fRawPages.Count > 0   ← too late: the pages were
+                                                  measured with another face
   fTagged := true
   fFileFormat raised to pdf17
+  PDF/UA font mode: fStandardFontsReplace := false; fEmbeddedTtf := true;
+                    fEmbeddedWholeTtf := true
   Catalog: /MarkInfo << /Marked true >> /Lang 'en' /StructTreeRoot→fStructTree
 
 TPdfDocument.AddPage

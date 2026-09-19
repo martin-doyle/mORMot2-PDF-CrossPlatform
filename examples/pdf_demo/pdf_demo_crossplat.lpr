@@ -53,13 +53,14 @@ begin
   Doc := TPdfDocumentGDI.Create;
   {$ifend}
   try
-    Doc.EmbeddedTTF := False;
-    Doc.StandardFontsReplace := not Doc.EmbeddedTTF;
-    GetReportFonts(Doc.EmbeddedTTF, SansFont, SerifFont, MonoFont);
-    // Tagged PDF (ISO 32000-1 §14) — must be set BEFORE AddPage.
-    // Setting Tagged := True auto-raises FileFormat to pdf17 without explicit Doc.FileFormat := pdf17.
+    // Tagged PDF (ISO 32000-1 §14) — must be set BEFORE AddPage and before the
+    // font names are resolved: Tagged := True auto-raises FileFormat to pdf17
+    // and selects the PDF/UA font mode (EmbeddedTTF on, StandardFontsReplace
+    // off), because PDF/UA does not allow the viewer's own base-14 faces.
     Doc.Tagged          := True;
     Doc.DefaultLanguage := 'en';
+    // asked afterwards, so the names match the mode Tagged just selected
+    GetReportFonts(Doc.EmbeddedTTF, SansFont, SerifFont, MonoFont);
 
     Doc.Info.Title   := 'mORMot2 PDF Cross-Platform Demo';
     Doc.Info.Author  := 'Portierungsprojekt';

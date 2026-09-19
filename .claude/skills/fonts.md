@@ -58,12 +58,18 @@ Fallback when a requested font is not found: `TPdfDocument.FontFallBackName` (st
 
 ## 3. Font Embedding — Whole TTF vs. Subset
 
-Controlled by `TPdfDocument.EmbeddedWholeTtf` (boolean, default `true`).
+Controlled by `TPdfDocument.EmbeddedWholeTtf` (boolean, **default `false`** — the
+constructor leaves it unset). Two things override that default:
+
+- `Tagged := true` sets it to `true` (PDF/UA needs the complete face, see `pdf-engine.md`)
+- on POSIX it has no effect at all: the subsetting branch in `PrepareForSaving`
+  sits inside `{$ifdef USE_UNISCRIBE}`, so Linux/macOS always embed the whole
+  face. The flag is a Windows-only switch.
 
 | `EmbeddedWholeTtf` | Behaviour |
 |---|---|
-| `true` (default) | Complete TTF bytes embedded. Safe for all scripts including RTL/Arabic. For a `.ttc`, the loaded face alone is extracted as a standalone sfnt — a raw `ttcf` container is not a valid `/FontFile2`. |
-| `false` | Font subset via `CreateFontPackage` (Windows) or `SubsetTtf` (cross-platform). Smaller file, but risky for RTL/Arabic with Uniscribe shaping. |
+| `true` | Complete TTF bytes embedded. Safe for all scripts including RTL/Arabic. For a `.ttc`, the loaded face alone is extracted as a standalone sfnt — a raw `ttcf` container is not a valid `/FontFile2`. |
+| `false` (default) | Font subset via `CreateFontPackage` (Windows only — POSIX ignores this and embeds the whole face). Smaller file, but risky for RTL/Arabic with Uniscribe shaping. |
 
 ```pascal
 Doc.EmbeddedWholeTtf := False;  // opt-in to subsetting; only safe for Latin text

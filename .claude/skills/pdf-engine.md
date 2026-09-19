@@ -526,7 +526,11 @@ Doc.EndStructContent;            // delegates to Canvas.EndStructContent
 
 ```pascal
 // In mormot.ui.report.pas — uses mormot.pdf.types (not mormot.ui.pdf)
-Report.ExportPdfTagged   := True;    // default False
+Report.ExportPdfTagged   := True;    // default False — set BEFORE drawing:
+                                     // it forces ExportPdfEmbeddedTTF / clears
+                                     // ExportPdfStandardFonts, and those decide
+                                     // which metrics the layout is measured with
+                                     // (raises ESynException once PageCount > 0)
 Report.ExportPdfLanguage := 'en';    // default 'en'
 // then call Report.ExportPdfStream as usual
 ```
@@ -578,6 +582,13 @@ AES-128 output size: `16 (IV) + ceil(N/16)*16` bytes per encrypted object/string
 |---|---|---|---|
 | Standard Type1 | `StandardFontsReplace := True` | Helvetica, Times, Courier | none |
 | TrueType | `EmbeddedTTF := True` | OS-specific (see below) | full TTF |
+
+**`Tagged := True` picks the mode for you:** it sets `EmbeddedTTF`, clears
+`StandardFontsReplace` and sets `EmbeddedWholeTtf`, because PDF/UA allows neither
+a non-embedded base-14 face nor a subset (which would break `/ToUnicode`). It
+raises `ESynException` when set after the first `AddPage`, and it also widens the
+WinAnsi `/ToUnicode` CMap — previously written for PDF/A only — to tagged
+documents. Resolve font names with `GetReportFonts` *after* setting `Tagged`.
 
 Platform-specific TTF fonts via `GetReportFonts(Embedded, SansFont, SerifFont, MonoFont)`:
 - Windows: Calibri, Cambria, Consolas

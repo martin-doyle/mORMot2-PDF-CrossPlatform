@@ -23,6 +23,7 @@ uses
   LazFileUtils,  // OpenDocument (cross-platform: xdg-open / open / ShellExecute)
   Contnrs, fgl,  // TObjectList + TFPGMap for generics
   mormot.core.base,
+  mormot.core.text,     // ESynException
   mormot.core.unicode,
   mormot.pdf.types,     // PDF_FONT_STD_* + TPdfStructRole (Tagged PDF)
   mormot.ui.pdfcanvas;  // cross-platform PDF engine (uses FreeType2 on POSIX)
@@ -371,6 +372,7 @@ type
     procedure SetMarginRight(Value: Integer);
     procedure SetMarginTop(Value: Integer);
     procedure SetMarginBottom(Value: Integer);
+    procedure SetExportPdfTagged(Value: boolean);
   public
     constructor Create(AOwner: TComponent); override;
     destructor  Destroy; override;
@@ -592,7 +594,11 @@ type
     /// PDF version written to the file header; default is pdf13 (backward-compatible)
     property ExportPdfFileFormat:  TPdfFileFormat read fExportPdfFileFormat write fExportPdfFileFormat;
     /// enable Tagged PDF (ISO 32000-1 §14) on export; adds structure tags H1-H6 and P
-    property ExportPdfTagged: boolean read fExportPdfTagged write fExportPdfTagged;
+    // - PDF/UA needs embedded fonts, so setting this forces ExportPdfEmbeddedTTF
+    // and clears ExportPdfStandardFonts
+    // - those flags decide which metrics the layout is measured with, so this
+    // has to be set before the first drawing command (ROADMAP Step 6)
+    property ExportPdfTagged: boolean read fExportPdfTagged write SetExportPdfTagged;
     /// BCP-47 language tag for the Tagged PDF /Lang entry (default 'en')
     property ExportPdfLanguage: RawUtf8 read fExportPdfLanguage write fExportPdfLanguage;
 
@@ -2938,6 +2944,25 @@ end;
   Phase 6 – ExportPdfStream / ExportPDF via TPdfDocumentVcl
   ========================================================================= }
 
+procedure TGDIPages.SetExportPdfTagged(Value: boolean);
+begin
+  if Value = fExportPdfTagged then
+    exit;
+  { the export font flags feed SetupPdfMeasureFont, i.e. they decide how the
+    recorded pages were broken into lines - switching them afterwards would set
+    the text with a face it was not measured with (ROADMAP Step 4 / Step 6) }
+  if Value and
+     (fPageCount > 0) then
+    raise ESynException.Create('TGDIPages.ExportPdfTagged must be set before ' +
+      'the first page is drawn: it selects the fonts the layout is measured with');
+  fExportPdfTagged := Value;
+  if not Value then
+    exit;
+  // PDF/UA forbids the non-embedded base-14 Type1 faces
+  fExportPdfEmbeddedTTF := true;
+  fExportPdfStandardFonts := false;
+end;
+
 procedure TGDIPages.GetExportFonts(out SansFont, SerifFont, MonoFont: string);
 begin
   GetReportFonts(fExportPdfEmbeddedTTF, SansFont, SerifFont, MonoFont);
@@ -2966,15 +2991,17 @@ begin
       PDF.Info.Creator := SysUtils.Trim(Application.Title);
       PDF.Info.Author  := PdfAuthor;
       PDF.Info.Subject := PdfSubject;
-      PDF.EmbeddedTTF  := fExportPdfEmbeddedTTF;
-      PDF.StandardFontsReplace := fExportPdfStandardFonts;
       PDF.FileFormat   := fExportPdfFileFormat;
+      { Tagged first: TPdfDocument.SetTagged picks the PDF/UA font mode, and
+        SetExportPdfTagged has already aligned our own flags with it }
       if fExportPdfTagged then
       begin
         PDF.Tagged := true;
         if fExportPdfLanguage <> '' then
           PDF.DefaultLanguage := fExportPdfLanguage;
       end;
+      PDF.EmbeddedTTF  := fExportPdfEmbeddedTTF;
+      PDF.StandardFontsReplace := fExportPdfStandardFonts;
       PDF.SaveToStreamDirectBegin(aDest);
       { logical block state is per export run (see ROADMAP B-2) }
       fRenderBlockId   := 0;
