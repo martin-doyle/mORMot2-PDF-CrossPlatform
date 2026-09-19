@@ -14,7 +14,10 @@ depend on the widgetset, and `TPdfVclCanvas` measures text with the same font
 engine, in `single` precision. Tagged output now selects the PDF/UA font mode
 itself — embedded TrueType, whole face, with a `/ToUnicode` CMap on the WinAnsi
 instance — and refuses to be switched on after the layout has been measured.
-What remains are the R-items, plus PDF/UA validation on Windows and macOS.
+The first PAC 2024 run on Windows then reported five PDF/UA errors in the
+Linux-built `markdown_demo.pdf` — B-7 … B-11, now **Priority 1** (see
+[Priority 1 — PAC 2024 Findings](#priority-1--pac-2024-findings-b-7--b-11)).
+After them come the R-items.
 
 Completed items are archived in [Completed Work](#completed-work) at the end of
 this document.
@@ -41,8 +44,8 @@ target, not as the development host.
 **PAC caveats.** For B-1, the traffic-light status is not sufficient — a flat tree
 of individually-valid `Table`/`TR`/`TD` elements can pass while the nesting is
 still broken. Always open PAC's *Logical Structure* view and check the hierarchy.
-And until Step 6 lands, **PAC will report font-embedding errors on every run**;
-that is expected, not a regression.
+Until Step 6 landed, PAC reported font-embedding errors on every run; since
+then it reaches the remaining PDF/UA checks — their findings are B-7 … B-11.
 
 **Baseline before Step 1.** Capture the current Windows/Linux/macOS output of
 `pdf_demo` and `markdown_demo` as reference files. For Step 4, diff the
@@ -1156,6 +1159,213 @@ requires.
 
 ---
 
+## Priority 1 — PAC 2024 Findings (B-7 … B-11)
+
+**Reported 2026-09-19.** First PAC 2024 run on Windows against the
+**Linux-built** `markdown_demo.pdf` after Step 6 — the run the Working Method
+has been waiting for. Now that fonts are embedded, PAC gets past the font
+checks and reports five errors. All five are **Priority 1** and come before
+every R-item.
+
+| ID | PAC message | Where it lives |
+|---|---|---|
+| B-7 | DisplayDocTitle entry is not set | Catalog `/ViewerPreferences` |
+| B-8 | PDF/UA identifier missing | XMP metadata stream |
+| B-9 | Path object not tagged | Page content streams |
+| B-10 | Title missing in document's XMP metadata | XMP metadata stream (+ `/Info`) |
+| B-11 | Table header cell has no associated subcells | Struct tree, `TH` elements |
+
+**Evidence.** Each finding was reproduced in
+`examples/markdown_demo/bin/aarch64-linux/markdown_demo.pdf` (2026-09-19 10:06,
+the Step 6 build) by decompressing the objects and content streams. The causes
+below are inferred **from the output only** — the source has not been read for
+these items yet, so every "Cause" is a hypothesis to be confirmed first, as in
+Steps 1–6.
+
+---
+
+### Step 7 — B-8 + B-10: Empty XMP Metadata Stream
+
+**Effort:** 0.5–1 day | **Files:** `src/core/mormot.ui.pdf.pas`,
+`src/core/mormot.ui.report.pas` | **Demo:** `markdown_demo`
+
+B-8 and B-10 are one step because they are one defect: the stream PAC reads
+for both is **empty**.
+
+#### Symptom
+
+```
+1 0 obj  <</Type/Catalog ... /Metadata 8 0 R>>
+8 0 obj  <</Length 0/Subtype/XML/Type/Metadata>> stream <empty> endstream
+3 0 obj  <</Producer(mORMot 2.4) ... /Title() /Creator(markdown_demo) /Author() /Subject() ...>>
+```
+
+The catalog references a metadata stream, but it has `Length 0` — there is no
+`pdfuaid:part` (B-8) and no `dc:title` (B-10). Separately, `/Info /Title` is an
+empty string: `markdown_demo` never assigns `Report.Title`.
+
+#### Cause (to be confirmed)
+
+`call-graph.md` states that `SaveToStreamDirectEnd` writes the PDF/UA-1 XMP
+(`pdfuaid:part=1`) when `fTagged` and `fPdfA = pdfaNone`. The output shows the
+stream object being created but never filled, so either the fill is skipped on
+this path or it runs after the stream has already been serialised. Which of the
+two is the first thing to settle from the source.
+
+#### Steps
+
+1. Find why the XMP body is empty for a tagged, non-PDF/A document and fix it,
+   so the packet carries `<pdfuaid:part>1</pdfuaid:part>` with the
+   `pdfuaid` namespace declared (`http://www.aiim.org/pdfua/ns/id/`).
+2. Write `dc:title` (as `rdf:Alt` / `rdf:li xml:lang="x-default"`) from
+   `Info.Title`, plus `dc:creator`, `dc:description` and `pdf:Producer` from the
+   matching `/Info` fields, so the two stay consistent — PDF/UA and PDF/A both
+   require `/Info` and XMP to agree.
+3. `markdown_demo` (and `pdf_demo`) set a real title.
+4. **Decided (2026-09-19):** when a tagged export has an empty `Title`, the
+   text of the first `H1` becomes the title — in `/Info` and in the XMP alike.
+5. Test: a tagged document's metadata stream is non-empty and contains
+   `pdfuaid:part` and the title.
+
+#### Verification
+
+`pdfinfo -meta markdown_demo.pdf` prints the XMP packet with `pdfuaid:part` =
+1 and `dc:title`; PAC no longer reports B-8 or B-10.
+
+---
+
+### Step 8 — B-7: `DisplayDocTitle` Not Set
+
+**Effort:** 0.5 day | **File:** `src/core/mormot.ui.pdf.pas` | **Demos:**
+`markdown_demo`, `pdf_demo`
+
+#### Symptom
+
+The catalog has no `/ViewerPreferences` at all. PDF/UA-1 (7.1) requires
+`/ViewerPreferences <</DisplayDocTitle true>>`, so the viewer shows the title
+instead of the file name.
+
+#### Cause
+
+`TPdfViewerPreference` (`pdf-engine.md`) has only `vpHideToolbar`,
+`vpHideMenubar`, `vpHideWindowUI`, `vpFitWindow`, `vpCenterWindow`,
+`vpEnforcePrintScaling` — there is no way to request `DisplayDocTitle`.
+
+#### Steps
+
+1. Append `vpDisplayDocTitle` at the end of `TPdfViewerPreference` (appending
+   keeps the existing ordinals) and serialise it as `/DisplayDocTitle true`.
+2. `Tagged := True` includes it in `ViewerPreference` — the same pattern as the
+   font mode in Step 6: declaring a document tagged selects what PDF/UA needs.
+3. Test: a tagged document's catalog carries `/DisplayDocTitle true`.
+
+Placed after Step 7 because the entry is only meaningful once the document has
+a title.
+
+---
+
+### Step 9 — B-11: Table Header Cells Without Associated Cells
+
+**Effort:** 0.5–1 day | **Files:** `src/core/mormot.ui.pdf.pas`,
+`src/core/mormot.ui.report.pas` | **Demo:** `markdown_demo`
+
+#### Symptom
+
+All 8 `TH` elements look like this:
+
+```
+126 0 obj  <</Type/StructElem/S/TH/P 125 0 R/Pg 19 0 R/K<</Type/MCR/MCID 4>>>>
+```
+
+There is neither a `/Scope` attribute on the `TH` nor a `/Headers` array on the
+`TD`s, so PAC cannot tell which data cells a header belongs to.
+
+#### Cause
+
+B-1 built the `Table > TR > TH|TD` hierarchy but no table attributes. The
+header row is known at render time (`InHeaderRow` in `RenderPageToCanvas`).
+
+#### Steps
+
+1. Allow a `TPdfStructElement` to carry an attribute dictionary and serialise it
+   as `/A`.
+2. Give every `TH` of a header row `/A <</O/Table/Scope/Column>>`. This is the
+   simpler of the two PDF/UA-accepted forms; `/Headers` with element `/ID`s on
+   every `TD` is only needed for irregular tables, which `TTableLayout` does not
+   produce.
+3. **Decided (2026-09-19):** R-9 repeats the header row on each continuation
+   page; the repetition is **not tagged again** but marked as `/Artifact`, so
+   the struct tree holds the header row once. To be confirmed with PAC.
+4. Test: every `TH` in the struct tree has `/Scope`.
+
+---
+
+### Step 10 — B-9: Untagged Path Objects
+
+**Effort:** 1–2 days | **Files:** `src/core/mormot.ui.pdf.pas`,
+`src/core/mormot.ui.pdfcanvas.pas`, possibly `src/core/mormot.ui.report.pas` |
+**Demos:** `markdown_demo`, `pdf_demo`
+
+#### Symptom
+
+The two table pages each contain **168 `re` operators (84 fills + 84
+strokes) and every one of them lies outside any marked-content sequence**:
+
+```
+EMC
+0.88 0.88 0.88 rg
+42.75 668.75 71.25 17.25 re
+f
+42.75 668.75 71.25 17.25 re
+S
+/TH <</MCID 4>> BDC
+...
+```
+
+These are the cell backgrounds and borders from `RenderPageToCanvas`
+(`ACanvas.Rectangle`). PDF/UA requires every content item to be either real
+content inside a struct element or marked as `/Artifact`. Pages without tables
+have no path operators, so tables are the only source in `markdown_demo`;
+`pdf_demo` draws graphics too and has to be checked the same way.
+
+#### Cause
+
+Only text is wrapped in `BDC`/`EMC`. Decorative graphics drawn between two
+struct regions are neither tagged nor marked as artifacts.
+
+#### Steps
+
+1. Add `BeginArtifact`/`EndArtifact` to `TPdfCanvas` (`/Artifact BMC` … `EMC`)
+   and delegate them through `TPdfDocumentVcl`.
+2. **Decided (2026-09-19): (a), in `TPdfCanvas`.** The options were:
+   - (a) in `TPdfCanvas`: when tagged and no marked-content region is open, wrap
+     any path painting operator (`f`, `S`, `B`, …) in `/Artifact` automatically.
+     Covers every caller, including `pdf_demo` and raw `TPdfCanvas` users.
+   - (b) in `TGDIPages.RenderPageToCanvas`: wrap cell backgrounds, borders and
+     rules explicitly. More precise, but misses callers outside the report
+     engine.
+
+   Graphics inside an open `Figure` region are left alone, since they are real
+   content there.
+3. Keep the invariant from B-1/B-2: `BDC`/`EMC` and `BMC`/`EMC` stay balanced
+   per page, and an artifact never opens inside a struct region.
+4. Test: in a tagged document, no path operator lies outside a marked-content
+   sequence.
+
+Last among the four because it touches the same `BDC`/`EMC` code as B-1 … B-3;
+a regression there should not be mixed up with the metadata fixes.
+
+---
+
+### Verification (all of B-7 … B-11)
+
+Per step, as in the Working Method: build on Linux, then **PAC 2024 on
+Windows** against the Linux-built file — the reported error has to disappear
+and no new one may appear — and a third run on macOS. After Step 10,
+`markdown_demo.pdf` should pass PAC with no errors.
+
+---
+
 ## Rest — Remaining Items
 
 Lower priority than the bugfixes above.
@@ -1277,12 +1487,17 @@ Windows-only (`TPdfDocumentGdi`), not portable. No work planned.
 
 | ID | Item | Prio | Effort | Files |
 |---|---|---|---|---|
+| B-7 | `DisplayDocTitle` not set (PAC) | **1** | 0.5 day | mormot.ui.pdf.pas |
+| B-8 | PDF/UA identifier missing — XMP stream empty (PAC) | **1** | 0.5–1 day (with B-10) | mormot.ui.pdf.pas |
+| B-9 | Path objects not tagged — table cell graphics (PAC) | **1** | 1–2 days | mormot.ui.pdf.pas, mormot.ui.pdfcanvas.pas, mormot.ui.report.pas |
+| B-10 | Title missing in XMP metadata (PAC) | **1** | with B-8 | mormot.ui.pdf.pas, mormot.ui.report.pas, demos |
+| B-11 | Table header cells without associated cells — no `/Scope` (PAC) | **1** | 0.5–1 day | mormot.ui.pdf.pas, mormot.ui.report.pas |
 | R-10 | Table row pagination | — | 2–3 days | mormot.ui.report.pas |
 | R-11 | TTC face index | — | 1 day | mormot.pdf.freetype.pas, mormot.pdf.types.pas |
 | R-12 | Font subsetting on POSIX via hb-subset (88% smaller PDFs; also fixes RTL) | **3** | 2–3 days | new mormot.pdf.hbsubset.pas, mormot.pdf.types.pas, mormot.ui.pdf.pas |
 | R-13 | RTL shaper advance test | — | 0.5 day | tests/ |
 
-Only R-12 carries an agreed priority so far; `—` means unprioritised, not
+B-7 … B-11 and R-12 carry agreed priorities; `—` means unprioritised, not
 lower-ranked.
 
 **Execution order** (agreed): one fix at a time, each verified on all three
@@ -1297,8 +1512,12 @@ platforms before the next begins — see [Working Method](#working-method).
 | ~~5~~ | ~~B-4~~ | **Done** — `TextWidthFrac`/`TextHeightFrac` measure with the PDF font engine; a thin adapter over `TPdfFontMeasurer`, as planned |
 | ~~5b~~ | ~~B-6~~ | **Done** — unscheduled: `/Alt` is a PDF string; written bare it broke the page for every parser, and it never reached the `StructElem` |
 | ~~6~~ | ~~P-6~~ | **Done** — tagged output selects the PDF/UA font mode before the layout is measured, and the WinAnsi `/ToUnicode` CMap is no longer PDF/A-only |
+| 7 | B-8 + B-10 | One defect: the XMP stream is written empty; also gives the document a title |
+| 8 | B-7 | Trivial, but only meaningful once a title exists |
+| 9 | B-11 | Struct-tree attributes only; no change to content streams |
+| 10 | B-9 | Last: touches the same `BDC`/`EMC` code as B-1 … B-3 |
 
-The remaining R-items are independent and unscheduled.
+The remaining R-items are independent and unscheduled; they follow Step 10.
 
 ### Completed Work
 
