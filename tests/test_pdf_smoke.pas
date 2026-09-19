@@ -28,9 +28,136 @@ type
     procedure TestTaggedAltTextIsPdfString;
     procedure TestTaggedImpliesEmbeddedFonts;
     procedure TestTaggedAfterAddPageRaises;
+    procedure TestTaggedStreamedMetadata;
+    procedure TestTaggedDecorationIsArtifact;
+    procedure TestTaggedArtifactMisuseRaises;
   end;
 
 implementation
+
+function StreamToRaw(Stream: TMemoryStream): RawByteString;
+begin
+  SetLength(result, Stream.Size);
+  Stream.Position := 0;
+  Stream.Read(pointer(result)^, Stream.Size);
+end;
+
+procedure TPdfSmokeTests.TestTaggedStreamedMetadata;
+var
+  PDF: TPdfDocumentVcl;
+  Stream: TMemoryStream;
+  s: RawByteString;
+begin
+  Stream := TMemoryStream.Create;
+  try
+    PDF := TPdfDocumentVcl.Create(false, 0, pdfaNone);
+    try
+      PDF.CompressionMethod := cmNone;
+      PDF.Tagged := true;
+      PDF.Info.Title := 'R&D <Plan>';
+      { streamed page by page, as TGDIPages.ExportPdfStream does: the metadata
+        stream only comes to exist on the first AddPage, after the Begin call
+        which used to fill it - PAC: "PDF/UA identifier missing" (B-8) }
+      PDF.SaveToStreamDirectBegin(Stream);
+      PDF.AddPage;
+      PDF.BeginStructContent(psrP);
+      PDF.VclCanvas.TextOut(20, 20, 'Hello');
+      PDF.EndStructContent;
+      PDF.SaveToStreamDirectPageFlush;
+      PDF.SaveToStreamDirectEnd;
+    finally
+      PDF.Free;
+    end;
+    s := StreamToRaw(Stream);
+    Check(Pos(RawByteString('<pdfuaid:part>1</pdfuaid:part>'), s) > 0,
+      'XMP carries the PDF/UA identifier');
+    Check(Pos(RawByteString('<rdf:li xml:lang="x-default">R&amp;D &lt;Plan&gt;</rdf:li>'), s) > 0,
+      'XMP carries the title as escaped dc:title (B-10)');
+    Check(Pos(RawByteString('/DisplayDocTitle true'), s) > 0,
+      'viewer shows the title, not the file name (B-7)');
+  finally
+    Stream.Free;
+  end;
+end;
+
+procedure TPdfSmokeTests.TestTaggedDecorationIsArtifact;
+var
+  PDF: TPdfDocumentVcl;
+  Stream: TMemoryStream;
+  s: RawByteString;
+  fig, emc, art: integer;
+begin
+  Stream := TMemoryStream.Create;
+  try
+    PDF := TPdfDocumentVcl.Create(false, 0, pdfaNone);
+    try
+      PDF.CompressionMethod := cmNone;
+      PDF.Tagged := true;
+      PDF.AddPage;
+      { a cell border drawn between two struct regions (B-9) }
+      PDF.VclCanvas.Rectangle(10, 10, 100, 30);
+      PDF.BeginStructContent(psrTable);
+      PDF.BeginStructContent(psrTR);
+      PDF.BeginStructContent(psrTH);
+      PDF.VclCanvas.TextOut(12, 12, 'Date');
+      PDF.EndStructContent;
+      PDF.EndStructContent;
+      PDF.EndStructContent;
+      { a drawing inside a Figure is real content, not decoration }
+      PDF.BeginStructContent(psrFigure, 'Chart');
+      PDF.VclCanvas.Rectangle(10, 50, 100, 100);
+      PDF.EndStructContent;
+      PDF.SaveToStream(Stream);
+    finally
+      PDF.Free;
+    end;
+    s := StreamToRaw(Stream);
+    Check(Pos(RawByteString('/Artifact BMC'), s) > 0,
+      'a path outside any struct region is an artifact');
+    fig := Pos(RawByteString('/Figure <<'), s);
+    emc := Pos(RawByteString('EMC'), s, fig);
+    art := Pos(RawByteString('/Artifact'), s, fig);
+    Check((fig > 0) and (emc > fig) and
+      ((art = 0) or (art > emc)),
+      'a path inside a Figure region stays real content');
+    Check(Pos(RawByteString('/A <</O/Table/Scope/Column>>'), s) > 0,
+      'a TH names the column it heads (B-11)');
+  finally
+    Stream.Free;
+  end;
+end;
+
+procedure TPdfSmokeTests.TestTaggedArtifactMisuseRaises;
+var
+  PDF: TPdfDocumentVcl;
+  Raised: boolean;
+begin
+  PDF := TPdfDocumentVcl.Create(false, 0, pdfaNone);
+  try
+    PDF.Tagged := true;
+    PDF.AddPage;
+    Raised := false;
+    try
+      PDF.EndArtifact;
+    except
+      on EPdfInvalidOperation do
+        Raised := true;
+    end;
+    Check(Raised, 'EndArtifact without BeginArtifact');
+    PDF.BeginStructContent(psrP);
+    Raised := false;
+    try
+      PDF.BeginArtifact;
+    except
+      on EPdfInvalidOperation do
+        Raised := true;
+    end;
+    Check(Raised, 'an artifact cannot open inside a struct region');
+    PDF.EndStructContent;
+  finally
+    PDF.Free;
+  end;
+end;
 
 procedure TPdfSmokeTests.TestTaggedImpliesEmbeddedFonts;
 var

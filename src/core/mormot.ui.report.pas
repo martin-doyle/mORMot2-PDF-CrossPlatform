@@ -84,7 +84,7 @@ type
     dckTableRow,      // table row with cells (Text holds cell data, Color = header flag)
     dckEndTable,      // mark end of table
     dckHeading,       // heading (Level 1..6, Title in Text)
-    dckBeginTR,       // begin table row (Color<>0 = header row) — for Tagged PDF structure
+    dckBeginTR,       // begin table row (Color: 0 = data, 1 = header, 2 = repeated header) — for Tagged PDF structure
     dckEndTR,         // end table row — for Tagged PDF structure
     dckBeginList,     // begin list — for Tagged PDF structure (psrL)
     dckEndList,       // end list — for Tagged PDF structure
@@ -242,6 +242,7 @@ type
     fTableLayout:      TTableLayout;  // current table layout (column widths, fonts, colors)
     fTableRowIndex:    Integer;       // current row number (0-based, for alternating colors)
     fTableSavedHeaders: TStringDynArray; // headers saved for continuation-page repetition
+    fTableHeaderRepeat: boolean; // true while DrawTableRow repeats the header row
 
     { --- List state (Tagged PDF L/LI grouping) --- }
     fInList:           boolean;       // true between dckBeginList and dckEndList
@@ -1944,7 +1945,12 @@ begin
 
   TRCmd := Default(TDrawCommand);
   TRCmd.Kind  := dckBeginTR;
-  TRCmd.Color := 1;  // 1 = header row
+  { 1 = header row, 2 = its repetition on a continuation page, which the
+    tagged export marks as an artifact instead of tagging it again (B-11) }
+  if fTableHeaderRepeat then
+    TRCmd.Color := 2
+  else
+    TRCmd.Color := 1;
   AddCommand(TRCmd);
   SaveLayout;
   { Use table layout fonts if specified, otherwise use current document font }
@@ -2038,7 +2044,14 @@ begin
   begin
     ForceNewPage;
     if Length(fTableSavedHeaders) > 0 then
-      DrawTableHeader(fTableSavedHeaders);
+    begin
+      fTableHeaderRepeat := true;
+      try
+        DrawTableHeader(fTableSavedHeaders);
+      finally
+        fTableHeaderRepeat := false;
+      end;
+    end;
   end;
 
   TRCmd := Default(TDrawCommand);
@@ -2264,6 +2277,7 @@ var
   InHeaderRow:    boolean;        // true if current TR is a header row
   InListItem:     boolean;        // true between dckBeginLI and dckEndLI
   SpanOpen:       boolean;        // true while a Span wraps the current run
+  ArtifactDoc:    TPdfDocumentVcl; // fActivePdfDoc, set aside in an artifact row
 
 
   function SubstitutePlaceholders(const AText: string; PageNum: Integer): string;
@@ -2353,6 +2367,7 @@ begin
   InHeaderRow := false;
   InListItem  := false;
   SpanOpen    := false;
+  ArtifactDoc := nil;
   { preview and printing do not tag: never carry block state into them }
   if fActivePdfDoc = nil then
   begin
@@ -2374,7 +2389,12 @@ begin
     ACanvas.Font.Style := fFontStyle;
     ACanvas.Font.Color := fTextColor;
     ACanvas.Brush.Style := bsClear;
+    { a running header is pagination, not content (PDF/UA) }
+    if fActivePdfDoc <> nil then
+      fActivePdfDoc.BeginArtifact;
     ACanvas.TextOut(fRenderOffsetX, (fRenderOffsetY - ACanvas.TextHeight(HeaderText)) div 2, HeaderText);
+    if fActivePdfDoc <> nil then
+      fActivePdfDoc.EndArtifact;
   end;
 
   for i := 0 to High(Page.Commands) do
@@ -2510,11 +2530,27 @@ begin
         InHeaderRow := Cmd.Color <> 0;
         InTableRow  := true;
         if fActivePdfDoc <> nil then
-          fActivePdfDoc.BeginStructContent(psrTR);
+          if Cmd.Color = 2 then
+          begin
+            { a repeated header row is tagged once, on the first page: here it
+              is an artifact, and without fActivePdfDoc its cells open no
+              struct element }
+            fActivePdfDoc.BeginArtifact;
+            ArtifactDoc   := fActivePdfDoc;
+            fActivePdfDoc := nil;
+          end
+          else
+            fActivePdfDoc.BeginStructContent(psrTR);
       end;
       dckEndTR:
       begin
-        if fActivePdfDoc <> nil then
+        if ArtifactDoc <> nil then
+        begin
+          fActivePdfDoc := ArtifactDoc;
+          ArtifactDoc   := nil;
+          fActivePdfDoc.EndArtifact;
+        end
+        else if fActivePdfDoc <> nil then
           fActivePdfDoc.EndStructContent;
         InTableRow  := false;
         InHeaderRow := false;
@@ -2553,10 +2589,14 @@ begin
     ACanvas.Font.Style := fFontStyle;
     ACanvas.Font.Color := fTextColor;
     ACanvas.Brush.Style := bsClear;
+    if fActivePdfDoc <> nil then
+      fActivePdfDoc.BeginArtifact;
     ACanvas.TextOut(fRenderOffsetX,
       ScaleY(Page.PageHeight) +
       (DestHeight - ScaleY(Page.PageHeight) - ACanvas.TextHeight(FooterText)) div 2,
       FooterText);
+    if fActivePdfDoc <> nil then
+      fActivePdfDoc.EndArtifact;
   end;
 end;
 
@@ -2988,6 +3028,16 @@ begin
       PdfSubject := fExportPdfSubject;
       if PdfSubject = '' then PdfSubject := fSubject;
       PDF.Info.Title   := SysUtils.Trim(fTitle);
+      { PDF/UA needs a title (dc:title, DisplayDocTitle): without one, the
+        first H1 names the document (ROADMAP B-10) }
+      if fExportPdfTagged and
+         (PDF.Info.Title = '') then
+        for i := 0 to fHeadingCount - 1 do
+          if fHeadings[i].Level = 1 then
+          begin
+            PDF.Info.Title := SysUtils.Trim(fHeadings[i].Title);
+            break;
+          end;
       PDF.Info.Creator := SysUtils.Trim(Application.Title);
       PDF.Info.Author  := PdfAuthor;
       PDF.Info.Subject := PdfSubject;

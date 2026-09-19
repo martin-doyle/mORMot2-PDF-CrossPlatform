@@ -671,8 +671,19 @@ TPdfDocument.SetTagged(true)
 TPdfDocument.AddPage
   page.fStructParents := fRawPages.Count - 1  ← /StructParents N
   if fMetaData = nil: (first tagged page, non-PDF/A)
-    fMetaData := TPdfStream; Subtype=XML; Type=Metadata
+    fMetaData := TPdfStream; Subtype=XML; Type=Metadata; fSaveAtTheEnd
     fFileID generated lazily
+  catalog /ViewerPreferences gains vpDisplayDocTitle (PDF/UA-1 7.1, B-7)
+
+TPdfCanvas path operators (m l c v y re, and Do)  ← B-9
+  BeginPathArtifact: tagged and InMarkedContent = false
+    → '/Artifact BMC' before the first construction operator
+  painting operator (S s f f* B B* b b*) or 'n' → EndPathArtifact → 'EMC'
+  inside an open region (e.g. Figure) nothing is added: real content
+  SetPage closes a path artifact left open
+
+TPdfCanvas.BeginArtifact / EndArtifact  ← explicit, e.g. repeated header row
+  raises EPdfInvalidOperation inside a region / without a matching Begin
 
 TPdfCanvas.BeginStructContent(ARole, AAltText='')
   if not fDoc.fTagged: exit  ← no-op guard
@@ -708,9 +719,14 @@ TPdfCanvas.EndStructContent
 
 SaveToStreamDirectEnd (called by ExportPdfStream):
   if fTagged:
-    if fMetaData <> nil and fPdfA=pdfaNone:
-      fMetaData stream written with PDF/UA-1 XMP (pdfuaid:part=1)
-    SerializeStructTree:
+    SerializeStructTree, then WriteTaggedMetadata:
+      if fMetaData <> nil and fPdfA=pdfaNone:
+        fMetaData filled with PDF/UA-1 XMP (pdfuaid:part=1, dc:title from
+        Info.Title, XML-escaped) — here, not in SaveToStreamDirectBegin,
+        because a streamed export creates fMetaData on its first AddPage (B-8)
+      (PDF/A writes its packet in SaveToStreamDirectBegin, plus pdfuaid when
+       tagged)
+    SerializeStructTree details:
       one indirect dict per element; /P points at the real parent
       leaf without kids → /K MCR dict, or an array of MCR dicts (each with
         /Pg when it differs from the element's /Pg)

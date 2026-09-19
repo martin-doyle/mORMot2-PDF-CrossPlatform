@@ -273,7 +273,7 @@ Report.EndTable;
 `AddTableRow(Cells, IsHeader)`: `IsHeader=true` renders with gray background.
 Prefer `BeginTable(Layout)` + `DrawTableHeader` + `DrawTableRow` for new code.
 
-**Automatic page break (R-9):** When a data row no longer fits, it moves to the next page and the column headers are automatically repeated at the top. Header content is saved internally when `DrawTableHeader` is called; `EndTable` clears the saved headers.
+**Automatic page break (R-9):** When a data row no longer fits, it moves to the next page and the column headers are automatically repeated at the top. Header content is saved internally when `DrawTableHeader` is called; `EndTable` clears the saved headers. The repetition is recorded as `dckBeginTR` with `Color = 2` (1 = original header row, 0 = data row); a tagged export renders it inside `BeginArtifact`/`EndArtifact` with no struct elements, so the struct tree holds the header once (B-11). Running page header/footer text is an artifact too. A tagged export with an empty `Title` takes the first H1 as the document title (B-10).
 
 ---
 

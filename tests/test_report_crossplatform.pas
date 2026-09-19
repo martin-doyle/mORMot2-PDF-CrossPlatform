@@ -15,6 +15,7 @@ uses
   {$ifdef FPC}
   Interfaces,   // registers the widgetset (Win32 on Windows, GTK2/Cocoa on Unix)
   {$endif FPC}
+  Classes,
   SysUtils,
   Graphics,
   mormot.core.base,
@@ -39,6 +40,7 @@ type
     procedure TestBeginEndTableRestoresLayout;
     procedure TestFontConstants;
     procedure TestPlatformIndependentMetrics;
+    procedure TestTaggedRepeatedHeaderAndTitle;
   end;
 
 implementation
@@ -366,6 +368,66 @@ begin
   CheckEqual('Liberation Serif', REPORT_FONT_SERIF, 'Unix SERIF = Liberation Serif');
   CheckEqual('Liberation Mono', REPORT_FONT_MONO, 'Unix MONO = Liberation Mono');
   {$ENDIF}
+end;
+
+procedure TReportTests.TestTaggedRepeatedHeaderAndTitle;
+var
+  Report: TGDIPages;
+  Layout: TTableLayout;
+  MS: TMemoryStream;
+  s: RawByteString;
+  i, p, Repeats, FirstPageRepeats: Integer;
+begin
+  Report := TGDIPages.Create(nil);
+  MS := TMemoryStream.Create;
+  try
+    Report.ExportPdfTagged := true;
+    Report.NewPage;
+    { no Title set: the first H1 has to name the document (B-10) }
+    Report.DrawHeading(1, 'Quarterly R&D');
+    FillChar(Layout, SizeOf(Layout), 0);
+    SetLength(Layout.ColumnWidths, 2);
+    SetLength(Layout.ColumnAligns, 2);
+    Layout.ColumnWidths[0] := 5000;
+    Layout.ColumnWidths[1] := 5000;
+    Layout.ColumnAligns[0] := tcaLeft;
+    Layout.ColumnAligns[1] := tcaRight;
+    Layout.HeaderBkColor := clSilver;
+    Layout.BodyBkColor := clWhite;
+    Report.BeginTable(Layout);
+    Report.DrawTableHeader(['Item', 'Value']);
+    for i := 1 to 150 do
+      Report.DrawTableRow(['Row ' + IntToStr(i), IntToStr(i * 10)]);
+    Report.EndTable;
+    Report.EndDoc;
+    Check(Report.PageCount > 1, 'the table paginates');
+    { the header row repeated on a continuation page is recorded apart from
+      the original, so the export can mark it as an artifact }
+    Repeats := 0;
+    FirstPageRepeats := 0;
+    for p := 0 to Report.PageCount - 1 do
+      for i := 0 to High(Report.Pages[p].Commands) do
+        if (Report.Pages[p].Commands[i].Kind = dckBeginTR) and
+           (Report.Pages[p].Commands[i].Color = 2) then
+        begin
+          Inc(Repeats);
+          if p = 0 then
+            Inc(FirstPageRepeats);
+        end;
+    CheckEqual(Report.PageCount - 1, Repeats, 'one repeated header per continuation page');
+    CheckEqual(0, FirstPageRepeats, 'the original header row is tagged');
+    { BeginArtifact/EndArtifact and the struct stack stay balanced, or the
+      export raises and returns false }
+    Check(Report.ExportPdfStream(MS), 'tagged export succeeds');
+    SetLength(s, MS.Size);
+    MS.Position := 0;
+    MS.Read(pointer(s)^, MS.Size);
+    Check(Pos(RawByteString('<rdf:li xml:lang="x-default">Quarterly R&amp;D</rdf:li>'), s) > 0,
+      'dc:title falls back to the first H1');
+  finally
+    MS.Free;
+    Report.Free;
+  end;
 end;
 
 procedure TReportTests.TestPlatformIndependentMetrics;

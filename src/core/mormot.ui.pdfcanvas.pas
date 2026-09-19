@@ -183,6 +183,12 @@ type
     // - must be paired with EndStructContent
     procedure ResumeStructContent(AStructIndex: integer;
       AOpenRegion: boolean = true);
+    /// open an /Artifact sequence for content a reader has to skip
+    // - e.g. a table header row repeated on a continuation page
+    // - decoration paths are wrapped automatically, see TPdfCanvas.BeginArtifact
+    procedure BeginArtifact;
+    /// close the sequence opened by BeginArtifact
+    procedure EndArtifact;
     /// set the fill (non-stroking) opacity for subsequent drawing operations
     // - Value is clamped to [0..1]: 0=fully transparent, 1=fully opaque
     procedure SetFillAlpha(Value: single);
@@ -681,6 +687,16 @@ procedure TPdfDocumentVcl.ResumeStructContent(AStructIndex: integer;
   AOpenRegion: boolean);
 begin
   Canvas.ResumeStructContent(AStructIndex, AOpenRegion);
+end;
+
+procedure TPdfDocumentVcl.BeginArtifact;
+begin
+  Canvas.BeginArtifact;
+end;
+
+procedure TPdfDocumentVcl.EndArtifact;
+begin
+  Canvas.EndArtifact;
 end;
 
 procedure TPdfDocumentVcl.SetFillAlpha(Value: single);

@@ -308,13 +308,16 @@ type
 
   /// Viewer preferences specifying how the reader User Interface must start
   // - vpEnforcePrintScaling will set the file version to be PDF 1.6
+  // - vpDisplayDocTitle shows the document title instead of the file name in
+  // the window title bar, as PDF/UA-1 requires: Tagged=true sets it
   TPdfViewerPreference = (
     vpHideToolbar,
     vpHideMenubar,
     vpHideWindowUI,
     vpFitWindow,
     vpCenterWindow,
-    vpEnforcePrintScaling);
+    vpEnforcePrintScaling,
+    vpDisplayDocTitle);
 
   /// set of Viewer preferences
   TPdfViewerPreferences = set of TPdfViewerPreference;
@@ -1497,6 +1500,11 @@ type
     /// build and write the Tagged PDF structure tree into the document
     // - called from SaveToStreamDirectEnd when Tagged=true
     procedure SerializeStructTree;
+    /// fill the XMP metadata stream of a Tagged PDF without PDF/A
+    // - called from SaveToStreamDirectEnd, since a document streamed page by
+    // page creates this stream on its first AddPage, i.e. after
+    // SaveToStreamDirectBegin (ROADMAP B-8)
+    procedure WriteTaggedMetadata;
     /// release the current document content
     procedure FreeDoc;
   public
@@ -1938,6 +1946,11 @@ type
     fEmfBounds: TRect;
     fPrinterPxPerInch: TPoint;
     fNewPath: boolean;
+    /// true between BeginArtifact and EndArtifact
+    fArtifactOpen: boolean;
+    /// true while a path object is wrapped in /Artifact BMC by
+    // BeginPathArtifact, until its painting operator (ROADMAP B-9)
+    fPathArtifact: boolean;
     /// if text must be rendered from right to left (RTL paragraph direction)
     // - used by Uniscribe (Windows) and HarfBuzz (Unix/macOS) shaping paths
     fRightToLeftText: boolean;
@@ -1955,6 +1968,15 @@ type
     // result := fOffsetY - Y * fFactorY;
     function I2Y(Y: integer): single;
     function S2Y(Y: single): single;
+    // true when the content written now lies inside a marked-content sequence
+    function InMarkedContent: boolean;
+    // Tagged PDF: a path object outside any struct region is decoration, and
+    // PDF/UA requires it to be marked as /Artifact - called by every path
+    // construction operator, so the sequence encloses the whole path object
+    procedure BeginPathArtifact;
+    // closes the sequence of BeginPathArtifact - called by the operators
+    // which end a path object, i.e. painting and 'n'
+    procedure EndPathArtifact;
     // wrapper calling I2X/S2X and I2Y/S2Y for conversion
     procedure LineToI(x, y: integer);
     procedure LineToS(x, y: single);
@@ -2363,6 +2385,16 @@ type
     // BeginStructGroup does
     procedure ResumeStructContent(AStructIndex: integer;
       AOpenRegion: boolean = true);
+    /// open an /Artifact marked-content sequence (BMC operator)
+    // - for content which a reader has to skip, e.g. a table header row
+    // repeated on a continuation page, or a running page header
+    // - only writes when TPdfDocument.Tagged=true; no struct element may be
+    // opened before the matching EndArtifact
+    // - path objects drawn outside any struct region are wrapped
+    // automatically, so decoration does not need this call
+    procedure BeginArtifact;
+    /// close the sequence opened by BeginArtifact (EMC operator)
+    procedure EndArtifact;
   public
     /// retrieve the current Canvas content stream, i.e. where the PDF
     // commands are to be written to
@@ -7987,6 +8019,8 @@ begin
       if fFileFormat < pdf14 then
         fFileFormat := pdf14;
       fRoot.Data.AddItem('MarkInfo', TPdfRawText.Create('<</Marked true>>'));
+      // PDF/UA-1 7.1: the viewer has to show the title, not the file name
+      fRoot.ViewerPreference := fRoot.ViewerPreference + [vpDisplayDocTitle];
       if fDefaultLanguage <> '' then
         fRoot.Data.AddItemText('Lang', fDefaultLanguage);
       fStructTree := TPdfDictionary.Create(fXRef);
@@ -8001,6 +8035,8 @@ begin
         fMetaData.Attributes.AddItem('Subtype', 'XML');
         fMetaData.Attributes.AddItem('Type', 'Metadata');
         fMetaData.fFilter := '';
+        // filled by WriteTaggedMetadata: a page flush must not write it empty
+        fMetaData.fSaveAtTheEnd := true;
         fRoot.Data.AddItem('Metadata', fMetaData);
         if fTrailer.Attributes.PdfArrayByName('ID') = nil then
         begin
@@ -8088,6 +8124,15 @@ const
   // PDF/A conformation requires at least four binary (>#128) characters
   PDFA_MARKER: array[0..5] of byte = (ord('%'), 237, 238, 239, 240, 10);
 
+// the /Info text fields as XMP element content: a title such as 'R&D' would
+// otherwise make the whole packet unparsable
+function XmpText(const Value: string): RawUtf8;
+begin
+  // '&' first, so the entities added next are not escaped a second time
+  result := StringReplaceAll(StringToUtf8(Value),
+    ['&', '&amp;', '<', '&lt;', '>', '&gt;']);
+end;
+
 procedure TPdfDocument.SaveToStreamDirectBegin(AStream: TStream; ForceModDate: TDateTime);
 begin
   if fSaveToStreamWriter <> nil then
@@ -8111,23 +8156,23 @@ begin
       Add('Z</xmp:CreateDate><xmp:ModifyDate>').
       AddIso8601(Info.ModDate).
       Add('Z</xmp:ModifyDate><xmp:CreatorTool>').
-      AddS(Info.Creator).
+      Add(XmpText(Info.Creator)).
       Add('</xmp:CreatorTool></rdf:Description>' +
       '<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/">' +
       '<dc:title><rdf:Alt><rdf:li xml:lang="x-default">').
-      AddS(Info.Title).
+      Add(XmpText(Info.Title)).
       Add('</rdf:li></rdf:Alt></dc:title>' +
       '<dc:creator><rdf:Seq><rdf:li xml:lang="x-default">').
-      AddS(Info.Author).
+      Add(XmpText(Info.Author)).
       Add('</rdf:li></rdf:Seq></dc:creator>' +
       '<dc:description><rdf:Alt><rdf:li xml:lang="x-default">').
-      AddS(Info.Subject).
+      Add(XmpText(Info.Subject)).
       Add('</rdf:li></rdf:Alt></dc:description>' +
       '</rdf:Description>').
       Add(Info.CustomMetadata).
       Add('<rdf:Description rdf:about="" xmlns:pdf="http://ns.adobe.com/pdf/1.3/">' +
       '<pdf:Keywords>').
-      AddS(Info.Keywords).
+      Add(XmpText(Info.Keywords)).
       Add('</pdf:Keywords>' +
       '<pdf:Producer>' + PDF_PRODUCER + '</pdf:Producer></rdf:Description>' +
       '<rdf:Description rdf:about="" xmlns:pdfaid="http://www.aiim.org/pdfa/ns/id/">' +
@@ -8135,38 +8180,50 @@ begin
       Add(PDFA_APART[fPdfA]).
       Add('</pdfaid:part><pdfaid:conformance>').
       Add(PDFA_CONFORMANCE[fPdfA]).
-      Add('</pdfaid:conformance></rdf:Description>').
+      Add('</pdfaid:conformance></rdf:Description>');
+    if fTagged then
+      fMetaData.Writer.Add(
+        '<rdf:Description rdf:about="" xmlns:pdfuaid="http://www.aiim.org/pdfua/ns/id/">' +
+        '<pdfuaid:part>1</pdfuaid:part></rdf:Description>');
+    fMetaData.Writer.
       Add(fPdfAMetadaExtension).
       Add('</rdf:RDF></x:xmpmeta><?xpacket end="w"?>');
-  end
-  else if fTagged and (fPdfA = pdfaNone) and (fMetaData <> nil) then
-  begin
-    // XMP metadata for Tagged PDF / PDF/UA-1 (without PDF/A)
-    fMetaData.Writer.Add(
-      '<?xpacket begin="' + BOM_UTF8_CHARS + '" id="W5M0MpCehiHzreSzNTczkc9d"?>' +
-      '<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="mormot.ui.pdf">' +
-      '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">' +
-      '<rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/">' +
-      '<xmp:CreateDate>').AddIso8601(Info.CreationDate).
-      Add('Z</xmp:CreateDate><xmp:ModifyDate>').AddIso8601(Info.ModDate).
-      Add('Z</xmp:ModifyDate><xmp:CreatorTool>').AddS(Info.Creator).
-      Add('</xmp:CreatorTool></rdf:Description>' +
-      '<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/">' +
-      '<dc:title><rdf:Alt><rdf:li xml:lang="x-default">').AddS(Info.Title).
-      Add('</rdf:li></rdf:Alt></dc:title>' +
-      '<dc:creator><rdf:Seq><rdf:li>').AddS(Info.Author).
-      Add('</rdf:li></rdf:Seq></dc:creator></rdf:Description>' +
-      '<rdf:Description rdf:about="" xmlns:pdf="http://ns.adobe.com/pdf/1.3/">' +
-      '<pdf:Producer>' + PDF_PRODUCER + '</pdf:Producer></rdf:Description>' +
-      '<rdf:Description rdf:about="" xmlns:pdfuaid="http://www.aiim.org/pdfua/ns/id/">' +
-      '<pdfuaid:part>1</pdfuaid:part></rdf:Description>' +
-      '</rdf:RDF></x:xmpmeta><?xpacket end="w"?>');
   end;
   // write beginning of the content
   fSaveToStreamWriter := TPdfWrite.Create(self, AStream);
   fSaveToStreamWriter.Add('%PDF-1.').Add(PDF_HEADER[fFileformat]).Add(#10);
   if fFileFormat > pdf13 then
     fSaveToStreamWriter.Add(@PDFA_MARKER, SizeOf(PDFA_MARKER));
+end;
+
+procedure TPdfDocument.WriteTaggedMetadata;
+begin
+  // PDF/UA-1 5 (pdfuaid:part) and 7.1 (dc:title) - PDF/A writes its own packet
+  // in SaveToStreamDirectBegin, extended with pdfuaid there
+  if not fTagged or
+     (fPdfA <> pdfaNone) or
+     (fMetaData = nil) or
+     (fMetaData.Writer.Position <> 0) then
+    exit;
+  fMetaData.Writer.Add(
+    '<?xpacket begin="' + BOM_UTF8_CHARS + '" id="W5M0MpCehiHzreSzNTczkc9d"?>' +
+    '<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="mormot.ui.pdf">' +
+    '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">' +
+    '<rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/">' +
+    '<xmp:CreateDate>').AddIso8601(Info.CreationDate).
+    Add('Z</xmp:CreateDate><xmp:ModifyDate>').AddIso8601(Info.ModDate).
+    Add('Z</xmp:ModifyDate><xmp:CreatorTool>').Add(XmpText(Info.Creator)).
+    Add('</xmp:CreatorTool></rdf:Description>' +
+    '<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/">' +
+    '<dc:title><rdf:Alt><rdf:li xml:lang="x-default">').Add(XmpText(Info.Title)).
+    Add('</rdf:li></rdf:Alt></dc:title>' +
+    '<dc:creator><rdf:Seq><rdf:li>').Add(XmpText(Info.Author)).
+    Add('</rdf:li></rdf:Seq></dc:creator></rdf:Description>' +
+    '<rdf:Description rdf:about="" xmlns:pdf="http://ns.adobe.com/pdf/1.3/">' +
+    '<pdf:Producer>' + PDF_PRODUCER + '</pdf:Producer></rdf:Description>' +
+    '<rdf:Description rdf:about="" xmlns:pdfuaid="http://www.aiim.org/pdfua/ns/id/">' +
+    '<pdfuaid:part>1</pdfuaid:part></rdf:Description>' +
+    '</rdf:RDF></x:xmpmeta><?xpacket end="w"?>');
 end;
 
 procedure TPdfDocument.SaveToStreamDirectPageFlush(FlushCurrentPageNow: boolean);
@@ -8213,6 +8270,7 @@ begin
           '% struct element(s) left open: missing EndStructContent',
           [fStructStack.Count]);
       SerializeStructTree;
+      WriteTaggedMetadata;
     end;
     // write pending objects
     if fFileFormat >= pdf15 then
@@ -8432,6 +8490,11 @@ begin
     // screen reader never sees the copy inside the content stream
     if elem.AltText <> '' then
       elem.Dic.AddItemTextUtf8('Alt', elem.AltText);
+    // PDF/UA-1 7.5: a header cell has to name the cells it heads (PAC: "no
+    // associated subcells") - a TH is only emitted in a header row, i.e. it
+    // heads its column (ROADMAP B-11)
+    if elem.Role = psrTH then
+      elem.Dic.AddItem('A', TPdfRawText.Create('<</O/Table/Scope/Column>>'));
     if (not PDF_STRUCT_CONTAINER[elem.Role]) and
        (elem.Kids = nil) then
       if elem.MCIDCount = 1 then
@@ -9371,6 +9434,8 @@ end;
 
 procedure TPdfCanvas.SetPage(APage: TPdfPage);
 begin
+  // a path left unpainted must not carry its /Artifact into the next page
+  EndPathArtifact;
   fPage := APage;
   fPageFontList := fPage.GetResources('Font');
   fContents := TPdfStream(fPage.ValueByName('Contents'));
@@ -10174,18 +10239,21 @@ end;
 
 procedure TPdfCanvas.MoveTo(x, y: single);
 begin
+  BeginPathArtifact;
   if fContents <> nil then
     fContents.Writer.AddWithSpace(x).AddWithSpace(y).Add('m'#10);
 end;
 
 procedure TPdfCanvas.LineTo(x, y: single);
 begin
+  BeginPathArtifact;
   if fContents <> nil then
     fContents.Writer.AddWithSpace(x).AddWithSpace(y).Add('l'#10);
 end;
 
 procedure TPdfCanvas.CurveToC(x1, y1, x2, y2, x3, y3: single);
 begin
+  BeginPathArtifact;
   if fContents <> nil then
     fContents.Writer.AddWithSpace(x1).AddWithSpace(y1).
       AddWithSpace(x2).AddWithSpace(y2).
@@ -10194,6 +10262,7 @@ end;
 
 procedure TPdfCanvas.CurveToV(x2, y2, x3, y3: single);
 begin
+  BeginPathArtifact;
   if fContents <> nil then
     fContents.Writer.AddWithSpace(x2).AddWithSpace(y2).
       AddWithSpace(x3).AddWithSpace(y3).Add('v'#10);
@@ -10201,6 +10270,7 @@ end;
 
 procedure TPdfCanvas.CurveToY(x1, y1, x3, y3: single);
 begin
+  BeginPathArtifact;
   if fContents <> nil then
     fContents.Writer.AddWithSpace(x1).AddWithSpace(y1).
       AddWithSpace(x3).AddWithSpace(y3).Add('y'#10);
@@ -10208,6 +10278,7 @@ end;
 
 procedure TPdfCanvas.Rectangle(x, y, width, height: single);
 begin
+  BeginPathArtifact;
   if fContents <> nil then
     fContents.Writer.AddWithSpace(x).AddWithSpace(y).
       AddWithSpace(width).AddWithSpace(height).Add('re'#10);
@@ -10224,54 +10295,63 @@ begin
   fNewPath := true;
   if fContents <> nil then
     fContents.Writer.Add('n'#10);
+  EndPathArtifact;
 end;
 
 procedure TPdfCanvas.Stroke;
 begin
   if fContents <> nil then
     fContents.Writer.Add('S'#10);
+  EndPathArtifact;
 end;
 
 procedure TPdfCanvas.ClosePathStroke;
 begin
   if fContents <> nil then
     fContents.Writer.Add('s'#10);
+  EndPathArtifact;
 end;
 
 procedure TPdfCanvas.Fill;
 begin
   if fContents <> nil then
     fContents.Writer.Add('f'#10);
+  EndPathArtifact;
 end;
 
 procedure TPdfCanvas.Eofill;
 begin
   if fContents <> nil then
     fContents.Writer.Add('f*'#10);
+  EndPathArtifact;
 end;
 
 procedure TPdfCanvas.FillStroke;
 begin
   if fContents <> nil then
     fContents.Writer.Add('B'#10);
+  EndPathArtifact;
 end;
 
 procedure TPdfCanvas.ClosepathFillStroke;
 begin
   if fContents <> nil then
     fContents.Writer.Add('b'#10);
+  EndPathArtifact;
 end;
 
 procedure TPdfCanvas.EofillStroke;
 begin
   if fContents <> nil then
     fContents.Writer.Add('B*'#10);
+  EndPathArtifact;
 end;
 
 procedure TPdfCanvas.ClosepathEofillStroke;
 begin
   if fContents <> nil then
     fContents.Writer.Add('b*'#10);
+  EndPathArtifact;
 end;
 
 procedure TPdfCanvas.Clip;
@@ -10423,8 +10503,11 @@ end;
 
 procedure TPdfCanvas.ExecuteXObject(const xObject: PdfString);
 begin
+  // an image outside a Figure region is decoration as well (ROADMAP B-9)
+  BeginPathArtifact;
   if fContents <> nil then
     fContents.Writer.Add('/').Add(xObject).Add(' Do'#10);
+  EndPathArtifact;
 end;
 
 procedure TPdfCanvas.SetRGBFillColor(Value: TPdfColor);
@@ -10968,6 +11051,63 @@ begin
 end;
 
 
+function TPdfCanvas.InMarkedContent: boolean;
+var
+  i: PtrInt;
+begin
+  result := true;
+  if fArtifactOpen or
+     fPathArtifact then
+    exit;
+  for i := 0 to fDoc.fStructStack.Count - 1 do
+    if TPdfStructElement(fDoc.fStructStack.List[i]).RegionOpen then
+      exit;
+  result := false;
+end;
+
+procedure TPdfCanvas.BeginPathArtifact;
+begin
+  if (fContents = nil) or
+     not fDoc.fTagged or
+     InMarkedContent then
+    exit; // inside a region, e.g. a Figure, the path is real content
+  fPathArtifact := true;
+  fContents.Writer.Add('/Artifact BMC'#10);
+end;
+
+procedure TPdfCanvas.EndPathArtifact;
+begin
+  if not fPathArtifact then
+    exit;
+  fPathArtifact := false;
+  if fContents <> nil then
+    fContents.Writer.Add('EMC'#10);
+end;
+
+procedure TPdfCanvas.BeginArtifact;
+begin
+  if (fContents = nil) or
+     not fDoc.fTagged then
+    exit;
+  if InMarkedContent then
+    raise EPdfInvalidOperation.Create(
+      'BeginArtifact inside an open marked-content sequence');
+  fArtifactOpen := true;
+  fContents.Writer.Add('/Artifact BMC'#10);
+end;
+
+procedure TPdfCanvas.EndArtifact;
+begin
+  if (fContents = nil) or
+     not fDoc.fTagged then
+    exit;
+  if not fArtifactOpen then
+    raise EPdfInvalidOperation.Create('EndArtifact without BeginArtifact');
+  fArtifactOpen := false;
+  fContents.Writer.Add('EMC'#10);
+end;
+
+
 { TPdfDictionaryWrapper }
 
 procedure TPdfDictionaryWrapper.SetData(AData: TPdfDictionary);
@@ -11129,7 +11269,7 @@ end;
 const
   PDF_PAGE_VIEWER_NAMES: array[TPdfViewerPreference] of PdfString = (
     'HideToolbar', 'HideMenubar', 'HideWindowUI', 'FitWindow',
-    'CenterWindow', 'PrintScaling');
+    'CenterWindow', 'PrintScaling', 'DisplayDocTitle');
 
 function TPdfCatalog.GetViewerPreference: TPdfViewerPreferences;
 var
@@ -11137,7 +11277,7 @@ var
   p: TPdfViewerPreference;
 begin
   result := [];
-  d := fData.PdfDictionaryByName('ViewerPreference');
+  d := fData.PdfDictionaryByName('ViewerPreferences');
   if d <> nil then
     for p := low(p) to high(p) do
       if d.PdfBooleanByName(PDF_PAGE_VIEWER_NAMES[p]) <> nil then
