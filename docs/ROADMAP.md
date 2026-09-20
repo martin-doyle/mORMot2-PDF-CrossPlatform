@@ -19,11 +19,9 @@ there). All six demos now embed subsets; none pins the whole face any more.
 
 **macOS pass, 2026-09-20 — complete.** All six demos and `test_runner` build and
 run on macOS (aarch64-darwin, Lazarus 4.9 / FPC 3.2.3), with HarfBuzz 12.3.2
-from Homebrew. `test_runner` rebuilt with `-B` and re-run: **221 assertions, 0
-failures**, including `TestSubsetterRegistered` and `TestTtcFaceExtraction`.
-Five of the six PDFs come out the size the other platforms lead one to expect.
-`chinese_demo` does not, and the reason is not a defect in the subsetter: see
-**R-15c** below.
+from Homebrew. `test_runner`: **222 assertions, 0 failures**. The pass found
+**R-15c** — CFF faces were embedded as `/FontFile2`, a spec violation that also
+made `chinese_demo` 10 MB there — and closed it; that demo is now 22,903 B.
 
 ---
 
@@ -95,7 +93,7 @@ mechanical cross-platform comparison, and the two rows that no pass has covered.
 | What | Where | Why it matters |
 |---|---|---|
 | ~~PAC 2024~~ | [`docs/samples/`](samples/) — the Linux-built PDFs of both demos | done — green, W-1 the only warning |
-| ~~macOS build, `test_runner`, demos~~ | R-12, R-14 | done 2026-09-20 — all six demos build and run, `test_runner` green. Geeza Pro subsets correctly, so the PUA glyph path holds. Found **R-15c** |
+| ~~macOS build, `test_runner`, demos~~ | R-12, R-14 | done 2026-09-20 — all six demos build and run, `test_runner` green. Geeza Pro subsets correctly, so the PUA glyph path holds. Found and fixed **R-15c** |
 | ~~Windows build, `test_runner`, demos~~ | R-12, R-14 | done — builds and links; subsetting arrived with R-15, so the comparison is against R-15's own figures, not against the pre-R-12 state. Found R-16 |
 | Linux rebuild of all six demos | R-15, R-15a, R-16 | the engine changes are argued to be POSIX-neutral from the `{$ifdef}` structure, not measured. Expect every PDF unchanged except `chinese_demo` and `rtl_demo`, which no longer pin the whole face |
 | PAC 2024 on the macOS-built PDFs | R-12, R-14 | the macOS pass checked sizes and fonts, not the tag tree; PAC runs only on Windows |
@@ -122,8 +120,8 @@ mechanical cross-platform comparison, and the two rows that no pass has covered.
    present, not the two that were planned — so the loader-absent row of the
    table above is still open. Geeza Pro subsets (`WQQPKW+GeezaPro`), which is
    the PUA glyph path holding. The `.ttc` CJK face is where it found
-   **R-15c**: `Hiragino Sans GB.ttc` is CFF, not `glyf`, so the documented CFF
-   fallback fires and `chinese_demo` embeds two whole faces.
+   **R-15c**: `Hiragino Sans GB.ttc` is CFF, and the CFF fallback was embedding
+   it as `/FontFile2` — a spec violation, since fixed.
 5. **Compare the platforms — but not pixel by pixel.** The demos resolve
    different families (Calibri/Cambria/Consolas, Liberation, Trebuchet
    MS/Georgia/Andale Mono), so different advance widths, line breaks and page
@@ -147,56 +145,46 @@ SQLite database and ran on macOS on 2026-09-20.
 **`--export` needs no display on macOS.** The Cocoa widgetset runs both GUI
 demos headless, so the `xvfb-run` advice is Linux/GTK2 only.
 
-### R-15c — macOS CJK Demo Embeds Two Whole Faces — unprioritised
+### ~~R-15c — CFF Faces Were Embedded as /FontFile2~~ — done 2026-09-20
 
-**Effort:** 1–3 days, depending on the route taken | **Files:**
-`src/core/mormot.ui.pdf.pas`, `src/platform/unix/mormot.pdf.hbsubset.pas`,
-`examples/chinese_demo/chinese_demo.lpr`
+Found by the macOS pass, and it was a correctness bug, not the size problem it
+looked like. `chinese_demo` was 10,117,154 B there because
+`/System/Library/Fonts/Hiragino Sans GB.ttc` is `OTTO`/CFF in all four faces, so
+the subsetter refused it — but the fallback then embedded that CFF face in
+`/FontFile2`, which ISO 32000-1 9.9 reserves for the `glyf` flavour. poppler
+reported `Syntax Warning: Mismatch between font type and embedded font file`.
 
-`chinese_demo` is 10,117,154 B on macOS against 39,279 B on Windows and 10,848 B
-on Linux. The subsetter is not at fault and nothing is broken: the output is
-correct, just large.
+The fix routes CFF by its sfnt signature, in four places:
 
-`/System/Library/Fonts/Hiragino Sans GB.ttc` — the face `CJK_FONT` names on
-Darwin — carries `OTTO` in all four of its faces, with a `CFF ` table and no
-`glyf`. That is the **CFF fallback documented under R-15b**: hb-subset's output
-would be CFF, which is not valid in `/FontFile2`, so `PrepareFontSubsets` keeps
-the whole face. The demo draws in Regular and Bold, which resolve to two
-different faces of the collection, so two whole faces are embedded — hence ~10 MB
-from a 23.5 MB collection. The single `TrebuchetMS,Bold` used for the Latin
-header is `glyf` and does subset (`YKURIC+`), which is how one can tell the
-subsetter loaded and ran.
+- `IsTrueTypeOutlines` → `IsEmbeddableOutlines`, which also accepts `OTTO`
+  (`mormot.pdf.hbsubset`); hb-subset handles CFF and keeps glyph IDs
+- `/FontFile3` with `/Subtype /OpenType` and no `/Length1`, which is defined
+  for the `glyf` flavour alone (`PdfFontFileKey`, `GetOrCreateFontFile2`)
+- the descendant CIDFont becomes `CIDFontType0` instead of `CIDFontType2` (9.7.4)
+- the WinAnsi instance becomes `/Type1` instead of `/TrueType` (9.6.2.1)
 
-How to confirm this on any machine, without reading the engine:
+`TPdfFontSubset` gained an `IsCff` field, because the flavour is only knowable
+while the whole face is in hand during `PrepareFontSubsets`; re-reading it later
+would cost megabytes.
 
-```bash
-grep -a -oE "/BaseFont[ ]*/[A-Za-z0-9+,#_-]+" output_chinese.pdf | sort -u
-# a six-letter prefix means subset; its absence means whole face
-hb-info --face-index=0 "/System/Library/Fonts/Hiragino Sans GB.ttc" | grep outlines
-# "Has Postscript outlines" = CFF
-```
+Result on macOS: **10,117,154 → 22,903 B**, both faces now `sub=yes`, and two of
+the four poppler warnings gone. `glyf` output is byte-identical — `pdf_demo`
+19,312 B, `markdown_demo` 51,282 B, `rtl_demo` 13,922 B, all unchanged.
+`TestSubsetRejectsCff` asserted the old behaviour and was rewritten as
+`TestSubsetAcceptsCff`, which loads a real CFF system face (222 assertions now).
 
-Three routes, in increasing order of cost and of value:
+**Two warnings remain, and they are a different, pre-existing defect.** The
+engine creates a WinAnsi peer beside every Identity-H font and emits a `Tf` for
+it, but for a CJK face that instance draws nothing — the content stream selects
+`F1`/`F3` and immediately switches to `F2`/`F4`. poppler flags the unused simple
+font. The identical `Unknown font tag` diagnostics appear on the pre-change file,
+so this predates R-15c and is unrelated to CFF. Whoever picks it up: the fix is
+to stop emitting the peer when it has no used characters, which touches the font
+lifecycle for every platform — see `fonts.md` §4 on the dual-instance model.
 
-1. **Pick a `glyf` CJK face for the demo on Darwin.** Cheapest, and it makes the
-   demo teach what it claims to teach. macOS ships no `glyf` CJK face by
-   default, so this means either documenting a `brew install font-noto-sans-cjk`
-   prerequisite, or shipping a face with the demo. It hides the engine
-   limitation rather than fixing it, so at minimum the demo's header must name
-   the reason.
-2. **Emit CFF subsets as `/FontFile3`** with `/Subtype /OpenType` (PDF 1.6+, and
-   the engine writes 1.7). This is the real fix and it lifts the restriction for
-   every CFF face on POSIX, not just this one. hb-subset handles CFF perfectly
-   well; what is missing is the `/FontFile3` branch in the descriptor and the
-   decision of which one to write. Check what `CreateFontPackage` does with a
-   CFF face before assuming Windows is unaffected — R-15b already flags that as
-   untested.
-3. **Give `.ttc` faces an index** (R-11) so Regular and Bold of one collection
-   are addressable. Independent of the CFF question and it does not shrink this
-   file, but it is the other half of why this demo embeds *two* faces.
-
-Route 2 subsumes the size problem; route 1 is the one that makes the demo
-honest tomorrow. They are not exclusive.
+**Untested in this work:** what `CreateFontPackage` does with a CFF face on
+Windows (R-15b already flags it), and whether PDF/A or tagged output impose
+extra `/FontFile3` conditions — `chinese_demo` is neither.
 
 ### R-15b — Symbolic Fonts Are Not Subset on POSIX — unprioritised
 
@@ -341,7 +329,7 @@ platforms' — what matters is the subset prefix, not the byte count.
 | `report_demo` export (tagged) | 14,078 B | all subset |
 | `mormot_demo` export (tagged) | ~53,985 B | 2 faces, all subset |
 | `output_rtl.pdf` | 13,922 B | all subset, incl. `WQQPKW+GeezaPro` |
-| `output_chinese.pdf` | 10,117,154 B | `TrebuchetMS,Bold` subset; **`HiraginoSansGB` and `HiraginoSansGB,Bold` whole** — R-15c |
+| `output_chinese.pdf` | 22,903 B | all subset, incl. `HFCPMT+HiraginoSansGB` (CFF, after R-15c; was 10,117,154 B with the whole face) |
 
 The Arabic row is the one worth noting beyond the sizes: Geeza Pro's shaped
 presentation forms survive a subset that retains glyph IDs, which is the PUA

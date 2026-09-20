@@ -35,6 +35,8 @@ type
     // load the whole face of a common glyf-based font through the platform
     // backend; false (and a SKIP check) when no subsetter or no font exists
     function PrepareFace: boolean;
+    // the same for a CFF-flavoured ('OTTO') face, which not every system has
+    function LoadCffFace(out aFace: RawByteString): boolean;
     function SubsetOf(const Unicodes, Glyphs: array of integer;
       out Sub: RawByteString): boolean;
   published
@@ -43,7 +45,7 @@ type
     procedure TestSubsetKeepsCmapForUnicodes;
     procedure TestSubsetKeepsNotdef;
     procedure TestSubsetIsSmaller;
-    procedure TestSubsetRejectsCff;
+    procedure TestSubsetAcceptsCff;
     procedure TestSubsetRejectsGarbage;
   end;
 
@@ -314,6 +316,52 @@ begin
     Check(true, 'SKIP: no glyf-based test font found on this system');
 end;
 
+function TPdfSubsetTests.LoadCffFace(out aFace: RawByteString): boolean;
+const
+  // CFF system faces: macOS ships its CJK families as OpenType/CFF
+  CFF_FONTS: array[0..2] of RawUtf8 = (
+    'Hiragino Sans GB', 'Hiragino Mincho ProN', 'Source Han Sans');
+var
+  dc: TPdfPlatformDC;
+  lf: TPdfLogFont;
+  font, prev: TPdfPlatformFontHandle;
+  size: cardinal;
+  f: PtrInt;
+begin
+  aFace := '';
+  dc := PdfPlatformDCProvider.CreateDC;
+  try
+    for f := 0 to high(CFF_FONTS) do
+    begin
+      FillChar(lf, SizeOf(lf), 0);
+      lf.FaceName := SynUnicode(CFF_FONTS[f]);
+      lf.Height := -1000;
+      lf.Weight := 400;
+      font := PdfPlatformFont.CreateFont(lf);
+      if font = nil then
+        continue;
+      prev := PdfPlatformFont.SelectFont(dc, font);
+      size := PdfPlatformFont.GetFontData(dc, 0, 0, nil, 0);
+      if size <> PdfPlatformFont.FontDataError then
+      begin
+        SetLength(aFace, size);
+        if PdfPlatformFont.GetFontData(dc, 0, 0, pointer(aFace), size) <> size then
+          aFace := '';
+      end;
+      PdfPlatformFont.SelectFont(dc, prev);
+      PdfPlatformFont.DeleteFont(font);
+      if copy(aFace, 1, 4) = 'OTTO' then
+        break;
+      aFace := '';
+    end;
+  finally
+    PdfPlatformDCProvider.DeleteDC(dc);
+  end;
+  result := aFace <> '';
+  if not result then
+    Check(true, 'SKIP: no CFF face installed on this system');
+end;
+
 function TPdfSubsetTests.SubsetOf(const Unicodes, Glyphs: array of integer;
   out Sub: RawByteString): boolean;
 var
@@ -399,9 +447,9 @@ begin
     [fFaceName, length(sub), length(fFace)]));
 end;
 
-procedure TPdfSubsetTests.TestSubsetRejectsCff;
+procedure TPdfSubsetTests.TestSubsetAcceptsCff;
 var
-  sub: RawByteString;
+  face, sub: RawByteString;
   req: TPdfFontSubsetRequest;
 begin
   if PdfFontSubsetter = nil then
@@ -409,10 +457,23 @@ begin
     Check(true, 'SKIP: no IPdfFontSubsetter registered');
     exit;
   end;
+  // a malformed OTTO header is still refused, like any other garbage
   req := Default(TPdfFontSubsetRequest);
   Check(not PdfFontSubsetter.Subset('OTTO' + StringOfChar(#0, 60), req, sub),
-    'a CFF face must not be subset into /FontFile2');
+    'a truncated CFF face must not be subset');
   CheckEqual(sub, '', 'no output expected');
+  // a real CFF face is subset like any other: it goes to /FontFile3 with
+  // /Subtype /OpenType, which the engine picks through PdfFontFileKey()
+  if not LoadCffFace(face) then
+    exit;
+  req := Default(TPdfFontSubsetRequest);
+  SetLength(req.Glyphs, 2);
+  req.Glyphs[0] := 1;
+  req.Glyphs[1] := 2;
+  Check(PdfFontSubsetter.Subset(face, req, sub), 'a CFF face must be subset');
+  Check(sub <> '', 'subset output expected');
+  CheckEqual(copy(sub, 1, 4), 'OTTO', 'a CFF subset stays CFF');
+  Check(length(sub) < length(face) div 2, 'the subset must be much smaller');
 end;
 
 procedure TPdfSubsetTests.TestSubsetRejectsGarbage;

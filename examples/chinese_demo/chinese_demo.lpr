@@ -1,15 +1,14 @@
 /// Chinese (CJK) PDF Demo — mORMot2 PDF Cross-Platform
 // Draws multi-line CJK text with TPdfDocumentVcl and embeds the face as a
-// subset on Windows and Linux; on macOS see the note below.
+// subset on every platform.
 //
 // Worth noting:
 // - CJK has no contextual shaping, so UseUniscribe stays false
 // - subsetting is what keeps the file small: the whole face costs about 24 MB
 //   against roughly 39 KB for the glyphs actually drawn
 // - the CJK face is picked per platform (see CJK_FONT below)
-// - on macOS the output is about 10 MB, and that is expected: Hiragino Sans GB
-//   is CFF OpenType, a CFF subset is not valid in /FontFile2, so the whole face
-//   is embedded (roadmap R-15c). The Latin header font still subsets
+// - macOS resolves a CFF face (Hiragino Sans GB), whose subset goes to
+//   /FontFile3 with /Subtype /OpenType instead of /FontFile2 (roadmap R-15c)
 //
 // Font requirement:
 //   Windows : Microsoft YaHei — pre-installed on Vista+ (all locales)
@@ -129,9 +128,7 @@ begin
   WriteLn('Set EmbeddedWholeTtf := true to embed the complete face instead.');
   {$ifdef DARWIN}
   WriteLn('');
-  WriteLn('On macOS this file is about 10 MB, which is expected: Hiragino Sans');
-  WriteLn('GB is CFF OpenType and a CFF subset is not valid in /FontFile2, so');
-  WriteLn('the whole face is embedded (ROADMAP R-15c). Point CJK_FONT at an');
-  WriteLn('installed glyf face to get a small file here too.');
+  WriteLn('Hiragino Sans GB is OpenType/CFF, so its subset is embedded as');
+  WriteLn('/FontFile3 with /Subtype /OpenType, as a CIDFontType0 (R-15c).');
   {$endif DARWIN}
 end.

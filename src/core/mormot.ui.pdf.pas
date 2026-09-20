@@ -1389,6 +1389,11 @@ type
     Subset: PdfString;
     /// the 'ABCDEF+' name prefix of ISO 32000-1 9.6.4, derived from Subset
     Tag: PdfString;
+    /// true for a CFF-flavoured ('OTTO') face, whichever way it is embedded
+    // - such a face is a CIDFontType0 in /FontFile3, not a CIDFontType2 in
+    // /FontFile2; recorded here because the whole face is only in hand while
+    // PrepareFontSubsets runs, and re-reading it costs megabytes
+    IsCff: boolean;
     /// the first font found for this face, used to reach the face again
     // - the Windows subsetter reads the bytes through a DC with the font
     // selected, so it needs one of the fonts, not just the face data
@@ -1518,9 +1523,12 @@ type
     {$endif OSWINDOWS}
     /// find an index of in fTrueTypeFonts[]
     function GetTrueTypeFontIndex(const AName: RawUtf8): integer;
-    /// return the /FontFile2 stream holding aTtf, creating it if needed
+    /// return the font file stream holding aTtf, creating it if needed
     // - reuses an existing stream when the bytes are identical, so that the
     // styles resolving to the same physical font file embed it only once
+    // - a CFF-flavoured face ('OTTO') gets /Subtype /OpenType and no /Length1,
+    // which only applies to the glyf flavour: the caller picks the matching
+    // /FontFile2 or /FontFile3 key with PdfFontFileKey()
     function GetOrCreateFontFile2(const aTtf: PdfString): TPdfStream;
     /// subset every embedded face with PdfFontSubsetter, before PrepareForSaving
     // - the union of the glyphs of all fonts sharing a face has to be known
@@ -7245,6 +7253,25 @@ begin
   end;
 end;
 
+// a CFF-flavoured sfnt carries a 'CFF ' table under the 'OTTO' signature, and
+// ISO 32000-1 9.9 puts it in /FontFile3 with /Subtype /OpenType - /FontFile2 is
+// for the glyf flavour only, and /Length1 is defined for that flavour alone
+function PdfIsCffFace(const aTtf: PdfString): boolean;
+  {$ifdef HASINLINE} inline;{$endif}
+begin
+  result := (length(aTtf) > 4) and
+            (PCardinal(aTtf)^ = ord('O') + ord('T') shl 8 +
+                                ord('T') shl 16 + ord('O') shl 24);
+end;
+
+function PdfFontFileKey(const aTtf: PdfString): PdfString;
+begin
+  if PdfIsCffFace(aTtf) then
+    result := 'FontFile3'
+  else
+    result := 'FontFile2';
+end;
+
 procedure TPdfFontTrueType.PrepareForSaving;
 var
   c: AnsiChar;
@@ -7270,7 +7297,15 @@ begin
       // create font font
       font := TPdfDictionary.Create(fDoc.fXRef);
       font.AddItem('Type', 'Font');
-      font.AddItem('Subtype', 'CIDFontType2');
+      // 9.7.4: a CFF-flavoured face is a CIDFontType0, a glyf one a
+      // CIDFontType2 - the WinAnsi peer carries the flavour, detected while
+      // the whole face was in hand
+      sub := WinAnsiFont.GetSubset;
+      if (sub <> nil) and
+         sub^.IsCff then
+        font.AddItem('Subtype', 'CIDFontType0')
+      else
+        font.AddItem('Subtype', 'CIDFontType2');
       font.AddItem('BaseFont', // may have been prefixed
         TPdfName(WinAnsiFont.Data.ValueByName('BaseFont')).Value);
       // 9.6.4: a subset font carries its tag, and the Type0 has to agree with
@@ -7452,7 +7487,14 @@ begin
             // subsetting (if any) is done: the bytes are final, so identical
             // data can now share a single stream object
             // /FontDescriptor is common to WinAnsi and Unicode fonts
-            fFontDescriptor.AddItem('FontFile2', fDoc.GetOrCreateFontFile2(ttf));
+            // the key follows the outline flavour: CFF faces belong in
+            // /FontFile3, and poppler warns about a mismatch otherwise
+            fFontDescriptor.AddItem(
+              PdfFontFileKey(ttf), fDoc.GetOrCreateFontFile2(ttf));
+            if PdfIsCffFace(ttf) then
+              // 9.6.2.1: a simple font with CFF outlines is a /Type1, not a
+              // /TrueType - the constructor could not know the flavour yet
+              TPdfName(Data.ValueByName('Subtype')).Value := 'Type1';
           end;
         end;
       end;
@@ -8985,7 +9027,12 @@ begin
       end;
   result := TPdfStream.Create(self);
   result.Writer.Add(aTtf);
-  result.fAttributes.AddItem('Length1', length(aTtf));
+  if PdfIsCffFace(aTtf) then
+    // /Length1 is the length of the uncompressed glyf-flavoured file, and has
+    // no meaning for CFF: 9.9 asks for /Subtype instead
+    result.fAttributes.AddItem('Subtype', 'OpenType')
+  else
+    result.fAttributes.AddItem('Length1', length(aTtf));
   n := length(fFontFile2);
   SetLength(fFontFile2, n + 1);
   with fFontFile2[n] do
@@ -9057,6 +9104,7 @@ begin
       SetLength(fFontSubsets, j + 1);
       fFontSubsets[j].Hash := h;
       fFontSubsets[j].Face := face;
+      fFontSubsets[j].IsCff := PdfIsCffFace(face);
       fFontSubsets[j].Font := fnt; // any font of the face reaches it again
     end;
     fnt.AddToSubsetRequest(fFontSubsets[j].Request);
@@ -9078,7 +9126,7 @@ begin
       if ok then
         Tag := SubsetTag(Subset)
       else
-        Subset := ''; // e.g. CFF outlines: embed the whole face
+        Subset := ''; // e.g. a face hb-subset refuses: embed the whole one
       Face := '';
     end;
 end;

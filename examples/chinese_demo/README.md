@@ -3,7 +3,7 @@
 Demo 5 of the [learning path](../../docs/DEMOS.md#demo-5--chinese_demo).
 
 Draws multi-line Chinese with `TPdfDocumentVcl` and embeds the face as a
-subset — on Windows and Linux; see the macOS note below.
+subset on every platform.
 
 **What is special here**
 
@@ -13,21 +13,14 @@ subset — on Windows and Linux; see the macOS note below.
   glyph numbering, so Identity-H and `/ToUnicode` stay valid
 - set `EmbeddedWholeTtf := True` if a consumer needs the complete CMAP
 
-**macOS produces a ~10 MB file, and that is expected.** `Hiragino Sans GB.ttc`
-is CFF OpenType (`OTTO`), and a CFF subset is not valid in `/FontFile2`, so the
-engine falls back to the whole face — twice, since Regular and Bold are separate
-faces of the collection. The Latin header font still subsets, which is how you
-can see the subsetter itself is working:
+**macOS uses a CFF face.** `Hiragino Sans GB.ttc` is OpenType/CFF, so its
+subset goes to `/FontFile3` with `/Subtype /OpenType` rather than `/FontFile2`
+(roadmap R-15c). Before that was handled the file was ~10 MB; it is ~23 KB now.
 
 ```bash
 grep -a -oE "/BaseFont[ ]*/[A-Za-z0-9+,#_-]+" output_chinese.pdf | sort -u
-# YKURIC+TrebuchetMS,Bold  <- subset
-# HiraginoSansGB           <- whole face
+# HFCPMT+HiraginoSansGB  <- the six-letter prefix means subset
 ```
-
-Roadmap [R-15c](../../docs/ROADMAP.md) tracks this. Pointing `CJK_FONT` at an
-installed `glyf` face (for example Noto Sans CJK) gives a small file on macOS
-too.
 
 **Font requirement**
 

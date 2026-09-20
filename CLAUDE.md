@@ -82,7 +82,7 @@ examples/
   (each demo folder carries a short README.md; the source header of its .lpr
    says the same thing in two sentences)
 tests/
-  test_runner.lpr              runs every suite below (221 assertions, green on Linux, Windows and macOS)
+  test_runner.lpr              runs every suite below (222 assertions, green on Linux, Windows and macOS)
   test_pdf_crossplatform.pas   platform backend, text shaper, TTC extraction
   test_pdf_smoke.pas           PDF basics, tagged output, struct tree
   test_report_crossplatform.pas report engine, tables, tagged export
@@ -237,8 +237,8 @@ display (`xvfb-run` otherwise); on macOS Cocoa runs it headless.
 
 ## Open Items
 
-- **Font subsetting**: default (`EmbeddedWholeTtf = False`) on all platforms, two implementations, both keeping the original glyph IDs and therefore safe for CJK, shaped Arabic and tagged output. **Linux/macOS** (R-12): `IPdfFontSubsetter` from `mormot.pdf.hbsubset` (`libharfbuzz-subset`); 97–99.5% smaller PDFs. **Windows** (R-15): `CreateFontPackage` with a glyph keep list (`TTFCFP_FLAGS_GLYPHLIST`). The whole face is embedded instead for PDF/A-1 (no `/CIDSet`), for CFF faces, for symbol fonts on POSIX (R-15b) and when `libharfbuzz-subset` is missing. See `.claude/skills/fonts.md` §3, §9
-- **CFF faces on POSIX are not subset** (R-15c): a CFF subset is not valid in `/FontFile2`. macOS ships its CJK faces as CFF OpenType, so `chinese_demo` is ~10 MB there against ~10–39 KB elsewhere. Correct output, not a defect — before treating any size difference on macOS as a bug, check `hb-info --face-index=0 <font> | grep outlines`
+- **Font subsetting**: default (`EmbeddedWholeTtf = False`) on all platforms, two implementations, both keeping the original glyph IDs and therefore safe for CJK, shaped Arabic and tagged output. **Linux/macOS** (R-12): `IPdfFontSubsetter` from `mormot.pdf.hbsubset` (`libharfbuzz-subset`); 97–99.5% smaller PDFs. **Windows** (R-15): `CreateFontPackage` with a glyph keep list (`TTFCFP_FLAGS_GLYPHLIST`). The whole face is embedded instead for PDF/A-1 (no `/CIDSet`), for symbol fonts on POSIX (R-15b) and when `libharfbuzz-subset` is missing. See `.claude/skills/fonts.md` §3, §9
+- **CFF faces are subset too** (R-15c, done): a CFF-flavoured face goes to `/FontFile3` with `/Subtype /OpenType` as a `CIDFontType0`; `glyf` goes to `/FontFile2`. `PdfFontFileKey()` picks the key. Embedding CFF in `/FontFile2` was a spec violation poppler warned about — do not reintroduce it by assuming one key fits both
 - **RTL / Arabic text**: HarfBuzz delivers correct ligatures on Linux/macOS; Windows uses Uniscribe — see `.claude/skills/fonts.md` §10
 - **Testing RTL**: Linux fonts (Noto Naskh Arabic) resolve shaped glyphs through the CMAP, so they never exercise the shaper's own advance path. Validate RTL work against a font without Arabic presentation forms — see `.claude/skills/fonts.md` §10
 - **TTC collections**: only face index 0 is reachable; `TPdfFontMap` has no face index, so the other faces of a `.ttc` cannot be selected by name

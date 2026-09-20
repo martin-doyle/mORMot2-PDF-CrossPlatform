@@ -154,20 +154,14 @@ retaining glyph IDs, `CreateFontPackage` through a glyph keep list
 survive, which is what makes CJK and shaped Arabic safe to subset.
 
 The whole face is embedded instead without `libharfbuzz-subset`, for PDF/A-1
-(which would need a `/CIDSet`), for symbol fonts on Linux/macOS and for
-CFF-flavoured OpenType. Text extraction and copy/paste are unaffected either
-way.
+(which would need a `/CIDSet`) and for symbol fonts on Linux/macOS. Text
+extraction and copy/paste are unaffected either way.
 
-The CFF case is the one that bites in practice: macOS ships its CJK faces as
-CFF OpenType, so `chinese_demo` embeds the whole `Hiragino Sans GB` face there
-(~10 MB) while Linux and Windows produce ~10–39 KB. Nothing is wrong with the
-output, it is simply large — see [R-15c](docs/ROADMAP.md). To check any face
-before relying on a subset:
-
-```bash
-hb-info --face-index=0 /path/to/font | grep outlines   # "Postscript" = CFF, no subset
-grep -a -oE "/BaseFont[ ]*/[A-Za-z0-9+,#_-]+" out.pdf  # ABCDEF+ prefix = subset
-```
+Both outline flavours are subset. A `glyf` face goes to `/FontFile2`; a
+CFF-flavoured OpenType face goes to `/FontFile3` with `/Subtype /OpenType`, as
+a `CIDFontType0`. That matters on macOS, whose CJK system faces are CFF —
+`chinese_demo` there went from 10 MB to 23 KB once this was handled correctly
+(see R-15c in [docs/ROADMAP.md](docs/ROADMAP.md)).
 
 ---
 
@@ -246,7 +240,6 @@ Fonts from `/Library/Fonts`, `/System/Library/Fonts`, `~/Library/Fonts`.
 ## Open items
 
 - **Symbol fonts on Linux/macOS:** not subset — the whole face is embedded, because hb-subset is not given the glyph IDs behind the `(3,0)` cmap. Windows subsets them (roadmap R-15b)
-- **CFF/OpenType faces:** not subset on Linux/macOS — a CFF subset is not valid in `/FontFile2`, so the whole face is embedded. This is why `chinese_demo` is ~10 MB on macOS (roadmap R-15c)
 - **TTC collections:** only face index 0 is reachable (roadmap R-11)
 - **EMF/MetaFile:** Windows-only (`TPdfDocumentGdi`), not portable
 - **GDI+/Gradient fills:** available only via EMF on Windows

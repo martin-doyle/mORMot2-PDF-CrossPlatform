@@ -71,16 +71,17 @@ constructor leaves it unset). `Tagged := true` sets it to
 The whole face is embedded instead — silently, as before R-12 — when no
 subsetter is registered (library missing, HarfBuzz < 2.9), for PDF/A-1 (6.3.5
 would need a `/CIDSet`, which is not written), for symbol fonts (reached
-through the `(3,0)` cmap) and for CFF-flavoured faces (`OTTO`, not valid in
-`/FontFile2`).
+through the `(3,0)` cmap). CFF-flavoured faces (`OTTO`) **are** subset since
+R-15c — they go to `/FontFile3` with `/Subtype /OpenType` and no `/Length1`,
+as a `CIDFontType0` whose simple peer is a `/Type1` (9.6.2.1, 9.7.4, 9.9).
+`PdfFontFileKey()` picks the descriptor key from the sfnt signature, and
+`TPdfFontSubset.IsCff` carries the flavour, which is only knowable while the
+whole face is in hand.
 
-**The CFF exclusion is not hypothetical on macOS.** Its CJK system faces are
-CFF: `Hiragino Sans GB.ttc` is `OTTO` in all four faces, with a `CFF ` table
-and no `glyf`. `chinese_demo` therefore embeds two whole faces there (Regular
-and Bold are separate faces of the collection) and comes out ~10 MB against
-~10–39 KB on Linux and Windows. This is the documented fallback working, not a
-subsetter failure — the demo's Latin face subsets in the same file. Before
-diagnosing a size difference on macOS as a bug:
+**macOS is where this matters.** Its CJK system faces are CFF:
+`Hiragino Sans GB.ttc` is `OTTO` in all four faces, with a `CFF ` table and no
+`glyf`. Before R-15c that face was embedded whole *and* in the wrong key, and
+`chinese_demo` was ~10 MB; it is now ~23 KB. To check a face:
 
 ```bash
 hb-info --face-index=0 <font> | grep outlines    # "Postscript" = CFF
@@ -91,8 +92,8 @@ The grep only works on a file without object streams. Tagged output deflates
 its font dictionaries, so it returns nothing there — which reads like "no fonts
 embedded". Inflate every stream with `python3` and search the result instead.
 
-Roadmap R-15c holds the routes out (`/FontFile3` with `/Subtype /OpenType` is
-the real one).
+A `Syntax Warning: Mismatch between font type and embedded font file` from
+poppler means the descriptor key and the embedded flavour disagree.
 
 ### POSIX subset input (`TPdfDocument.PrepareFontSubsets`)
 

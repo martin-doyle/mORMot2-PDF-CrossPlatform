@@ -158,20 +158,16 @@ der `/ToUnicode`-Rückweg gültig, und deshalb sind CJK und geformtes Arabisch
 sicher zu subsetten.
 
 Stattdessen wird die ganze Schrift eingebettet, wenn `libharfbuzz-subset`
-fehlt, bei PDF/A-1 (dort wäre ein `/CIDSet` nötig), bei Symbolschriften unter
-Linux/macOS und bei OpenType mit CFF-Umrissen. Textextraktion und Kopieren sind
-in beiden Fällen unverändert.
+fehlt, bei PDF/A-1 (dort wäre ein `/CIDSet` nötig) und bei Symbolschriften
+unter Linux/macOS. Textextraktion und Kopieren sind in beiden Fällen
+unverändert.
 
-Der CFF-Fall ist der praktisch relevante: macOS liefert seine CJK-Schriften als
-CFF-OpenType aus, deshalb bettet `chinese_demo` dort die ganze Schrift
-`Hiragino Sans GB` ein (~10 MB), während Linux und Windows ~10–39 KB erzeugen.
-Die Ausgabe ist korrekt, nur groß — siehe [R-15c](docs/ROADMAP.md). So lässt
-sich eine Schrift vorab prüfen:
-
-```bash
-hb-info --face-index=0 /pfad/zur/schrift | grep outlines  # "Postscript" = CFF, kein Subset
-grep -a -oE "/BaseFont[ ]*/[A-Za-z0-9+,#_-]+" out.pdf     # Präfix ABCDEF+ = Subset
-```
+Beide Umriss-Varianten werden gesubsettet. Eine `glyf`-Schrift landet in
+`/FontFile2`, eine CFF-OpenType-Schrift in `/FontFile3` mit
+`/Subtype /OpenType` als `CIDFontType0`. Das ist unter macOS relevant, dessen
+CJK-Systemschriften CFF sind: `chinese_demo` schrumpfte dort von 10 MB auf
+23 KB, nachdem dies korrekt behandelt wurde (siehe R-15c in
+[docs/ROADMAP.md](docs/ROADMAP.md)).
 
 ---
 
@@ -250,7 +246,6 @@ Fonts aus `/Library/Fonts`, `/System/Library/Fonts`, `~/Library/Fonts`.
 ## Open Items
 
 - **Symbolschriften unter Linux/macOS:** werden nicht gesubsettet — die ganze Schrift wird eingebettet, weil hb-subset die Glyphen-IDs hinter der `(3,0)`-Cmap nicht erhält. Windows subsettet sie (Roadmap R-15b)
-- **CFF/OpenType-Schriften:** werden unter Linux/macOS nicht gesubsettet — ein CFF-Subset ist in `/FontFile2` nicht gültig, deshalb wird die ganze Schrift eingebettet. Daher ist `chinese_demo` unter macOS ~10 MB groß (Roadmap R-15c)
 - **TTC-Sammlungen:** nur Face-Index 0 ist erreichbar (Roadmap R-11)
 - **EMF/MetaFile:** Windows-only (`TPdfDocumentGdi`), nicht portierbar
 - **GDI+/Gradient Fills:** nur via EMF auf Windows verfügbar

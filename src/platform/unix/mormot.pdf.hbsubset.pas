@@ -229,12 +229,15 @@ type
       out ASubset: RawByteString): boolean;
   end;
 
-// only glyf-based faces fit into /FontFile2: a CFF subset would still be CFF
-function IsTrueTypeOutlines(const AFace: RawByteString): boolean;
+// both outline flavours are embeddable: glyf goes to /FontFile2, CFF to
+// /FontFile3 with /Subtype /OpenType - the caller tells them apart by the
+// sfnt signature of the subset, which hb-subset preserves
+function IsEmbeddableOutlines(const AFace: RawByteString): boolean;
 begin
   result := (length(AFace) > 12) and
             ((copy(AFace, 1, 4) = #0#1#0#0) or
-             (copy(AFace, 1, 4) = 'true'));
+             (copy(AFace, 1, 4) = 'true') or
+             (copy(AFace, 1, 4) = 'OTTO'));
 end;
 
 function THarfBuzzFontSubsetter.Subset(const AFace: RawByteString;
@@ -251,7 +254,7 @@ begin
   result := false;
   ASubset := '';
   if not HbSubset.Loaded or
-     not IsTrueTypeOutlines(AFace) then
+     not IsEmbeddableOutlines(AFace) then
     exit;
   with HbSubset do
   begin
