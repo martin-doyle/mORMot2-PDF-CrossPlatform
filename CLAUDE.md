@@ -50,6 +50,7 @@ All files under `src/` require justification and user approval before reading.
 | `src/platform/windows/mormot.pdf.gdi.pas` | GDI backend | Production |
 | `src/platform/unix/mormot.pdf.freetype.pas` | FreeType2 backend | Production |
 | `src/platform/unix/mormot.pdf.harfbuzz.pas` | HarfBuzz shaper (RTL/complex scripts) | Production |
+| `src/platform/unix/mormot.pdf.hbsubset.pas` | hb-subset font subsetter (R-12) | Production |
 | `src/core/mormot.pdf.fpimage.pas` | FPImage bitmap adapter | Production |
 
 ## File Structure
@@ -68,24 +69,28 @@ src/
     windows/mormot.pdf.gdi.pas  GDI backend (Windows)
     unix/mormot.pdf.freetype.pas FreeType2 backend (Linux/macOS)
     unix/mormot.pdf.harfbuzz.pas HarfBuzz text shaper (Linux/macOS, optional)
+    unix/mormot.pdf.hbsubset.pas hb-subset font subsetter (Linux/macOS, optional)
   lib/
     mormot.lib.uniscribe.pas    Uniscribe text shaping (Windows, optional)
 examples/
   pdf_demo/           Demo 1 — TPdfDocumentVcl, TCanvas API, Tagged PDF (console)
-  report_demo/        Demo 2 — TGDIPages, GUI preview
+  report_demo/        Demo 2 — TGDIPages, GUI preview, tagged PDF
   markdown_demo/      Demo 3 — TGDIPages, semantics, tables, LineHeightFactor (console)
-  mormot_demo/        Demo 4 — TGDIPages + mORMot ORM + TTableLayout, GUI
+  mormot_demo/        Demo 4 — TGDIPages + mORMot ORM + TTableLayout, GUI, tagged PDF
   chinese_demo/       Demo 5 — CJK text, whole-TTF embedding (console)
   rtl_demo/           Demo 6 — Arabic RTL, HarfBuzz/Uniscribe shaping (console)
 tests/
   test_pdf_crossplatform.pas   7 tests: platform backend
   test_pdf_smoke.pas           4 tests: PDF basics
   test_report_crossplatform.pas 11+ tests: report engine
+  test_pdf_subset.pas          14 tests: font subsetting (R-12)
 reference/
   mormot.ui.pdf.pas   Original file (12,500 lines, reference only)
 docs/
   DEMOS.md            Learning path: the 6 demos step by step
   API_REFERENCE.md    TCanvas methods, TReportFormat, TTableLayout
+  ROADMAP.md          Planned and completed work, with results
+  R12_PLAN.md         R-12 font subsetting on POSIX: plan and results
 .claude/skills/
   pdf-engine.md       TPdfDocument, TPdfDocumentVcl, TPdfCanvas — full API, enums, encryption, FPImage
   report-engine.md    TGDIPages — all methods, tables, command recording, global helpers
@@ -118,9 +123,9 @@ For interface and backend details: `.claude/skills/platform-backends.md`
 | Demo | API | Type | Highlights |
 |---|---|---|---|
 | pdf_demo | `TPdfDocumentVcl` | Console | TCanvas basics, Tagged PDF (H1/P/Figure/Table) |
-| report_demo | `TGDIPages` | GUI | WYSIWYG preview, PDF export |
+| report_demo | `TGDIPages` | GUI | WYSIWYG preview, tagged PDF export, `TTableLayout`, `--export` batch mode |
 | markdown_demo | `TGDIPages` | Console | H1-H6, TTableLayout, LineHeightFactor, ExportPdfTagged |
-| mormot_demo | `TGDIPages` + ORM | GUI | SQLite via TRestClientDB, TTableLayout |
+| mormot_demo | `TGDIPages` + ORM | GUI | SQLite via TRestClientDB, TTableLayout, tagged PDF, `--export` batch mode |
 | chinese_demo | `TPdfDocumentVcl` | Console | CJK text, whole-TTF embedding |
 | rtl_demo | `TPdfDocumentVcl` | Console | Arabic RTL, HarfBuzz/Uniscribe shaping |
 
@@ -157,8 +162,10 @@ Two modes — do not mix:
 | TrueType (with embedding) | `EmbeddedTTF := True` | OS-specific via `GetReportFonts()` |
 
 **Tagged PDF selects the mode itself.** `Tagged := True` / `ExportPdfTagged := True`
-forces the TrueType mode with whole-face embedding, because PDF/UA does not allow
-non-embedded base-14 fonts and a subset breaks the `/ToUnicode` round-trip. Both
+forces the TrueType mode, because PDF/UA does not allow non-embedded base-14
+fonts. On Linux/macOS the faces are subset by `libharfbuzz-subset` (glyph IDs
+retained, so `/ToUnicode` stays valid); on Windows, where `CreateFontPackage`
+would break the round-trip, the whole face is embedded. Both
 have to be set **before the first page is drawn** — the font flags decide which
 metrics the layout is measured with — and both raise `ESynException` if set later.
 
@@ -200,7 +207,7 @@ lazbuild examples/rtl_demo/rtl_demo.lpi -B
 
 ## Open Items
 
-- **Font subsetting**: **Windows only** — the branch is inside `{$ifdef USE_UNISCRIBE}`, which is undefined for `OSPOSIX`, so Linux/macOS always embed the complete face and `EmbeddedWholeTtf` has no effect there. On Windows it is the default (`EmbeddedWholeTtf = False`) and must be turned off (`:= True`) for RTL/Arabic (GSUB glyph IDs not tracked) and CJK; `Tagged` does that automatically — see `.claude/skills/fonts.md` §3, §9–10. A POSIX subsetter via `libharfbuzz-subset` is planned as R-12, priority 3 (measured: 88% smaller PDFs, and it solves the RTL case) — see `docs/ROADMAP.md`
+- **Font subsetting**: default (`EmbeddedWholeTtf = False`) on all platforms, two implementations. **Linux/macOS** (R-12): `IPdfFontSubsetter` from `mormot.pdf.hbsubset` (`libharfbuzz-subset`, retained glyph IDs) — safe for CJK, RTL and tagged output; 97–99.5% smaller PDFs. Without the library, and for PDF/A-1 (no `/CIDSet`), symbol fonts and CFF faces, the whole face is embedded. **Windows**: `CreateFontPackage`, safe for Latin only; set `EmbeddedWholeTtf := True` for RTL/Arabic and CJK — `Tagged` does that there. See `.claude/skills/fonts.md` §3, §9 and `docs/R12_PLAN.md`
 - **RTL / Arabic text**: HarfBuzz delivers correct ligatures on Linux/macOS; Windows uses Uniscribe — see `.claude/skills/fonts.md` §10
 - **Testing RTL**: Linux fonts (Noto Naskh Arabic) resolve shaped glyphs through the CMAP, so they never exercise the shaper's own advance path. Validate RTL work against a font without Arabic presentation forms — see `.claude/skills/fonts.md` §10
 - **TTC collections**: only face index 0 is reachable; `TPdfFontMap` has no face index, so the other faces of a `.ttc` cannot be selected by name
@@ -221,3 +228,11 @@ sudo dnf install freetype           # Fedora/RHEL
 ```
 
 Runtime macOS: `libfreetype.6.dylib` (`brew install freetype`)
+
+Optional on Linux/macOS: HarfBuzz 2.9+ with its subset library, for RTL shaping
+and font subsetting (without it, the whole face is embedded)
+```bash
+sudo apt install libharfbuzz0b libharfbuzz-subset0   # Debian 12+/Ubuntu 22.04+
+sudo dnf install harfbuzz                            # Fedora/RHEL
+brew install harfbuzz                                # macOS
+```

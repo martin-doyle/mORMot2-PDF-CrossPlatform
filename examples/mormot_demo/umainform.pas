@@ -68,8 +68,19 @@ type
     { Draws the invoice table from ORM data }
     procedure DrawInvoiceTable(Report: TGDIPages);
 
+    { Defines the H1/H2 formats used by DrawHeading }
+    procedure DefineHeadingFormats(Report: TGDIPages);
+
     procedure Log(const Msg: string);
+  public
+    { Builds the report and writes it to AFileName - used by the GUI action
+      and by the --export batch mode }
+    procedure ExportToFile(const AFileName: string);
   end;
+
+{ True when the command line asks for a batch export (--export <file>);
+  the caller then runs ExportToFile instead of Application.Run }
+function BatchExportFile(out AFileName: string): boolean;
 
 var
   MainForm: TMainForm;
@@ -82,6 +93,7 @@ uses
   Printers,   // for TPrinter
   mormot.core.base,
   mormot.core.text,
+  mormot.core.datetime,
   mormot.core.unicode;
 
 const
@@ -135,8 +147,17 @@ function TMainForm.BuildReport: TGDIPages;
 begin
   Result := TGDIPages.Create(nil);
   try
-    Result.ExportPdfEmbeddedTTF := False;
+    { Tagged export (PDF/UA): this also selects the font mode - embedded
+      TrueType instead of the viewer's base-14 faces - so it has to be set
+      BEFORE anything is drawn, because the export font flags decide which
+      metrics the layout is measured with. On Linux/macOS the faces are
+      embedded as subsets (ROADMAP R-12), on Windows as whole faces. }
+    Result.ExportPdfTagged   := True;
+    Result.ExportPdfLanguage := 'en';
+    Result.UseOutlines       := True;  // PDF/UA: one bookmark per heading
+    // asked afterwards, so the names match the mode just selected
     Result.GetExportFonts(SansFont, SerifFont, MonoFont);
+    DefineHeadingFormats(Result);
     // --- Page format ---
     Result.PaperSize  := psA4;
     Result.Orientation := poPortrait;
@@ -174,6 +195,26 @@ begin
 end;
 
 { ============================================================
+  DefineHeadingFormats – appearance of DrawHeading(1..2)
+  ============================================================ }
+procedure TMainForm.DefineHeadingFormats(Report: TGDIPages);
+var
+  Fmt: TReportFormat;
+begin
+  Fmt.FontName    := SansFont;
+  Fmt.FontStyle   := [fsBold];
+  Fmt.Color       := clNavy;
+  Fmt.FontSize    := 18;
+  Fmt.SpaceBefore := 0;
+  Fmt.SpaceAfter  := 800;
+  Report.DefineFormat('H1', Fmt);
+  Fmt.FontSize    := 13;
+  Fmt.SpaceBefore := 600;
+  Fmt.SpaceAfter  := 400;
+  Report.DefineFormat('H2', Fmt);
+end;
+
+{ ============================================================
   DrawReportBody
   ============================================================ }
 procedure TMainForm.DrawReportBody(Report: TGDIPages);
@@ -181,18 +222,16 @@ begin
   // ---- Cover area ----
   Report.SaveLayout;
 
-  // Large title — RELATIVE to CurrentY
-  Report.SetFont(SansFont, 18);
-  Report.FontStyle  := [fsBold];
-  Report.TextColor  := clNavy;
-  Report.DrawTextCenter(0, Report.CurrentY, edtTitle.Text);
-  Report.MoveToNextLine(1200);
+  { DrawHeading writes an H1 structure element and a PDF bookmark - PAC 2024
+    reports a heading without a bookmark as a quality issue (ROADMAP B-14).
+    A plain DrawTextCenter would only be a paragraph in the structure tree. }
+  Report.DrawHeading(1, edtTitle.Text);
 
-  // Subtitle
+  // Subtitle, left-aligned like the H1 above it
   Report.SetFont(SansFont, 12);
   Report.FontStyle := [];
   Report.TextColor := clBlack;
-  Report.DrawTextCenter(0, Report.CurrentY,
+  Report.DrawText(0, Report.CurrentY,
     edtCompany.Text + '  |  ' + DateToStr(Now));
   Report.MoveToNextLine(800);
 
@@ -229,18 +268,22 @@ begin
   Report.RestoreLayout;
 
   // ---- Invoice table ----
+  Report.DrawHeading(2, 'Orders');
   DrawInvoiceTable(Report);
 
   // ---- Summary ----
+  { Inline runs: the coordinate-less overloads advance CurrentX on the same
+    line and share one BlockId, so the tagged export emits ONE P with the bold
+    label as a nested Span. The coordinate overloads DrawText(X, Y, ...) would
+    make two standalone P elements out of these two halves (ROADMAP B-3). }
   Report.MoveToNextLine(1000);
   Report.SaveLayout;
   Report.SetFont(SansFont, 10);
-  Report.FontStyle := [fsBold];
   Report.TextColor := clBlack;
-  Report.DrawText(0, Report.CurrentY, 'Note:');
-  Report.FontStyle := [];
-  Report.DrawText(2000, Report.CurrentY,
-    '  All prices are exclusive of applicable taxes.');
+  Report.CurrentX := 0;
+  Report.DrawStrong('Note:');
+  Report.DrawText('  All prices are exclusive of applicable taxes.');
+  Report.MoveToNextLine(600);
   Report.RestoreLayout;
 end;
 
@@ -251,7 +294,6 @@ procedure TMainForm.DrawInvoiceTable(Report: TGDIPages);
 var
   Items: TDtoInvoiceRowDynArray;
   Count, i: Integer;
-  y: Integer;
   Total: Currency;
 begin
   Count := TDemoServer(Client.Server).GetInvoiceData(Items);
@@ -280,29 +322,17 @@ begin
       Total := Total + Items[i].ItemsTotal;
     end;
 
+  { The totals line is part of the table, so it is a row: one TR with TD cells,
+    right-aligned by the column layout. Drawn below the table with
+    DrawTextAt + DrawTextRight it would be two separate P elements instead,
+    because only the coordinate-less overloads share one line and one tag. }
+  Report.DrawTableRow(['', 'Total', '', '', FormatFloat('#,##0.00 EUR', Total)]);
   Report.EndTable;
 
-  // ---------- Totals row ----------
-  Report.MoveToNextLine(100);
-  y := Report.CurrentY;
-
-  Report.DrawLine(0, y, Report.PageWidth, y, 2, clBlack);
-  Report.MoveToNextLine(50);
-  y := Report.CurrentY;
-
-  Report.SaveLayout;
-  Report.SetFont(SansFont, 10);
-  Report.FontStyle := [fsBold];
-  Report.TextColor := clBlack;
-
-  Report.DrawTextAt(0, y + 80, 'Total:');
-  // Right-align at page right margin (X=0 means right margin in DrawTextRight)
-  Report.DrawTextRight(0, y + 80, FormatFloat('#,##0.00 EUR', Total));
-
-  Report.MoveToNextLine(650);
+  Report.MoveToNextLine(300);
   Report.DrawLine(0, Report.CurrentY, Report.PageWidth, Report.CurrentY,
-                  3, clBlack);
-  Report.RestoreLayout;
+                  2, clBlack);
+  Report.MoveToNextLine(300);
 end;
 
 { ============================================================
@@ -339,35 +369,63 @@ begin
   Log('Print complete.');
 end;
 
+procedure TMainForm.ExportToFile(const AFileName: string);
+var
+  Report: TGDIPages;
+begin
+  Report := BuildReport;
+  try
+    // ExportPDF uses mormot.ui.pdf (cross-platform)
+    Report.ExportPDF(AFileName,
+      False,  // no password protection
+      False,  // no encryption
+      edtTitle.Text,
+      edtCompany.Text);
+  finally
+    Report.Free;
+  end;
+end;
+
 procedure TMainForm.actExportPDFExecute(Sender: TObject);
 var
-  Report:  TGDIPages;
   PdfFile: string;
 begin
   SaveDialog1.Filter      := 'PDF Document (*.pdf)|*.pdf';
   SaveDialog1.DefaultExt  := 'pdf';
-  // DateToString8 (mORMot) returns 'YYYYMMDD' — preferred over FormatDateTime
+  // DateToIso8601 (mORMot) returns 'YYYYMMDD' — preferred over FormatDateTime
   SaveDialog1.FileName    := 'report_' +
-    FormatDateTime('yyyymmdd', Now) + '.pdf';
+    Utf8ToString(DateToIso8601(Now, {Expanded=}false)) + '.pdf';
 
   if not SaveDialog1.Execute then Exit;
 
   PdfFile := SaveDialog1.FileName;
   Log('Exporting PDF: ' + PdfFile + '...');
+  ExportToFile(PdfFile);
+  Log('PDF saved: ' + PdfFile);
+  ShowMessage('PDF successfully saved:'#13#10 + PdfFile);
+end;
 
-  Report := BuildReport;
-  try
-    // ExportPDF uses mormot.ui.pdf (cross-platform)
-    Report.ExportPDF(PdfFile,
-      False,  // no password protection
-      False,  // no encryption
-      edtTitle.Text,
-      edtCompany.Text);
-    Log('PDF saved: ' + PdfFile);
-    ShowMessage('PDF successfully saved:'#13#10 + PdfFile);
-  finally
-    Report.Free;
-  end;
+{ ============================================================
+  Batch mode:  mormot_demo --export <file.pdf>
+  - builds and exports the same report as the GUI action, without showing
+    the window, so the demo can be checked automatically
+  ============================================================ }
+function BatchExportFile(out AFileName: string): boolean;
+var
+  i: Integer;
+begin
+  result := false;
+  AFileName := '';
+  for i := 1 to ParamCount do
+    if ParamStr(i) = '--export' then
+    begin
+      if i < ParamCount then
+        AFileName := ParamStr(i + 1)
+      else
+        AFileName := 'mormot_demo.pdf';
+      result := true;
+      exit;
+    end;
 end;
 
 procedure TMainForm.actCloseExecute(Sender: TObject);

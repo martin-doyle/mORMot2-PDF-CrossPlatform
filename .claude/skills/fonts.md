@@ -15,7 +15,7 @@ Sources: `src/core/mormot.ui.pdf.pas`, `src/core/mormot.pdf.types.pas`,
 | Mode | Properties | Font names | Embedding |
 |---|---|---|---|
 | Standard Type1 | `StandardFontsReplace := True` | Helvetica, Times, Courier | none |
-| TrueType | `EmbeddedTTF := True` | OS-specific (see §2) | full TTF (default) or subset (opt-in, §3) |
+| TrueType | `EmbeddedTTF := True` | OS-specific (see §2) | subset (default) or full TTF (`EmbeddedWholeTtf`, §3) |
 
 ```pascal
 // Type1 — no embedding, PDF viewer supplies the font
@@ -59,23 +59,46 @@ Fallback when a requested font is not found: `TPdfDocument.FontFallBackName` (st
 ## 3. Font Embedding — Whole TTF vs. Subset
 
 Controlled by `TPdfDocument.EmbeddedWholeTtf` (boolean, **default `false`** — the
-constructor leaves it unset). Two things override that default:
-
-- `Tagged := true` sets it to `true` (PDF/UA needs the complete face, see `pdf-engine.md`)
-- on POSIX it has no effect at all: the subsetting branch in `PrepareForSaving`
-  sits inside `{$ifdef USE_UNISCRIBE}`, so Linux/macOS always embed the whole
-  face. The flag is a Windows-only switch.
+constructor leaves it unset). `Tagged := true` sets it to
+`PdfFontSubsetter = nil`: whole face on Windows, subset on Linux/macOS.
 
 | `EmbeddedWholeTtf` | Behaviour |
 |---|---|
 | `true` | Complete TTF bytes embedded. Safe for all scripts including RTL/Arabic. For a `.ttc`, the loaded face alone is extracted as a standalone sfnt — a raw `ttcf` container is not a valid `/FontFile2`. |
-| `false` (default) | Font subset via `CreateFontPackage` (Windows only — POSIX ignores this and embeds the whole face). Smaller file, but risky for RTL/Arabic with Uniscribe shaping. |
+| `false` (default), Linux/macOS | Subset via `IPdfFontSubsetter` (`mormot.pdf.hbsubset`, `libharfbuzz-subset`, R-12). Glyph IDs retained, so content streams, `/W` and `/ToUnicode` stay valid. Safe for Latin, CJK, shaped RTL and tagged output. |
+| `false` (default), Windows | Subset via `CreateFontPackage`. Safe for Latin only: its input is code points, so shaped GSUB glyphs are lost. |
 
-```pascal
-Doc.EmbeddedWholeTtf := False;  // opt-in to subsetting; only safe for Latin text
-```
+The whole face is embedded instead — silently, as before R-12 — when no
+subsetter is registered (library missing, HarfBuzz < 2.9), for PDF/A-1 (6.3.5
+would need a `/CIDSet`, which is not written), for symbol fonts (reached
+through the `(3,0)` cmap) and for CFF-flavoured faces (`OTTO`, not valid in
+`/FontFile2`).
 
-The subset input is built from:
+### POSIX subset input (`TPdfDocument.PrepareFontSubsets`)
+
+Built per **face bytes**, before the first font is serialized, as the union over
+every WinAnsi `TPdfFontTrueType` resolving to that face (the WinAnsi/Unicode
+pair shares one face by construction; Regular and Bold of a `.ttc` face can too):
+- `Unicodes` — `fWinAnsiUsed` mapped through the WinAnsi table (0x80 → U+20AC)
+  plus `fUsedWideChar`. **Required:** a simple TrueType font with
+  `/WinAnsiEncoding` reaches its glyphs through the `(3,1)` cmap, and hb-subset
+  rebuilds the cmap only for these code points
+- `Glyphs` — every `fUsedWide[].Glyph`, including the PUA slots of shaped glyphs
+  (§8 Step 3). The Identity-H instance addresses glyphs by ID
+
+Flags: `RETAIN_GIDS` (mandatory), `NOTDEF_OUTLINE` (a missing glyph stays a
+visible box), `NO_HINTING`; `GSUB/GPOS/GDEF` are dropped
+(`HbSubsetFlags`, `HbSubsetDropLayoutTables`). With retain-gids `maxp.numGlyphs`
+becomes highest kept ID + 1 — IDs never move. hb-subset also adds cmap entries
+for glyphs requested by ID; harmless.
+
+Each face is subset once, so its fonts share identical bytes and
+`GetOrCreateFontFile2` still writes one stream. `/FontName` and `/BaseFont` of
+the WinAnsi, CIDFont and Type0 objects get the same `ABCDEF+` tag, derived from
+`crc32c` of the subset (deterministic output).
+
+### Windows subset input (`CreateFontPackage`)
+
 - `fWinAnsiUsed` — 256-bit set of used WinAnsi code points
 - `fUsedWideChar` — sorted array of used Unicode code points beyond WinAnsi
 
@@ -334,8 +357,8 @@ remains the backstop for fonts whose GSUB glyphs have no Presentation-Form Unico
 
 ## 9. Font Serialization — `PrepareForSaving` (`pdf.pas:6568`)
 
-Called on `Doc.SaveToFile` / `Doc.SaveToStream` for every font in `fFontList`.
-Runs for **both** WinAnsi and Unicode instances.
+Called on `Doc.SaveToFile` / `Doc.SaveToStream` for every font in `fFontList`,
+after `PrepareFontSubsets` (§3). Runs for **both** WinAnsi and Unicode instances.
 
 ### Unicode font branch (`pdf.pas:6594`): builds CID font dictionary
 
@@ -365,7 +388,7 @@ if WinAnsiFont.fUsedWideChar.Count = 0:
 /FirstChar, /LastChar, /Widths built from fWinAnsiUsed + WinAnsi ABC widths
 
 Font embedding decision:
-  if EmbeddedWholeTtf = true (default):
+  if EmbeddedWholeTtf = true (set by Tagged on Windows):
     PdfPlatformFont.GetFontData(DC, 0, 0, nil, 0)   → total byte count
     PdfPlatformFont.GetFontData(DC, 0, 0, Buf, Size) → full TTF bytes → embed as /FontFile2
     safe for all scripts; shaped GSUB glyph IDs are valid in the complete font
@@ -376,10 +399,9 @@ Font embedding decision:
     same physical file embed it once, not twice
 
   if EmbeddedWholeTtf = false (the default):
-    Windows only - the whole branch sits inside {$ifdef USE_UNISCRIBE}, which
-    mormot.ui.pdf.pas undefines for OSPOSIX, so Linux/macOS never reach it and
-    always embed the complete face. There is no POSIX subsetter; the flag is a
-    no-op there.
+    Linux/macOS: the subset prepared by PrepareFontSubsets replaces the bytes
+      (see §3 "POSIX subset input"); the name gets its ABCDEF+ tag
+    Windows - the branch sits inside {$ifdef USE_UNISCRIBE}:
       input: Unicode code points from fWinAnsiUsed + fUsedWideChar
       CreateFontPackage(input) → subset TTF bytes (FontSub.dll, resolved via
         HasCreateFontPackage; falls back to the whole face if absent)

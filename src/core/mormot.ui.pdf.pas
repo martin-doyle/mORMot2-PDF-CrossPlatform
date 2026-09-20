@@ -90,6 +90,7 @@ uses
   mormot.pdf.gdi,        // registers GDI backend via RegisterPdfPlatform()
   {$else}
   mormot.pdf.freetype,   // registers FreeType2 backend via RegisterPdfPlatform()
+  mormot.pdf.hbsubset,   // registers PdfFontSubsetter when libharfbuzz-subset loads
   {$endif OSWINDOWS}
   mormot.pdf.types,      // platform-neutral interfaces and records
   {$ifdef USE_GRAPHICS_UNIT}
@@ -1366,6 +1367,25 @@ type
   end;
   TPdfFontFile2DynArray = array of TPdfFontFile2;
 
+  /// one physical font face to be subset by PdfFontSubsetter at save time
+  // - every TPdfFontTrueType resolving to the same bytes - its WinAnsi and
+  // Unicode instances, but also e.g. Regular and Bold of one .ttc face - adds
+  // its used glyphs to the same Request, so all of them share one subset
+  TPdfFontSubset = record
+    /// crc32c of Face, used as a fast pre-filter before the full comparison
+    Hash: cardinal;
+    /// the whole face, as the platform backend returns it
+    Face: PdfString;
+    /// union of the code points and glyphs used by all sharing fonts
+    Request: TPdfFontSubsetRequest;
+    /// the subset bytes, or '' if the face could not be subset
+    Subset: PdfString;
+    /// the 'ABCDEF+' name prefix of ISO 32000-1 9.6.4, derived from Subset
+    Tag: PdfString;
+  end;
+  PPdfFontSubset = ^TPdfFontSubset;
+  TPdfFontSubsetDynArray = array of TPdfFontSubset;
+
   /// the main class of the PDF engine, processing the whole PDF document
   TPdfDocument = class
   protected
@@ -1417,6 +1437,8 @@ type
     fFontFallBackIndex: integer;
     // embedded font files, shared between fonts with identical data
     fFontFile2: TPdfFontFile2DynArray;
+    // faces to be subset by PdfFontSubsetter, only valid while saving
+    fFontSubsets: TPdfFontSubsetDynArray;
     // a list of Bookmark text keys, associated to a TPdfDest object
     fBookMarks: TRawUtf8List;
     fMissingBookmarks: TRawUtf8List;
@@ -1491,6 +1513,10 @@ type
     // - reuses an existing stream when the bytes are identical, so that the
     // styles resolving to the same physical font file embed it only once
     function GetOrCreateFontFile2(const aTtf: PdfString): TPdfStream;
+    /// subset every embedded face with PdfFontSubsetter, before PrepareForSaving
+    // - the union of the glyphs of all fonts sharing a face has to be known
+    // before the first of them is serialized
+    procedure PrepareFontSubsets;
     // select the specified font object, then return the fDC value
     {$ifdef OSWINDOWS}
     function GetDCWithFont(Ttf: TPdfFontTrueType): HDC;
@@ -2774,6 +2800,8 @@ type
     fUnicodeFont: TPdfFontTrueType;
     fWinAnsiFont: TPdfFontTrueType;
     fIsSymbolFont: boolean;
+    // 1-based index in fDoc.fFontSubsets[], 0 if this font is not subset
+    fSubsetIndex: integer;
     // below are some bigger structures
     {$ifdef OSWINDOWS}
     fLogFont: TLogFontW;
@@ -2787,6 +2815,16 @@ type
     procedure CreateAssociatedUnicodeFont;
     // update font description from used chars
     procedure PrepareForSaving;
+    // true if this font file is to be embedded into the PDF
+    function IsEmbedded: boolean;
+    // true for a symbol font, whose glyphs are reached through the (3,0) cmap
+    function IsSymbolic: boolean;
+    // the whole face as returned by the platform backend
+    function GetFaceData(out aTtf: PdfString): boolean;
+    // add the code points and glyphs used by this WinAnsi font to aRequest
+    procedure AddToSubsetRequest(var aRequest: TPdfFontSubsetRequest);
+    // the subset of this font file, or nil if it is not subset
+    function GetSubset: PPdfFontSubset;
     // low level add glyph (returns the real glyph index found, aGlyph if none)
     function GetAndMarkGlyphAsUsed(aGlyph: word): word;
     {$ifndef OSWINDOWS}
@@ -6863,6 +6901,8 @@ begin
 end;
 
 function TPdfFontTrueType.GetWideCharWidth(aWideChar: WideChar): integer;
+var
+  i: integer;
 begin
   if fUnicode then
   begin // we need fUsedWide[] to be the used glyphs
@@ -6877,7 +6917,12 @@ begin
     else
       result := fDefaultWidth
   else
-    result := fUsedWide[FindOrAddUsedWideChar(aWideChar)].Width;
+  begin
+    // FindOrAddUsedWideChar may reallocate fUsedWide[]: call it before
+    // indexing, or the array address is read first and becomes stale
+    i := FindOrAddUsedWideChar(aWideChar);
+    result := fUsedWide[i].Width;
+  end;
 end;
 
 type
@@ -6975,6 +7020,82 @@ begin
   {%H-}PStrLen(PtrUInt(ttf) - _STRLEN)^ := PtrUInt(d) - PtrUInt(ttf); // resize
 end;
 
+function TPdfFontTrueType.IsEmbedded: boolean;
+begin
+  result := (fDoc.PdfA <> pdfaNone) or
+            (fDoc.EmbeddedTtf and
+             ((fDoc.fEmbeddedTtfIgnore = nil) or
+              (fDoc.fEmbeddedTtfIgnore.IndexOf(
+                 fDoc.fTrueTypeFonts[fTrueTypeFontsIndex - 1]) < 0)));
+end;
+
+function TPdfFontTrueType.IsSymbolic: boolean;
+var
+  flags: TPdfObject;
+begin
+  flags := WinAnsiFont.fFontDescriptor.ValueByName('Flags');
+  result := (flags <> nil) and
+            (TPdfNumber(flags).Value and PDF_FONT_SYMBOLIC <> 0);
+end;
+
+function TPdfFontTrueType.GetFaceData(out aTtf: PdfString): boolean;
+var
+  dc: TPdfPlatformDC;
+  size: cardinal;
+begin
+  result := false;
+  dc := TPdfPlatformDC(fDoc.GetDCWithFont(self));
+  size := PdfPlatformFont.GetFontData(dc, 0, 0, nil, 0);
+  if (size = PdfPlatformFont.FontDataError) or
+     (size = 0) then
+    exit;
+  SetLength(aTtf, size);
+  result := PdfPlatformFont.GetFontData(dc, 0, 0, pointer(aTtf), size) = size;
+  if not result then
+    aTtf := '';
+end;
+
+procedure TPdfFontTrueType.AddToSubsetRequest(
+  var aRequest: TPdfFontSubsetRequest);
+var
+  c: AnsiChar;
+  i, n: PtrInt;
+begin
+  // WinAnsi text reaches its glyphs through the cmap: keep the code points
+  n := length(aRequest.Unicodes);
+  SetLength(aRequest.Unicodes, n + 224 + fUsedWideChar.Count);
+  for c := #32 to #255 do
+    if c in fWinAnsiUsed then
+    begin
+      aRequest.Unicodes[n] := WinAnsiConvert.AnsiToWide[ord(c)];
+      inc(n);
+    end;
+  for i := 0 to fUsedWideChar.Count - 1 do
+  begin
+    aRequest.Unicodes[n] := fUsedWideChar.Values[i];
+    inc(n);
+  end;
+  SetLength(aRequest.Unicodes, n);
+  // Identity-H text addresses glyphs directly, including shaped ones which
+  // only have a PUA slot in fUsedWideChar[]: keep the glyph IDs
+  n := length(aRequest.Glyphs);
+  SetLength(aRequest.Glyphs, n + fUsedWideChar.Count);
+  for i := 0 to fUsedWideChar.Count - 1 do
+    aRequest.Glyphs[n + i] := fUsedWide[i].Glyph;
+end;
+
+function TPdfFontTrueType.GetSubset: PPdfFontSubset;
+begin
+  result := nil;
+  if (fSubsetIndex > 0) and
+     (fSubsetIndex <= length(fDoc.fFontSubsets)) then
+  begin
+    result := @fDoc.fFontSubsets[fSubsetIndex - 1];
+    if result^.Subset = '' then
+      result := nil;
+  end;
+end;
+
 procedure TPdfFontTrueType.PrepareForSaving;
 var
   c: AnsiChar;
@@ -6995,6 +7116,7 @@ var
   {$endif USE_UNISCRIBE}
   ttcIndex: word; // For CreateFontPackage
   tableTag: LongWord;
+  sub: PPdfFontSubset;
   ttcNumFonts: LongWord;
 begin
   str := TMemoryStream.Create;
@@ -7009,6 +7131,9 @@ begin
       font.AddItem('Subtype', 'CIDFontType2');
       font.AddItem('BaseFont', // may have been prefixed
         TPdfName(WinAnsiFont.Data.ValueByName('BaseFont')).Value);
+      if WinAnsiFont.GetSubset <> nil then // same subset tag on the Type0 font
+        TPdfName(Data.ValueByName('BaseFont')).Value :=
+          TPdfName(WinAnsiFont.Data.ValueByName('BaseFont')).Value;
       if fDoc.fPdfA <> pdfaNone then
         font.AddItem('CIDToGIDMap', 'Identity');
       info := TPdfDictionary.Create(fDoc.fXRef);
@@ -7103,11 +7228,7 @@ begin
         fData.AddItem('Widths', TPdfRawText.Create(WR.Add(']').ToPdfString));
       end;
       // embedd true Type font into the PDF file (allow subset of used glyph)
-      if (fDoc.PdfA <> pdfaNone) or
-         (fDoc.EmbeddedTtf and
-          ((fDoc.fEmbeddedTtfIgnore = nil) or
-           (fDoc.fEmbeddedTtfIgnore.IndexOf(
-             fDoc.fTrueTypeFonts[fTrueTypeFontsIndex - 1]) < 0))) then
+      if IsEmbedded then
       begin
         fDoc.GetDCWithFont(self);
         // is the font in a .ttc collection?
@@ -7178,9 +7299,21 @@ begin
                fDoc.fDC, tableTag, 0, pointer(ttf), ttfSize) <> PdfPlatformFont.FontDataError then
           begin
         {$endif OSWINDOWS}
+            // subset prepared by PdfFontSubsetter for all fonts sharing it
+            sub := GetSubset;
+            if sub <> nil then
+            begin
+              ttf := sub^.Subset;
+              // see 9.6.4 Font Subsets: begins with a tag followed by a +
+              with TPdfName(fFontDescriptor.ValueByName('FontName')) do
+                Value := sub^.Tag + Value;
+              TPdfName(Data.ValueByName('BaseFont')).Value :=
+                TPdfName(fFontDescriptor.ValueByName('FontName')).Value;
+            end;
             {$ifdef USE_UNISCRIBE}
-            if (not fDoc.fEmbeddedWholeTtf) and
-              HasCreateFontPackage then
+            if (sub = nil) and
+               (not fDoc.fEmbeddedWholeTtf) and
+               HasCreateFontPackage then
             begin
               // subset magic is done by Windows (API available since XP) :)
               used.Count := 0;
@@ -8270,10 +8403,12 @@ begin
     if UseOutlines then
       fOutlineRoot.Save;
     // update font details after all the pages are drawn
+    PrepareFontSubsets;
     for i := 0 to fFontList.Count - 1 do
       with TPdfFontTrueType(fFontList.List[i]) do
         if fTrueTypeFontsIndex <> 0 then
           PrepareForSaving;
+    fFontSubsets := nil;
     // serialize Tagged PDF structure tree before writing pending objects
     if fTagged and (fStructTree <> nil) then
     begin
@@ -8745,6 +8880,78 @@ begin
     Data := aTtf;
     Stream := result;
   end;
+end;
+
+// deterministic 'ABCDEF+' tag, so that identical input gives identical output
+function SubsetTag(const aSubset: PdfString): PdfString;
+var
+  c: cardinal;
+  i: PtrInt;
+begin
+  c := crc32c(0, pointer(aSubset), length(aSubset));
+  SetLength(result, 7);
+  for i := 1 to 6 do
+  begin
+    result[i] := AnsiChar(ord('A') + c mod 26);
+    c := c div 26;
+  end;
+  result[7] := '+';
+end;
+
+procedure TPdfDocument.PrepareFontSubsets;
+var
+  i, j: PtrInt;
+  fnt: TPdfFontTrueType;
+  face: PdfString;
+  h: cardinal;
+begin
+  fFontSubsets := nil;
+  for i := 0 to fFontList.Count - 1 do
+    with TPdfFontTrueType(fFontList.List[i]) do
+      if fTrueTypeFontsIndex <> 0 then // not a TPdfFontTrueType otherwise
+        fSubsetIndex := 0;
+  // PDF/A-1 (6.3.5) requires a /CIDSet for every subset CIDFont, which this
+  // engine does not write: such documents keep embedding the whole face
+  if (PdfFontSubsetter = nil) or
+     fEmbeddedWholeTtf or
+     (fPdfA in [pdfa1A, pdfa1B]) then
+    exit;
+  // 1. group the WinAnsi fonts by face, and merge their used glyphs
+  for i := 0 to fFontList.Count - 1 do
+  begin
+    fnt := TPdfFontTrueType(fFontList.List[i]);
+    if (fnt.fTrueTypeFontsIndex = 0) or
+       fnt.Unicode or // its used glyphs are tracked by its WinAnsi peer
+       not fnt.IsEmbedded or
+       fnt.IsSymbolic or // glyphs reached through the (3,0) cmap: keep all
+       not fnt.GetFaceData(face) then
+      continue;
+    h := crc32c(0, pointer(face), length(face));
+    j := 0;
+    while (j < length(fFontSubsets)) and
+          ((fFontSubsets[j].Hash <> h) or
+           (fFontSubsets[j].Face <> face)) do
+      inc(j);
+    if j = length(fFontSubsets) then
+    begin
+      SetLength(fFontSubsets, j + 1);
+      fFontSubsets[j].Hash := h;
+      fFontSubsets[j].Face := face;
+    end;
+    fnt.AddToSubsetRequest(fFontSubsets[j].Request);
+    fnt.fSubsetIndex := j + 1;
+  end;
+  // 2. subset each face once: all its fonts then share the same bytes, and
+  // GetOrCreateFontFile2() still embeds them as a single stream
+  for j := 0 to high(fFontSubsets) do
+    with fFontSubsets[j] do
+    begin
+      if PdfFontSubsetter.Subset(Face, Request, Subset) then
+        Tag := SubsetTag(Subset)
+      else
+        Subset := ''; // e.g. CFF outlines: embed the whole face
+      Face := '';
+    end;
 end;
 
 {$ifdef OSWINDOWS}
@@ -9308,9 +9515,11 @@ begin
   // non-embedded base-14 Type1 faces cannot provide
   fStandardFontsReplace := false;
   fEmbeddedTtf := true;
-  // a subset drops glyphs and with them the /ToUnicode round-trip tagging
-  // depends on (Windows only: POSIX always embeds the whole face)
-  fEmbeddedWholeTtf := true;
+  // CreateFontPackage (Windows) drops shaped glyphs and with them the
+  // /ToUnicode round-trip tagging depends on, so the whole face is embedded
+  // there; PdfFontSubsetter keeps glyph IDs and every glyph drawn (R-12), and
+  // PDF/UA allows subsets - set EmbeddedWholeTtf afterwards to override
+  fEmbeddedWholeTtf := PdfFontSubsetter = nil;
 end;
 
 

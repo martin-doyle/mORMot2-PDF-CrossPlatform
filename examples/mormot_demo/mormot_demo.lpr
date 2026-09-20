@@ -11,6 +11,8 @@ uses
 
 {$R *.res}
 
+var
+  PdfFile: string;
 begin
   {$ifdef FPC}
   RequireDerivedFormResource := True;
@@ -18,6 +20,13 @@ begin
   {$endif FPC}
   Application.Initialize;
   Application.CreateForm(TMainForm, MainForm);
+  // mormot_demo --export <file.pdf>: build and export, then quit
+  if BatchExportFile(PdfFile) then
+  begin
+    MainForm.ExportToFile(PdfFile);
+    WriteLn('PDF exported: ', PdfFile);
+    exit;
+  end;
   Application.Run;
 end.
 

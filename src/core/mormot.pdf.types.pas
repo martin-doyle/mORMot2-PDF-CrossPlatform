@@ -14,6 +14,7 @@ unit mormot.pdf.types;
     - IPdfPlatformFont interface (font creation, metrics, glyph data)
     - IPdfSystemFonts interface (font enumeration)
     - IPdfPlatformDC interface (device context abstraction)
+    - IPdfFontSubsetter interface (optional font subsetting)
     - Global registration via RegisterPdfPlatform()
 
   *****************************************************************************
@@ -203,6 +204,32 @@ type
       out AOffsets: TIntegerDynArray; out AClusters: TIntegerDynArray): boolean;
   end;
 
+  /// input of IPdfFontSubsetter.Subset: what a subset must keep
+  // - Unicodes: code points whose cmap entries must survive - a simple
+  // TrueType font with /WinAnsiEncoding reaches its glyphs through the cmap
+  // - Glyphs: glyph IDs that must survive - an Identity-H font addresses
+  // glyphs directly, and shaped glyphs have no code point of their own
+  TPdfFontSubsetRequest = record
+    Unicodes: TIntegerDynArray;
+    Glyphs: TIntegerDynArray;
+  end;
+
+  /// interface for TrueType font subsetting
+  // - implemented by THarfBuzzFontSubsetter (Unix/macOS) in mormot.pdf.hbsubset
+  // - PdfFontSubsetter is nil when no subsetter is registered: the whole face
+  // is embedded then (Windows uses CreateFontPackage instead)
+  IPdfFontSubsetter = interface
+    ['{E5F6A7B8-C9D0-1234-EF01-345678901234}']
+    /// return a subset of AFace keeping the glyphs listed in ARequest
+    // - glyph IDs are retained, so content streams, /W arrays and /ToUnicode
+    // CMaps built against AFace stay valid for ASubset
+    // - returns false if the face cannot be subset (e.g. CFF outlines, invalid
+    // data, library unavailable): the caller then embeds AFace unchanged
+    function Subset(const AFace: RawByteString;
+      const ARequest: TPdfFontSubsetRequest;
+      out ASubset: RawByteString): boolean;
+  end;
+
   /// interface for device context management
   IPdfPlatformDC = interface
     ['{C3D4E5F6-A7B8-9012-CDEF-123456789012}']
@@ -228,6 +255,9 @@ var
   /// global text shaper for complex scripts (RTL, Arabic, Indic)
   // - nil until mormot.pdf.harfbuzz is included and libharfbuzz is loaded
   PdfTextShaper: IPdfTextShaper;
+  /// global font subsetter used when EmbeddedWholeTtf is false
+  // - nil until mormot.pdf.hbsubset registers itself (Unix/macOS)
+  PdfFontSubsetter: IPdfFontSubsetter;
 
 /// register the platform-specific implementations
 // - called in the initialization section of mormot.pdf.gdi or

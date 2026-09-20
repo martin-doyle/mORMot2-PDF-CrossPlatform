@@ -1,4 +1,4 @@
-# Platform Backends — IPdfPlatformFont / IPdfSystemFonts / IPdfPlatformDC
+# Platform Backends — IPdfPlatformFont / IPdfSystemFonts / IPdfPlatformDC (+ optional IPdfFontSubsetter)
 
 Source: `src/core/mormot.pdf.types.pas`
 Windows backend: `src/platform/windows/mormot.pdf.gdi.pas`
@@ -236,6 +236,41 @@ macOS:
 If a font is not found: fallback to DejaVu Sans (Linux) or Helvetica (macOS).
 
 **Runtime library:** `libfreetype.so.6` (Linux) / `libfreetype.6.dylib` (macOS) — loaded dynamically via `dlopen`. If not present: exception on first font access.
+
+---
+
+## Optional: IPdfFontSubsetter (mormot.pdf.hbsubset, Linux/macOS) — R-12
+
+```pascal
+TPdfFontSubsetRequest = record
+  Unicodes: TIntegerDynArray;  // code points whose cmap entries must survive
+  Glyphs: TIntegerDynArray;    // glyph IDs that must survive
+end;
+
+IPdfFontSubsetter = interface
+  // false: face cannot be subset (CFF, invalid, library error) -> caller
+  // embeds AFace unchanged; glyph IDs of ASubset equal those of AFace
+  function Subset(const AFace: RawByteString;
+    const ARequest: TPdfFontSubsetRequest; out ASubset: RawByteString): boolean;
+end;
+
+var PdfFontSubsetter: IPdfFontSubsetter;  // nil = no subsetter
+```
+
+- `mormot.ui.pdf` uses `mormot.pdf.hbsubset` on POSIX itself, like the FreeType
+  backend: no project-side `uses` needed. Its `initialization` calls
+  `LoadHarfBuzzSubset` and registers only when every symbol resolved, so
+  `PdfFontSubsetter <> nil` means "usable"
+- Two libraries: `hb_subset_*` from `libharfbuzz-subset.so.0` /
+  `libharfbuzz-subset.0.dylib`, `hb_blob_*`/`hb_face_*`/`hb_set_*` from
+  `libharfbuzz.so.0` / `libharfbuzz.0.dylib` (Homebrew paths tried on macOS)
+- Needs HarfBuzz 2.9+ (`hb_subset_or_fail`, `hb_subset_input_set_flags`); older
+  libraries leave it unregistered → whole-face embedding
+- Tuning globals: `HbSubsetFlags` (default `RETAIN_GIDS or NOTDEF_OUTLINE or
+  NO_HINTING`; `RETAIN_GIDS` is always forced), `HbSubsetDropLayoutTables`
+  (default true: drop `GSUB/GPOS/GDEF`)
+- Windows registers none and keeps `CreateFontPackage`
+- How the engine builds the request and shares the result: `fonts.md` §3
 
 ---
 
