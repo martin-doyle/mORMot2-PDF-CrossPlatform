@@ -104,12 +104,15 @@ const
     HeaderFontName:    '';         // inherit current document font
     HeaderFontSize:    0;
     HeaderFontStyle:   [fsBold];
-    HeaderBkColor:     $00AA5500; // matches the decorative accent colour
+    { light grey behind black bold text: the dark accent colour used here
+      before did not carry enough contrast (PAC), and report_demo uses the
+      same scheme }
+    HeaderBkColor:     $00E0E0E0;
     BodyFontName:      '';
     BodyFontSize:      0;
     BodyFontStyle:     [];
     BodyBkColor:       clWhite;
-    AlternateRowColor: $00F0F0FF; // light blue stripe on odd rows
+    AlternateRowColor: $00F0F0F0; // light grey stripe on odd rows
   );
 
 var
@@ -293,18 +296,25 @@ end;
 procedure TMainForm.DrawInvoiceTable(Report: TGDIPages);
 var
   Items: TDtoInvoiceRowDynArray;
+  Layout: TTableLayout;
   Count, i: Integer;
   Total: Currency;
 begin
   Count := TDemoServer(Client.Server).GetInvoiceData(Items);
   Total := 0;
 
+  Layout := INVOICE_TABLE;
+  if chkColors.Checked then
+    Layout.HeaderBkColor := $00D8C0A8;  // light blue-grey (BGR)
+  if not chkGrid.Checked then
+    Layout.AlternateRowColor := 0;      // 0 = no alternating row colour
+
   // Set the body font before BeginTable so the layout inherits it (FontName = '').
   Report.SetFont(SansFont, 9);
 
   // TTableLayout handles column widths, alignment, header background, and alternating
   // row colours automatically. DrawTableRow triggers page breaks as needed.
-  Report.BeginTable(INVOICE_TABLE);
+  Report.BeginTable(Layout);
   Report.DrawTableHeader(['#', 'Order No.', 'Customer', 'Date', 'Amount']);
 
   if Count = 0 then
@@ -322,11 +332,13 @@ begin
       Total := Total + Items[i].ItemsTotal;
     end;
 
-  { The totals line is part of the table, so it is a row: one TR with TD cells,
-    right-aligned by the column layout. Drawn below the table with
-    DrawTextAt + DrawTextRight it would be two separate P elements instead,
-    because only the coordinate-less overloads share one line and one tag. }
-  Report.DrawTableRow(['', 'Total', '', '', FormatFloat('#,##0.00 EUR', Total)]);
+  { The totals line is part of the table, so it is a row - and DrawTableFooter
+    puts it into the table's TFoot group, which tells it apart from the data
+    rows for assistive technology and gives it the header's look (R-14).
+    Drawn below the table with DrawTextAt + DrawTextRight it would be two
+    separate P elements, because only the coordinate-less overloads share one
+    line and one tag. }
+  Report.DrawTableFooter(['', 'Total', '', '', FormatFloat('#,##0.00 EUR', Total)]);
   Report.EndTable;
 
   Report.MoveToNextLine(300);

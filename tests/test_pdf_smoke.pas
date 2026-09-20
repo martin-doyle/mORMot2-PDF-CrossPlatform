@@ -32,6 +32,7 @@ type
     procedure TestTaggedDecorationIsArtifact;
     procedure TestTaggedArtifactMisuseRaises;
     procedure TestLineToWritesCompletePath;
+    procedure TestTaggedTableRowGroups;
   end;
 
 implementation
@@ -558,6 +559,210 @@ begin
     finally
       PDF.Free;
     end;
+  finally
+    Stream.Free;
+  end;
+end;
+
+
+{ read the integer starting at Pdf[p], advancing p past it }
+function ReadInt(const Pdf: RawByteString; var p: PtrInt): integer;
+begin
+  result := 0;
+  while (p <= length(Pdf)) and
+        (Pdf[p] = ' ') do
+    inc(p);
+  while (p <= length(Pdf)) and
+        (Pdf[p] in ['0'..'9']) do
+  begin
+    result := result * 10 + ord(Pdf[p]) - 48;
+    inc(p);
+  end;
+end;
+
+{ text of object number ANum in an uncompressed PDF, '' if absent
+  - pdf15+ keeps most dictionaries in an /ObjStm object stream, where the
+    objects are concatenated behind an index of (number, offset) pairs
+    instead of carrying their own "N 0 obj" header }
+function ObjectText(const Pdf: RawByteString; ANum: integer): RawByteString;
+var
+  p, e, q, data, first, n, i, num, ofs, nextofs: PtrInt;
+begin
+  result := '';
+  p := Pos(RawByteString(IntToStr(ANum) + ' 0 obj'), Pdf);
+  if p > 0 then
+  begin
+    e := PosEx(RawByteString('endobj'), Pdf, p);
+    if e > p then
+      result := copy(Pdf, p, e - p);
+    exit;
+  end;
+  q := Pos(RawByteString('/Type/ObjStm'), Pdf);
+  while q > 0 do
+  begin
+    p := PosEx(RawByteString('/N '), Pdf, q) + 3;
+    n := ReadInt(Pdf, p);
+    p := PosEx(RawByteString('/First '), Pdf, q) + 7;
+    first := ReadInt(Pdf, p);
+    data := PosEx(RawByteString('stream'), Pdf, q) + 7; // 'stream' + #10
+    p := data;
+    for i := 1 to n do
+    begin
+      num := ReadInt(Pdf, p);
+      ofs := ReadInt(Pdf, p);
+      if num <> ANum then
+        continue;
+      if i < n then
+      begin
+        e := p;
+        ReadInt(Pdf, e);          // number of the next object
+        nextofs := ReadInt(Pdf, e);
+      end
+      else
+        nextofs := PosEx(RawByteString('endstream'), Pdf, data) - 1 -
+                   (data + first);
+      result := copy(Pdf, data + first + ofs, nextofs - ofs);
+      exit;
+    end;
+    q := PosEx(RawByteString('/Type/ObjStm'), Pdf, q + 12);
+  end;
+end;
+
+{ text of the object whose /S role is ARole, '' if absent }
+function ObjectTextOfRole(const Pdf, ARole: RawByteString): RawByteString;
+var
+  p, n, b, last, e: PtrInt;
+begin
+  result := '';
+  p := Pos(RawByteString('/S/') + ARole, Pdf);
+  if p = 0 then
+    exit;
+  { inside an object stream there is no object header to walk back to: the
+    element ends at the next '>>' that closes its dictionary }
+  e := PosEx(RawByteString('endobj'), Pdf, p);
+  n := PosEx(RawByteString('>>'), Pdf, p);
+  if (n > 0) and
+     ((e = 0) or (n < e)) then
+  begin
+    b := p;
+    while (b > 1) and
+          (Pdf[b] <> '<') do
+      dec(b);
+    result := copy(Pdf, b, n + 2 - b);
+    exit;
+  end;
+  last := 0;
+  b := 1;
+  repeat // the object header closest before the role name
+    n := PosEx(RawByteString(' 0 obj'), Pdf, b);
+    if (n = 0) or
+       (n > p) then
+      break;
+    last := n;
+    b := n + 6;
+  until false;
+  if last = 0 then
+    exit;
+  while (last > 1) and
+        (Pdf[last - 1] in ['0'..'9']) do
+    dec(last); // back to the start of the object number
+  e := PosEx(RawByteString('endobj'), Pdf, p);
+  if e > last then
+    result := copy(Pdf, last, e - last);
+end;
+
+{ the /S role names of the objects listed in the /K array of AObj, in order }
+function KidRoles(const Pdf, AObj: RawByteString): RawUtf8;
+var
+  p, n: PtrInt;
+  kids, kid: RawByteString;
+begin
+  result := '';
+  p := Pos(RawByteString('/K['), AObj);
+  if p = 0 then
+    exit;
+  kids := copy(AObj, p + 3, PosEx(RawByteString(']'), AObj, p) - p - 3);
+  p := 1;
+  while p <= length(kids) do
+    if kids[p] in ['0'..'9'] then
+    begin
+      n := 0;
+      while (p <= length(kids)) and
+            (kids[p] in ['0'..'9']) do
+      begin
+        n := n * 10 + ord(kids[p]) - 48;
+        inc(p);
+      end;
+      kid := ObjectText(Pdf, n);
+      p := PosEx(RawByteString('R'), kids, p) + 1; // skip the generation + R
+      if Pos(RawByteString('/S/'), kid) > 0 then
+      begin
+        kid := copy(kid, Pos(RawByteString('/S/'), kid) + 3, 20);
+        n := 1;
+        while (n <= length(kid)) and
+              (kid[n] in ['A'..'Z', 'a'..'z', '0'..'9']) do
+          inc(n);
+        result := result + copy(kid, 1, n - 1) + ' ';
+      end;
+    end
+    else
+      inc(p);
+end;
+
+procedure TPdfSmokeTests.TestTaggedTableRowGroups;
+
+  procedure Cell(PDF: TPdfDocumentVcl; ARole: TPdfStructRole;
+    Y: integer; const S: string);
+  begin
+    PDF.BeginStructContent(psrTR);
+    PDF.BeginStructContent(ARole);
+    PDF.VclCanvas.TextOut(20, Y, S);
+    PDF.EndStructContent;
+    PDF.EndStructContent;
+  end;
+
+var
+  PDF: TPdfDocumentVcl;
+  Stream: TMemoryStream;
+  s: RawByteString;
+  tbl: RawByteString;
+begin
+  Stream := TMemoryStream.Create;
+  try
+    PDF := TPdfDocumentVcl.Create(false, 0, pdfaNone);
+    try
+      PDF.CompressionMethod := cmNone; // so the struct tree stays readable
+      PDF.Tagged := true;
+      PDF.AddPage;
+      PDF.VclCanvas.Font.Size := 12;
+      { Table > THead|TBody|TFoot > TR > TH|TD, ISO 32000-1 14.8.4.3.4 }
+      PDF.BeginStructContent(psrTable);
+      PDF.BeginStructContent(psrTHead);
+      Cell(PDF, psrTH, 20, 'Item');
+      PDF.EndStructContent;
+      PDF.BeginStructContent(psrTBody);
+      Cell(PDF, psrTD, 40, 'Row 1');
+      Cell(PDF, psrTD, 60, 'Row 2');
+      PDF.EndStructContent;
+      PDF.BeginStructContent(psrTFoot);
+      Cell(PDF, psrTD, 80, 'Total');
+      PDF.EndStructContent;
+      PDF.EndStructContent;
+      PDF.SaveToStream(Stream);
+    finally
+      PDF.Free;
+    end;
+    SetLength(s, Stream.Size);
+    Stream.Position := 0;
+    Stream.Read(pointer(s)^, Stream.Size);
+    Check(Pos(RawByteString('/S/THead'), s) > 0, 'THead written');
+    Check(Pos(RawByteString('/S/TBody'), s) > 0, 'TBody written');
+    Check(Pos(RawByteString('/S/TFoot'), s) > 0, 'TFoot written');
+    { the three groups are the kids of Table, in reading order - a row group
+      is a container, so it must own no marked-content region of its own }
+    tbl := ObjectTextOfRole(s, 'Table');
+    Check(tbl <> '', 'the Table element is in the struct tree');
+    CheckEqual(KidRoles(s, tbl), 'THead TBody TFoot ', 'row groups of the table');
   finally
     Stream.Free;
   end;

@@ -191,10 +191,14 @@ begin
     Data[3,0] := 'Dowel 8mm';     Data[3,1] := '50';  Data[3,2] := '0.12'; Data[3,3] := '6.00';
     Data[4,0] := 'Tape 25mm';     Data[4,1] := '5';   Data[4,2] := '2.50'; Data[4,3] := '12.50';
 
-    // Table — Tagged PDF: Table / TR / TH / TD structure
+    // Table — Tagged PDF: Table / THead|TBody / TR / TH|TD structure.
+    // The row groups of ISO 32000-1 14.8.4.3.4 tell the header rows from the
+    // data rows; TGDIPages emits them on its own, the low-level API asks the
+    // caller to open them (ROADMAP R-14).
     Doc.BeginStructContent(psrTable);
 
     // Header-Zeile
+    Doc.BeginStructContent(psrTHead);
     C.Brush.Color := $963232;
     C.Pen.Style   := psClear;
     C.Rectangle(40, 40, 550, 62);
@@ -212,8 +216,10 @@ begin
       Inc(X, ColWidths[Col]);
     end;
     Doc.EndStructContent; // TR
+    Doc.EndStructContent; // THead
 
     // Datenzeilen
+    Doc.BeginStructContent(psrTBody);
     C.Font.Name  := SansFont;
     C.Font.Style := [];
     C.Font.Size  := 10;
@@ -238,6 +244,7 @@ begin
       end;
       Doc.EndStructContent; // TR
     end;
+    Doc.EndStructContent; // TBody
     Doc.EndStructContent; // Table
 
     Doc.SaveToFile('output_crossplat.pdf');

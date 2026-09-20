@@ -370,11 +370,13 @@ begin
       FormatFloat('#,##0.00', Data[i].Price)]);
     Total := Total + Data[i].Quantity * Data[i].Price;
   end;
-  { The totals line is part of the table, so it is a row: one TR with TD cells,
-    right-aligned by the column layout. Drawn below the table with
-    DrawText + DrawTextRight it would be two separate P elements instead,
-    because only the coordinate-less overloads share one line and one tag. }
-  Report.DrawTableRow(['', 'Total', '', FormatFloat('#,##0.00', Total)]);
+  { The totals line is part of the table, so it is a row - and DrawTableFooter
+    puts it into the table's TFoot group, which tells it apart from the data
+    rows for assistive technology and gives it the header's look (R-14).
+    Drawn below the table with DrawText + DrawTextRight it would be two
+    separate P elements, because only the coordinate-less overloads share one
+    line and one tag. }
+  Report.DrawTableFooter(['', 'Total', '', FormatFloat('#,##0.00', Total)]);
   Report.EndTable;
 
   Report.MoveToNextLine(300);

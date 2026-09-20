@@ -35,6 +35,9 @@ Shows how to produce a 3-page PDF from TCanvas commands using `TPdfDocumentVcl` 
   about 19 KB). Windows has no such subsetter and embeds the whole face
   (a few hundred KB).
 - Struct roles: `psrH1` for headings, `psrP` for body text, `psrFigure` for graphics, `psrTable / psrTR / psrTH / psrTD` for tables
+- Table row groups: the header row sits in `psrTHead`, the data rows in
+  `psrTBody` (ISO 32000-1 14.8.4.3.4). `TGDIPages` emits the groups on its
+  own; with the low-level API the caller opens them, as this demo shows
 
 **Core pattern:**
 
@@ -148,8 +151,11 @@ Shows `TGDIPages` with a Lazarus GUI: WYSIWYG preview, print and PDF export via 
 - `Columns2` for two-column text
 - `DrawHeading(1..2, ...)` for headings with PDF bookmarks — PDF/UA expects one
   bookmark per heading, and a plain `DrawTextCenter` would only be a paragraph
-- `TTableLayout` + `BeginTable`/`DrawTableHeader`/`DrawTableRow`, which builds a
-  real `Table > TR > TH|TD` structure and repeats the header row on page breaks
+- `TTableLayout` + `BeginTable`/`DrawTableHeader`/`DrawTableRow`/`DrawTableFooter`,
+  which builds a real `Table > THead|TBody|TFoot > TR > TH|TD` structure and
+  repeats the header row on page breaks
+- the totals line is the table's footer row: set apart visually, and held in
+  `TFoot` instead of looking like one more data row
 - Running header and footer via `SetHeader`/`SetFooter`: the engine repeats them
   on the continuation pages that table pagination creates, and marks them as
   artifacts in the tagged export

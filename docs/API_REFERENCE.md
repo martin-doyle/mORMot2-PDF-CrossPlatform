@@ -248,12 +248,18 @@ TTableLayout = record
   BodyFontStyle:     TFontStyles;
   BodyBkColor:       TColor;
   AlternateRowColor: TColor;   // 0 = no alternation
+  FooterFontName:    string;   // closing row (DrawTableFooter); leave all
+  FooterFontSize:    Integer;  // four Footer* fields at their default to
+  FooterFontStyle:   TFontStyles; // make the footer look like the header
+  FooterBkColor:     TColor;
 end;
 ```
 
 Empty `FontName` and `FontSize = 0` inherit the current document font. The table automatically picks up the font set by `Report.SetFont()`.
 
 **Automatic header repetition (R-9):** `DrawTableHeader` saves the column headers. When `DrawTableRow` triggers a page break, the headers are automatically re-drawn at the top of the continuation page. `EndTable` clears the saved headers.
+
+**Closing row and row groups (R-14):** `DrawTableFooter(Cells)` draws the last row of a table, e.g. a totals line, styled by the `Footer*` fields. In a tagged export the rows are grouped as `Table > THead | TBody | TFoot > TR > TH|TD` (ISO 32000-1 14.8.4.3.4), which tells a totals row apart from the data rows for assistive technology. The grouping follows from the row kind; no extra call is needed.
 
 ---
 

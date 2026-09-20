@@ -1796,7 +1796,7 @@ to swap the font bytes immediately before `GetOrCreateFontFile2`.
 The figures above are sizes and glyph counts. **Nothing was rendered.** Whether
 the subsets display correctly has to be checked during implementation.
 
-### R-14 — Table Row Groups (`THead` / `TBody` / `TFoot`) — **Priority 1**
+### R-14 — Table Row Groups (`THead` / `TBody` / `TFoot`) — **IMPLEMENTED (2026-09-20)**
 
 **Effort:** ~1 day | **Files:** `src/core/mormot.pdf.types.pas`,
 `src/core/mormot.ui.pdf.pas`, `src/core/mormot.ui.report.pas`,
@@ -1837,6 +1837,29 @@ This came out of the tagged `report_demo`: its totals line is a plain `TR`
 7. **Verification:** PAC 2024 on `report_demo`, because the table structure
    changes.
 
+#### Result (R-14)
+
+Implemented on branch `feature/r14-table-row-groups`, on Linux:
+
+| Change | Location |
+|---|---|
+| `psrTHead`, `psrTBody`, `psrTFoot` appended to `TPdfStructRole`, all three containers | `mormot.pdf.types.pas`, `mormot.ui.pdf.pas` |
+| `OpenRowGroup` opens the group a row belongs to and closes the previous one; `fRenderRowGroup` is a field, so a table keeps its group across a page break | `mormot.ui.report.pas` |
+| `DrawTableFooter` + `Footer*` fields of `TTableLayout`, defaulting to the header's look; its cells are `TD` | `mormot.ui.report.pas` |
+| `DrawTableHeader` and the footer share `DrawTableStyledRow` | `mormot.ui.report.pas` |
+| Totals line of both GUI demos | `report_demo`, `mormot_demo` |
+| `THead`/`TBody` around the hand-built table of the low-level demo | `pdf_demo` |
+| Table colours of `mormot_demo` aligned with `report_demo`: black bold on light grey instead of black on a dark accent colour, which PAC read as too little contrast | `mormot_demo` |
+| `TestTaggedTableRowGroups` (kids of `Table` are `THead TBody TFoot`, read out of the `/ObjStm`), `TestTableFooterRow`, `TestTableGroupsAcrossPages` | `tests/` |
+
+`report_demo.pdf`: `Table` with `THead`, `TBody`, `TFoot`, 22 `TR`, 4 `TH`,
+84 `TD`; 205 → 208 test assertions, all green. `output_crossplat.pdf`
+(`pdf_demo`, low-level API): `THead` + `TBody`, all three pages
+pixel-identical to the run before R-14, 46 bytes larger.
+
+**Outstanding:** PAC 2024 on `report_demo_linux_r14.pdf`, plus the macOS and
+Windows builds.
+
 ---
 
 ### RTL Shaper Advance Path — Test Coverage
@@ -1871,7 +1894,7 @@ Windows-only (`TPdfDocumentGdi`), not portable. No work planned.
 | R-10 | Table row pagination | — | 2–3 days | mormot.ui.report.pas |
 | R-11 | TTC face index | — | 1 day | mormot.pdf.freetype.pas, mormot.pdf.types.pas |
 | R-13 | RTL shaper advance test | — | 0.5 day | tests/ |
-| R-14 | Table row groups `THead`/`TBody`/`TFoot`, with a visually set-apart table footer | **1** | 1 day | mormot.pdf.types.pas, mormot.ui.pdf.pas, mormot.ui.report.pas, demos, tests |
+| R-14 | Table row groups `THead`/`TBody`/`TFoot` + `DrawTableFooter` — implemented on Linux, PAC outstanding | **1** | 1 day | mormot.pdf.types.pas, mormot.ui.pdf.pas, mormot.ui.report.pas, demos, tests |
 
 B-7 … B-11, R-12 and R-14 carry agreed priorities; `—` means unprioritised, not
 lower-ranked.
