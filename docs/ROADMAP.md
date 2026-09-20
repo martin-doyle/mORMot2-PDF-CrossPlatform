@@ -1703,9 +1703,14 @@ Found on the way: `chinese_demo` and `rtl_demo` crashed on aarch64
 (`GetWideCharWidth` indexed `fUsedWide[]` before the call that reallocates it);
 fixed in its own commit.
 
-**Outstanding before the merge:** PAC 2024 on the Linux-built tagged PDFs
-(`markdown_demo_linux_r12.pdf`, `pdf_demo_linux_r12.pdf`), macOS verification
-(Geeza Pro exercises the PUA glyph path), Windows regression run.
+**PAC 2024 (2026-09-20): green** on the Linux-built tagged PDFs
+`markdown_demo_linux_r12.pdf` and `pdf_demo_linux_r12.pdf` — only the known
+W-1 figure warning, unchanged from before R-12. Subsetting tagged output
+(plan Step 10) is therefore accepted; `chinese_demo` and `rtl_demo` were also
+checked with `EmbeddedWholeTtf := False` and accepted.
+
+**Outstanding before the merge:** macOS verification (Geeza Pro exercises the
+PUA glyph path) and the Windows regression run.
 
 **Revised 2026-09-19.** The original entry assumed subsetting existed on all
 platforms and only needed shaped glyph IDs tracked through it. It does not: the
