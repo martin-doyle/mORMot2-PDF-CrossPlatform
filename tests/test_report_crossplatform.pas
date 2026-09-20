@@ -361,15 +361,25 @@ begin
   Check(REPORT_FONT_SANS  <> '', 'REPORT_FONT_SANS not empty');
   Check(REPORT_FONT_SERIF <> '', 'REPORT_FONT_SERIF not empty');
   Check(REPORT_FONT_MONO  <> '', 'REPORT_FONT_MONO not empty');
+  { the three branches must match mormot.ui.report.pas:48-52 one for one -
+    this test expected Arial/Times New Roman/Courier New long after the
+    constants moved to the ClearType families, and had no DARWIN branch at
+    all, so it failed on Windows and would have failed on macOS too }
   {$IFDEF MSWINDOWS}
-  CheckEqual('Arial', REPORT_FONT_SANS, 'Windows SANS = Arial');
-  CheckEqual('Times New Roman', REPORT_FONT_SERIF, 'Windows SERIF = Times New Roman');
-  CheckEqual('Courier New', REPORT_FONT_MONO, 'Windows MONO = Courier New');
+  CheckEqual('Calibri', REPORT_FONT_SANS, 'Windows SANS = Calibri');
+  CheckEqual('Cambria', REPORT_FONT_SERIF, 'Windows SERIF = Cambria');
+  CheckEqual('Consolas', REPORT_FONT_MONO, 'Windows MONO = Consolas');
+  {$ELSE}
+  {$IFDEF DARWIN}
+  CheckEqual('Trebuchet MS', REPORT_FONT_SANS, 'macOS SANS = Trebuchet MS');
+  CheckEqual('Georgia', REPORT_FONT_SERIF, 'macOS SERIF = Georgia');
+  CheckEqual('Andale Mono', REPORT_FONT_MONO, 'macOS MONO = Andale Mono');
   {$ELSE}
   CheckEqual('Liberation Sans', REPORT_FONT_SANS, 'Unix SANS = Liberation Sans');
   CheckEqual('Liberation Serif', REPORT_FONT_SERIF, 'Unix SERIF = Liberation Serif');
   CheckEqual('Liberation Mono', REPORT_FONT_MONO, 'Unix MONO = Liberation Mono');
-  {$ENDIF}
+  {$ENDIF DARWIN}
+  {$ENDIF MSWINDOWS}
 end;
 
 procedure TReportTests.TestTaggedRepeatedHeaderAndTitle;
