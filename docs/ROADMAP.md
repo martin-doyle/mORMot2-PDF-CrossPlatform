@@ -56,7 +56,7 @@ or Windows since, and two PDFs are waiting for PAC.
 
 | What | Where | Why it matters |
 |---|---|---|
-| PAC 2024 | `report_demo/bin/aarch64-linux/report_demo_linux_r14.pdf`, `pdf_demo/bin/aarch64-linux/pdf_demo_linux_r14.pdf` | R-14 changed the table structure of both |
+| PAC 2024 | [`docs/samples/`](samples/) — the Linux-built PDFs of both demos | R-14 changed the table structure of both |
 | macOS build, `test_runner`, demos | R-12, R-14 | Geeza Pro is the only face that exercises the PUA glyph path (`fonts.md` §10); macOS also has the `.ttc` CJK face |
 | Windows build, `test_runner`, demos | R-12, R-14 | no subsetter is registered there, so output must equal the state before R-12: compare `pdffonts` and file sizes |
 | `mormot_demo` run | R-14, tagged export, `--export` batch mode, table colours | needs a sample database; the demo compiles but has never run |
