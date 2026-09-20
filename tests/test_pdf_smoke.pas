@@ -301,7 +301,7 @@ begin
     try
       PDF.CompressionMethod := cmNone; // so the objects stay readable
       { PDF/UA needs embedded fonts with a Unicode round-trip, so Tagged picks
-        the font mode itself - the caller must not have to (ROADMAP Step 6) }
+        the font mode itself - the caller must not have to (ROADMAP P-6) }
       PDF.Tagged := true;
       Check(PDF.EmbeddedTTF, 'Tagged turns embedding on');
       Check(not PDF.StandardFontsReplace, 'Tagged drops the base-14 Type1 mode');

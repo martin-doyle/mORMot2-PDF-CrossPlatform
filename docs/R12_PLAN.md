@@ -1,7 +1,8 @@
 # R-12 — Font Subsetting on POSIX via hb-subset — Implementation Plan
 
 **Branch:** `feature/r12-posix-subset` (created from `main` @ `3537752`)
-**Roadmap entry:** [ROADMAP.md › R-12](ROADMAP.md#r-12--font-subsetting-on-posix-via-hb-subset--implemented-on-linux-2026-09-19)
+**Roadmap entry:** [ROADMAP.md › Completed](ROADMAP.md#completed) — this file
+is the detail the roadmap no longer carries
 **Priority:** 3 | **Effort:** 3–4 days (the roadmap said 2–3; Step 10 and the
 shared-stream pre-pass were not in that estimate)
 **Status:** **merged into `main` on 2026-09-20** (`4ef4bc3`) — Steps 0–10 and
@@ -238,7 +239,7 @@ variant, and the sizes are recorded in the result table (§7).
 ### Step 1 — Settle the open unknowns (needs source approval)
 
 Read the places listed in §3 and record the answers here, in §3, the way
-ROADMAP Step 6 did. If an answer contradicts this plan (for example, if
+ROADMAP P-6 did. If an answer contradicts this plan (for example, if
 `/BaseFont` is written before the font file exists), revise the affected step
 **before** writing code.
 

@@ -605,7 +605,7 @@ begin
   if PdfFontSubsetter = nil then
   begin
     Check(FirstFontFile(tagged) = FirstFontFile(whole),
-      'without a subsetter Tagged embeds the whole face (ROADMAP Step 6)');
+      'without a subsetter Tagged embeds the whole face (ROADMAP P-6)');
     exit;
   end;
   // PDF/UA allows subsets, and retained glyph IDs keep the round-trip

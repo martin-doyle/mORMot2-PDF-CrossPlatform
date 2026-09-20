@@ -620,7 +620,7 @@ type
     // - PDF/UA needs embedded fonts, so setting this forces ExportPdfEmbeddedTTF
     // and clears ExportPdfStandardFonts
     // - those flags decide which metrics the layout is measured with, so this
-    // has to be set before the first drawing command (ROADMAP Step 6)
+    // has to be set before the first drawing command (ROADMAP P-6)
     property ExportPdfTagged: boolean read fExportPdfTagged write SetExportPdfTagged;
     /// BCP-47 language tag for the Tagged PDF /Lang entry (default 'en')
     property ExportPdfLanguage: RawUtf8 read fExportPdfLanguage write fExportPdfLanguage;
@@ -690,7 +690,7 @@ end;
 
 { Convert PDF points (1/72 inch) to 1/100 mm — the unit of every TGDIPages
   coordinate. Kept as a single late rounding step, so sub-unit differences do
-  not accumulate over the lines of a page (ROADMAP B-5, step 5). }
+  not accumulate over the lines of a page (ROADMAP B-5). }
 function PointsToMM100(Points: single): Integer;
 begin
   Result := Round(Points * (2540 / 72));
@@ -3115,7 +3115,7 @@ begin
     exit;
   { the export font flags feed SetupPdfMeasureFont, i.e. they decide how the
     recorded pages were broken into lines - switching them afterwards would set
-    the text with a face it was not measured with (ROADMAP Step 4 / Step 6) }
+    the text with a face it was not measured with (ROADMAP B-5 / P-6) }
   if Value and
      (fPageCount > 0) then
     raise ESynException.Create('TGDIPages.ExportPdfTagged must be set before ' +

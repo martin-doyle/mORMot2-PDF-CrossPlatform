@@ -9503,7 +9503,7 @@ procedure TPdfDocument.SetTagged(Value: boolean);
 begin
   // the font mode decides which metrics the whole document is measured with,
   // so switching it once pages exist would break lines with one face and set
-  // them with another (see ROADMAP Step 6)
+  // them with another (see ROADMAP P-6)
   if Value and
      (fRawPages.Count > 0) then
     raise ESynException.Create('TPdfDocument.Tagged must be set before the ' +
