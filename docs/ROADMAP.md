@@ -18,9 +18,13 @@ The first PAC 2024 run on Windows then reported five PDF/UA errors in the
 Linux-built `markdown_demo.pdf` — B-7 … B-11, now fixed and green in PAC — plus
 B-12 … B-14 and W-1 in `pdf_demo`, all **Priority 1** (see
 [Priority 1 — PAC 2024 Findings](#priority-1--pac-2024-findings-b-7--b-14-w-1--done-2026-09-19-w-1-accepted)).
-After them come the R-items. R-12 (font subsetting on POSIX) is implemented
-on branch `feature/r12-posix-subset` and accepted on Linux; macOS, Windows and
-PAC are outstanding — see [R-12](#r-12--font-subsetting-on-posix-via-hb-subset--implemented-on-linux-2026-09-19).
+After them come the R-items. R-12 (font subsetting on POSIX) is **merged into
+`main`** (2026-09-20), accepted on Linux and green in PAC 2024; only the macOS
+and Windows runs are outstanding — see
+[R-12](#r-12--font-subsetting-on-posix-via-hb-subset--merged-2026-09-20).
+`report_demo` and `mormot_demo` export tagged PDF/UA since then, which raised
+the next question: the table has no row groups, so a totals row cannot be set
+apart — that is [R-14](#r-14--table-row-groups-thead--tbody--tfoot--priority-1).
 
 Completed items are archived in [Completed Work](#completed-work) at the end of
 this document.
@@ -1674,7 +1678,7 @@ cells must stay inside one `TR` element referencing both pages.
 Only face index 0 of a `.ttc` is reachable because `TPdfFontMap` has no face
 index. Add one so the remaining faces can be selected by name.
 
-### R-12 — Font Subsetting on POSIX via hb-subset — **IMPLEMENTED on Linux (2026-09-19)**
+### R-12 — Font Subsetting on POSIX via hb-subset — **MERGED (2026-09-20)**
 
 **Effort:** 2–3 days | **Files:** new `src/platform/unix/mormot.pdf.hbsubset.pas`,
 `src/core/mormot.pdf.types.pas`, `src/core/mormot.ui.pdf.pas`
@@ -1703,14 +1707,19 @@ Found on the way: `chinese_demo` and `rtl_demo` crashed on aarch64
 (`GetWideCharWidth` indexed `fUsedWide[]` before the call that reallocates it);
 fixed in its own commit.
 
+Merged into `main` on 2026-09-20 (`4ef4bc3`), together with the tagged export
+of `report_demo` and `mormot_demo`.
+
 **PAC 2024 (2026-09-20): green** on the Linux-built tagged PDFs
 `markdown_demo_linux_r12.pdf` and `pdf_demo_linux_r12.pdf` — only the known
 W-1 figure warning, unchanged from before R-12. Subsetting tagged output
 (plan Step 10) is therefore accepted; `chinese_demo` and `rtl_demo` were also
 checked with `EmbeddedWholeTtf := False` and accepted.
 
-**Outstanding before the merge:** macOS verification (Geeza Pro exercises the
-PUA glyph path) and the Windows regression run.
+**Still outstanding (after the merge):** macOS verification (Geeza Pro
+exercises the PUA glyph path) and the Windows regression run. Both are
+platform checks, not code work: Windows registers no subsetter and keeps
+`CreateFontPackage`.
 
 **Revised 2026-09-19.** The original entry assumed subsetting existed on all
 platforms and only needed shaped glyph IDs tracked through it. It does not: the
@@ -1787,6 +1796,49 @@ to swap the font bytes immediately before `GetOrCreateFontFile2`.
 The figures above are sizes and glyph counts. **Nothing was rendered.** Whether
 the subsets display correctly has to be checked during implementation.
 
+### R-14 — Table Row Groups (`THead` / `TBody` / `TFoot`) — **Priority 1**
+
+**Effort:** ~1 day | **Files:** `src/core/mormot.pdf.types.pas`,
+`src/core/mormot.ui.pdf.pas`, `src/core/mormot.ui.report.pas`,
+`examples/report_demo`, `examples/mormot_demo`, `tests/`
+
+ISO 32000-1 §14.8.4.3.4 defines three row-group elements next to
+`Table`/`TR`/`TH`/`TD`: **`THead`, `TBody` and `TFoot`**. The engine has none
+of them — `TPdfStructRole` ends at `psrTD` and `RenderPageToCanvas` puts every
+`TR` directly under `Table`. That is valid, but a totals row is then
+structurally indistinguishable from a data row, and it cannot be set apart
+visually either, because `TTableLayout` styles header and body only.
+
+This came out of the tagged `report_demo`: its totals line is a plain `TR`
+(see [Result (Step 13)](#result-step-13) for the equivalent header work, B-11).
+
+#### Steps
+
+1. **Roles:** append `psrTHead`, `psrTBody`, `psrTFoot` at the **end** of
+   `TPdfStructRole`. The existing ordinals must not move —
+   `TPdfStructRole(Level)` maps heading levels, and `dckBeginTR` in
+   `mormot.ui.report.pas` depends on them (see the comment on the enum).
+2. **Layout:** `TTableLayout` gains `FooterFontStyle` and `FooterBkColor`;
+   `DrawTableFooter(const Cells: array of string)` mirrors `DrawTableHeader`.
+   The row kind already travels in `dckBeginTR.Color` (0 = data, 1 = header,
+   2 = repeated header), so the footer becomes 3.
+3. **Tagged export:** open `THead` around the header row, `TBody` around the
+   data rows and `TFoot` around the footer, and close them at `EndTable`.
+   All rows go into a group or none do — a `TFoot` next to ungrouped `TR`
+   elements is what validators tend to object to.
+4. **Repeated headers stay artifacts** (B-11): a continuation-page header
+   carries `Color = 2` and no struct element, and must not open a second
+   `THead` or break the group nesting.
+5. **Demos:** `report_demo` and `mormot_demo` draw their totals line with
+   `DrawTableFooter`, which also gives it the header's visual weight back
+   (it lost its bold when it moved into the table).
+6. **Tests:** struct-tree assertions for `THead`/`TBody`/`TFoot`, and a table
+   spanning a page break to pin the artifact rule of step 4.
+7. **Verification:** PAC 2024 on `report_demo`, because the table structure
+   changes.
+
+---
+
 ### RTL Shaper Advance Path — Test Coverage
 
 **Effort:** 0.5 day | **File:** `tests/`
@@ -1818,10 +1870,10 @@ Windows-only (`TPdfDocumentGdi`), not portable. No work planned.
 | W-1 | "Possibly inappropriate use of figure" — `pdf_demo` (PAC warning, also WCAG) — accepted, documented in the demo | **1** | 0.25 day | pdf_demo_crossplat.lpr |
 | R-10 | Table row pagination | — | 2–3 days | mormot.ui.report.pas |
 | R-11 | TTC face index | — | 1 day | mormot.pdf.freetype.pas, mormot.pdf.types.pas |
-| R-12 | Font subsetting on POSIX via hb-subset — implemented on Linux (97–99.5% smaller PDFs, tagged included); macOS, Windows, PAC outstanding | **3** | 2–3 days | new mormot.pdf.hbsubset.pas, mormot.pdf.types.pas, mormot.ui.pdf.pas |
 | R-13 | RTL shaper advance test | — | 0.5 day | tests/ |
+| R-14 | Table row groups `THead`/`TBody`/`TFoot`, with a visually set-apart table footer | **1** | 1 day | mormot.pdf.types.pas, mormot.ui.pdf.pas, mormot.ui.report.pas, demos, tests |
 
-B-7 … B-11 and R-12 carry agreed priorities; `—` means unprioritised, not
+B-7 … B-11, R-12 and R-14 carry agreed priorities; `—` means unprioritised, not
 lower-ranked.
 
 **Execution order** (agreed): one fix at a time, each verified on all three
@@ -1870,6 +1922,8 @@ The remaining R-items are independent and unscheduled; they follow Step 13.
 | B-5 | Layout measured with the PDF font engine, not the LCL — see [Result (Step 4)](#result-step-4) | mormot.ui.pdf.pas, mormot.ui.pdfcanvas.pas, mormot.ui.report.pas |
 | B-4 | Text bounding boxes measured with the PDF font engine, in `single` — see [Result (Step 5)](#result-step-5) | mormot.ui.pdfcanvas.pas, pdf_demo, tests |
 | B-6 | `/Alt` written as a PDF string, and onto the `StructElem` — see [Result (Step 5b)](#result-step-5b) | mormot.ui.pdf.pas, tests |
+| R-12 | Font subsetting on POSIX via hb-subset — see [Result (R-12)](#result-r-12) and [R12_PLAN.md](R12_PLAN.md) | mormot.pdf.hbsubset.pas (new), mormot.pdf.types.pas, mormot.ui.pdf.pas, tests |
+| — | `report_demo` and `mormot_demo` export tagged PDF/UA (`TTableLayout`, `DrawHeading`, `SetHeader`/`SetFooter`, `--export` batch mode) | report_demo, mormot_demo, DEMOS.md |
 
 Note on R-5/R-6: table and figure tags were *emitted* but landed flat in the
 structure tree; B-1 completed them.

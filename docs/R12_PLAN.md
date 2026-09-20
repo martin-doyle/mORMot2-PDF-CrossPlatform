@@ -4,9 +4,10 @@
 **Roadmap entry:** [ROADMAP.md › R-12](ROADMAP.md#r-12--font-subsetting-on-posix-via-hb-subset--implemented-on-linux-2026-09-19)
 **Priority:** 3 | **Effort:** 3–4 days (the roadmap said 2–3; Step 10 and the
 shared-stream pre-pass were not in that estimate)
-**Status:** implemented and accepted on Linux, 2026-09-19; PAC 2024 green on
-2026-09-20 (Steps 0–10, 13).
-Open: Step 11 (macOS), Step 12 (Windows), Step 14 (merge).
+**Status:** **merged into `main` on 2026-09-20** (`4ef4bc3`) — Steps 0–10 and
+13–14 done, PAC 2024 green.
+Open: Step 11 (macOS) and Step 12 (Windows), both platform checks on code that
+is already in `main`.
 Results in §7, deviations from the plan in §9.
 
 This plan turns the roadmap entry into ordered, individually verifiable steps.
@@ -607,7 +608,7 @@ Test suite: 156 → 196 assertions, all green.
       (`TestSubsetFallbackWithoutSubsetter`; not yet tried with the library
       really absent)
 - [ ] Windows output unchanged — by construction (no subsetter registered), to
-      be confirmed by a Windows build and run
+      be confirmed by a Windows build and run (the merge did not wait for it)
 - [x] Tagged documents subset and PAC-green — PAC 2024 on 2026-09-20 reported
       only the known W-1 figure warning, as before R-12
 - [x] `test_runner` green on Linux — [ ] macOS, [ ] Windows
