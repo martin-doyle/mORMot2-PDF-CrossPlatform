@@ -74,6 +74,26 @@ would need a `/CIDSet`, which is not written), for symbol fonts (reached
 through the `(3,0)` cmap) and for CFF-flavoured faces (`OTTO`, not valid in
 `/FontFile2`).
 
+**The CFF exclusion is not hypothetical on macOS.** Its CJK system faces are
+CFF: `Hiragino Sans GB.ttc` is `OTTO` in all four faces, with a `CFF ` table
+and no `glyf`. `chinese_demo` therefore embeds two whole faces there (Regular
+and Bold are separate faces of the collection) and comes out ~10 MB against
+~10–39 KB on Linux and Windows. This is the documented fallback working, not a
+subsetter failure — the demo's Latin face subsets in the same file. Before
+diagnosing a size difference on macOS as a bug:
+
+```bash
+hb-info --face-index=0 <font> | grep outlines    # "Postscript" = CFF
+grep -a -oE "/BaseFont[ ]*/[A-Za-z0-9+,#_-]+" out.pdf | sort -u
+```
+
+The grep only works on a file without object streams. Tagged output deflates
+its font dictionaries, so it returns nothing there — which reads like "no fonts
+embedded". Inflate every stream with `python3` and search the result instead.
+
+Roadmap R-15c holds the routes out (`/FontFile3` with `/Subtype /OpenType` is
+the real one).
+
 ### POSIX subset input (`TPdfDocument.PrepareFontSubsets`)
 
 Built per **face bytes**, before the first font is serialized, as the union over

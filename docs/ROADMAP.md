@@ -7,16 +7,23 @@ reasoning in the git history — this file repeats neither.
 **State on 2026-09-20.** The engine is cross-platform, writes PDF 1.7, and its
 tagged output passes PAC 2024 with one accepted warning (W-1, a Figure in
 `pdf_demo`). Layout is measured with the PDF font engine on every platform, so
-line breaks no longer depend on the widgetset. Fonts are embedded and, on
-Linux/macOS, subset (R-12); tables carry `THead`/`TBody`/`TFoot` row groups
-(R-14). Five of the six demos are verified on Linux; `mormot_demo` waits for a
-sample database.
+line breaks no longer depend on the widgetset. Fonts are embedded and subset on
+all three platforms (R-12, R-15); tables carry `THead`/`TBody`/`TFoot` row
+groups (R-14). All three platforms build, and `test_runner` is green on each.
 
 **Windows pass, 2026-09-20 — complete.** All six demos and `test_runner` build
 and link on Windows (x86_64-win64, FPC 3.2.2 / Lazarus), and PAC 2024 is green
 on the tagged demos. The pass closed **R-15** and **R-15a** (subsetting by glyph
 ID, once per face, on every platform) and **R-16** (Arabic was never shaped
 there). All six demos now embed subsets; none pins the whole face any more.
+
+**macOS pass, 2026-09-20 — complete.** All six demos and `test_runner` build and
+run on macOS (aarch64-darwin, Lazarus 4.9 / FPC 3.2.3), with HarfBuzz 12.3.2
+from Homebrew. `test_runner` rebuilt with `-B` and re-run: **221 assertions, 0
+failures**, including `TestSubsetterRegistered` and `TestTtcFaceExtraction`.
+Five of the six PDFs come out the size the other platforms lead one to expect.
+`chinese_demo` does not, and the reason is not a defect in the subsetter: see
+**R-15c** below.
 
 ---
 
@@ -58,6 +65,19 @@ survives as plain text in the file, so
 `grep -a -oE "/BaseFont[ ]*/[A-Za-z0-9+,#_-]+"` substitutes for `pdffonts` well
 enough to tell a subset (six-letter prefix) from a whole face.
 
+**Toolchain on the macOS machine.** Target **aarch64-darwin**. `lazbuild` lives
+at `/Users/lutz/fpcupdeluxe/lazarus/lazbuild` (Lazarus 4.9, FPC 3.2.3, not on
+`PATH`), the mORMot2 sources at `/Users/lutz/Documents/Github/mORMot2`. Linking
+prints a wall of `ld: warning: object file ... built for newer macOS version
+(11.0) than being linked (10.15)` — noise from the prebuilt mORMot2 units, not
+an error. HarfBuzz comes from Homebrew (`/opt/homebrew/lib`), which is one of
+the paths `mormot.pdf.hbsubset` probes, so no linker flag is needed. `hb-info`
+ships with it and is the quickest way to tell a CFF face from a `glyf` one —
+see R-15c. Available: `python3`, `grep -a`. Missing: `pdffonts`, `pdftotext`,
+`pdftoppm`, PAC 2024, so output is checked by file size and by reading the font
+dictionaries with `python3` — inflating the object streams first, since the
+tagged demos deflate `/BaseFont` out of reach of the grep.
+
 **Checking a change.** Build all six demos and `test_runner`, then compare the
 PDFs with the previous run: file size, `pdffonts`, `pdftotext` output, and the
 pages rendered with `pdftoppm -r 110 -png` compared pixel by pixel. A change
@@ -69,17 +89,18 @@ that is meant to be invisible has to come out pixel-identical.
 
 ### V — Verification Outstanding on Other Platforms
 
-R-12 and R-14 are merged and accepted on Linux, and the Windows pass is done.
-macOS has not been built since, and Linux has not been rebuilt since R-15.
+All three platforms now build and pass `test_runner`. What is left is the
+mechanical cross-platform comparison, and the two rows that no pass has covered.
 
 | What | Where | Why it matters |
 |---|---|---|
 | ~~PAC 2024~~ | [`docs/samples/`](samples/) — the Linux-built PDFs of both demos | done — green, W-1 the only warning |
-| macOS build, `test_runner`, demos | R-12, R-14 | Geeza Pro is the only face that exercises the PUA glyph path (`fonts.md` §10); macOS also has the `.ttc` CJK face |
+| ~~macOS build, `test_runner`, demos~~ | R-12, R-14 | done 2026-09-20 — all six demos build and run, `test_runner` green. Geeza Pro subsets correctly, so the PUA glyph path holds. Found **R-15c** |
 | ~~Windows build, `test_runner`, demos~~ | R-12, R-14 | done — builds and links; subsetting arrived with R-15, so the comparison is against R-15's own figures, not against the pre-R-12 state. Found R-16 |
 | Linux rebuild of all six demos | R-15, R-15a, R-16 | the engine changes are argued to be POSIX-neutral from the `{$ifdef}` structure, not measured. Expect every PDF unchanged except `chinese_demo` and `rtl_demo`, which no longer pin the whole face |
-| `mormot_demo` run | R-14, tagged export, `--export` batch mode, table colours | needs a sample database; the demo compiles but has never run |
-| Run on a machine **without** `libharfbuzz-subset` | R-12 fallback | `TestSubsetFallbackWithoutSubsetter` only simulates it by clearing `PdfFontSubsetter`; the loader path itself — missing library, or HarfBuzz older than 2.9 — has never run |
+| PAC 2024 on the macOS-built PDFs | R-12, R-14 | the macOS pass checked sizes and fonts, not the tag tree; PAC runs only on Windows |
+| ~~`mormot_demo` run~~ | R-14, tagged export, `--export` batch mode, table colours | done 2026-09-20 on macOS — it builds its own SQLite database, so the "needs a sample database" blocker was wrong. ~53,985 B, both faces subset, tag tree complete (1 `Table` with `THead`/`TBody`/`TFoot`, 207 `TR`, 5 `TH`, 1030 `TD`). Still unchecked by PAC |
+| Run on a machine **without** `libharfbuzz-subset` | R-12 fallback | `TestSubsetFallbackWithoutSubsetter` only simulates it by clearing `PdfFontSubsetter`; the loader path itself — missing library, or HarfBuzz older than 2.9 — has never run. The macOS pass had HarfBuzz present throughout, so it did not cover this |
 
 ### Order of Work (agreed 2026-09-20)
 
@@ -97,10 +118,12 @@ macOS has not been built since, and Linux has not been rebuilt since R-15.
    acceptance step had to wait for R-16, and passed once R-16 landed:
    `rtl_demo` 2,072,378 → 88,198 B with the shaped presentation forms intact.
 3. ~~**R-16.**~~ **Done 2026-09-20.** Windows is now green end to end.
-4. **macOS in two passes.** First **without** HarfBuzz installed: that covers
-   the loader-absent row of the table above at no extra cost. Then
-   `brew install harfbuzz` and repeat, with Geeza Pro for the PUA glyph path
-   and the `.ttc` CJK face.
+4. ~~**macOS.**~~ **Done 2026-09-20.** Run in one pass with HarfBuzz 12.3.2
+   present, not the two that were planned — so the loader-absent row of the
+   table above is still open. Geeza Pro subsets (`WQQPKW+GeezaPro`), which is
+   the PUA glyph path holding. The `.ttc` CJK face is where it found
+   **R-15c**: `Hiragino Sans GB.ttc` is CFF, not `glyf`, so the documented CFF
+   fallback fires and `chinese_demo` embeds two whole faces.
 5. **Compare the platforms — but not pixel by pixel.** The demos resolve
    different families (Calibri/Cambria/Consolas, Liberation, Trebuchet
    MS/Georgia/Andale Mono), so different advance widths, line breaks and page
@@ -117,9 +140,63 @@ macOS has not been built since, and Linux has not been rebuilt since R-15.
    this more pressing: Windows tagged output is subset now, so the `/ToUnicode`
    round-trip is carried by the subset rather than by a whole face.
 
-`mormot_demo` joins whichever pass is current when its sample database is
-ready. Once all three platforms are green, that is the point for a first
-version tag — the project has none.
+Once all three platforms are green, that is the point for a first version tag —
+the project has none. `mormot_demo` no longer blocks that: it builds its own
+SQLite database and ran on macOS on 2026-09-20.
+
+**`--export` needs no display on macOS.** The Cocoa widgetset runs both GUI
+demos headless, so the `xvfb-run` advice is Linux/GTK2 only.
+
+### R-15c — macOS CJK Demo Embeds Two Whole Faces — unprioritised
+
+**Effort:** 1–3 days, depending on the route taken | **Files:**
+`src/core/mormot.ui.pdf.pas`, `src/platform/unix/mormot.pdf.hbsubset.pas`,
+`examples/chinese_demo/chinese_demo.lpr`
+
+`chinese_demo` is 10,117,154 B on macOS against 39,279 B on Windows and 10,848 B
+on Linux. The subsetter is not at fault and nothing is broken: the output is
+correct, just large.
+
+`/System/Library/Fonts/Hiragino Sans GB.ttc` — the face `CJK_FONT` names on
+Darwin — carries `OTTO` in all four of its faces, with a `CFF ` table and no
+`glyf`. That is the **CFF fallback documented under R-15b**: hb-subset's output
+would be CFF, which is not valid in `/FontFile2`, so `PrepareFontSubsets` keeps
+the whole face. The demo draws in Regular and Bold, which resolve to two
+different faces of the collection, so two whole faces are embedded — hence ~10 MB
+from a 23.5 MB collection. The single `TrebuchetMS,Bold` used for the Latin
+header is `glyf` and does subset (`YKURIC+`), which is how one can tell the
+subsetter loaded and ran.
+
+How to confirm this on any machine, without reading the engine:
+
+```bash
+grep -a -oE "/BaseFont[ ]*/[A-Za-z0-9+,#_-]+" output_chinese.pdf | sort -u
+# a six-letter prefix means subset; its absence means whole face
+hb-info --face-index=0 "/System/Library/Fonts/Hiragino Sans GB.ttc" | grep outlines
+# "Has Postscript outlines" = CFF
+```
+
+Three routes, in increasing order of cost and of value:
+
+1. **Pick a `glyf` CJK face for the demo on Darwin.** Cheapest, and it makes the
+   demo teach what it claims to teach. macOS ships no `glyf` CJK face by
+   default, so this means either documenting a `brew install font-noto-sans-cjk`
+   prerequisite, or shipping a face with the demo. It hides the engine
+   limitation rather than fixing it, so at minimum the demo's header must name
+   the reason.
+2. **Emit CFF subsets as `/FontFile3`** with `/Subtype /OpenType` (PDF 1.6+, and
+   the engine writes 1.7). This is the real fix and it lifts the restriction for
+   every CFF face on POSIX, not just this one. hb-subset handles CFF perfectly
+   well; what is missing is the `/FontFile3` branch in the descriptor and the
+   decision of which one to write. Check what `CreateFontPackage` does with a
+   CFF face before assuming Windows is unaffected — R-15b already flags that as
+   untested.
+3. **Give `.ttc` faces an index** (R-11) so Regular and Bold of one collection
+   are addressable. Independent of the CFF question and it does not shrink this
+   file, but it is the other half of why this demo embeds *two* faces.
+
+Route 2 subsumes the size problem; route 1 is the one that makes the demo
+honest tomorrow. They are not exclusive.
 
 ### R-15b — Symbolic Fonts Are Not Subset on POSIX — unprioritised
 
@@ -250,6 +327,37 @@ it was embedding `Calibri` and `Cambria` twice, and now embeds 7 streams for its
 and its `numGlyphs` — 7048 → 7048 for Calibri, 30209 → 30209 for Microsoft
 YaHei — which is what makes Identity-H and `/ToUnicode` survive. Two runs of one
 document now produce the same subset tags; the files differ only in `/ID`.
+
+### Measured Effect on macOS (2026-09-20)
+
+Built aarch64-darwin with HarfBuzz 12.3.2. Faces resolve to Trebuchet MS /
+Georgia / Andale Mono, so sizes are not directly comparable with the other
+platforms' — what matters is the subset prefix, not the byte count.
+
+| PDF | Size | Faces |
+|---|---|---|
+| `output_crossplat.pdf` (tagged) | 19,312 B | all subset |
+| `markdown_demo.pdf` (tagged) | 51,282 B | 7 faces, all subset |
+| `report_demo` export (tagged) | 14,078 B | all subset |
+| `mormot_demo` export (tagged) | ~53,985 B | 2 faces, all subset |
+| `output_rtl.pdf` | 13,922 B | all subset, incl. `WQQPKW+GeezaPro` |
+| `output_chinese.pdf` | 10,117,154 B | `TrebuchetMS,Bold` subset; **`HiraginoSansGB` and `HiraginoSansGB,Bold` whole** — R-15c |
+
+The Arabic row is the one worth noting beyond the sizes: Geeza Pro's shaped
+presentation forms survive a subset that retains glyph IDs, which is the PUA
+glyph path (`fonts.md` §10) running for the first time on a face that needs it.
+
+Sizes wobble by a byte or three between runs — `/ID` and a timestamp inside an
+object stream, both of which compress to a varying length. Two runs of
+`markdown_demo` differed by 3 bytes and two of `mormot_demo` by 1, while all
+seven of `markdown_demo`'s subset tags stayed identical (`CKUONW+TrebuchetMS`,
+`XVWACP+Georgia`, `RMVYZW+AndaleMono`, …). The deterministic-tag property of
+R-15a therefore holds on POSIX too; the byte count is not the thing to compare.
+
+**Reading the fonts out of these files needs `python3`, not `grep`.** The
+tagged demos write object streams, so `/BaseFont` is deflated and the
+`/BaseFont` grep from the Windows section returns nothing — which looks exactly
+like "no fonts embedded". Inflate every stream and search the result instead.
 
 What R-15 also fixed, both pre-existing and both found by the test suite:
 

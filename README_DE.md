@@ -9,7 +9,7 @@ Cross-platform PDF-Generierung für Windows, Linux und macOS, basierend auf der 
 | Windows | Delphi 7+ | GDI (Original) | Produktiv |
 | Windows | FreePascal/Lazarus | GDI via Interfaces | Produktiv |
 | Linux | FreePascal/Lazarus | FreeType2 | Produktiv |
-| macOS | FreePascal/Lazarus | FreeType2 | Produktiv — Build-Verifikation offen |
+| macOS | FreePascal/Lazarus | FreeType2 | Produktiv |
 
 ## Architektur (3 Ebenen)
 
@@ -162,6 +162,17 @@ fehlt, bei PDF/A-1 (dort wäre ein `/CIDSet` nötig), bei Symbolschriften unter
 Linux/macOS und bei OpenType mit CFF-Umrissen. Textextraktion und Kopieren sind
 in beiden Fällen unverändert.
 
+Der CFF-Fall ist der praktisch relevante: macOS liefert seine CJK-Schriften als
+CFF-OpenType aus, deshalb bettet `chinese_demo` dort die ganze Schrift
+`Hiragino Sans GB` ein (~10 MB), während Linux und Windows ~10–39 KB erzeugen.
+Die Ausgabe ist korrekt, nur groß — siehe [R-15c](docs/ROADMAP.md). So lässt
+sich eine Schrift vorab prüfen:
+
+```bash
+hb-info --face-index=0 /pfad/zur/schrift | grep outlines  # "Postscript" = CFF, kein Subset
+grep -a -oE "/BaseFont[ ]*/[A-Za-z0-9+,#_-]+" out.pdf     # Präfix ABCDEF+ = Subset
+```
+
 ---
 
 ## Die 6 Demos (Lernpfad)
@@ -209,8 +220,9 @@ automatisierten Prüfungen:
 examples/report_demo/bin/<target>/report_demo_crossplat --export report.pdf
 ```
 
-`TGDIPages` ist ein LCL-Control, daher wird trotzdem ein Display gebraucht —
-auf einer Maschine ohne Bildschirm `xvfb-run` davorsetzen.
+`TGDIPages` ist ein LCL-Control, daher wird unter Linux/GTK2 trotzdem ein
+Display gebraucht — auf einer Maschine ohne Bildschirm `xvfb-run` davorsetzen.
+Das Cocoa-Widgetset unter macOS exportiert auch ohne Display.
 
 ## Runtime-Abhängigkeiten
 
@@ -238,6 +250,7 @@ Fonts aus `/Library/Fonts`, `/System/Library/Fonts`, `~/Library/Fonts`.
 ## Open Items
 
 - **Symbolschriften unter Linux/macOS:** werden nicht gesubsettet — die ganze Schrift wird eingebettet, weil hb-subset die Glyphen-IDs hinter der `(3,0)`-Cmap nicht erhält. Windows subsettet sie (Roadmap R-15b)
+- **CFF/OpenType-Schriften:** werden unter Linux/macOS nicht gesubsettet — ein CFF-Subset ist in `/FontFile2` nicht gültig, deshalb wird die ganze Schrift eingebettet. Daher ist `chinese_demo` unter macOS ~10 MB groß (Roadmap R-15c)
 - **TTC-Sammlungen:** nur Face-Index 0 ist erreichbar (Roadmap R-11)
 - **EMF/MetaFile:** Windows-only (`TPdfDocumentGdi`), nicht portierbar
 - **GDI+/Gradient Fills:** nur via EMF auf Windows verfügbar

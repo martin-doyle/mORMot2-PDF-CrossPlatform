@@ -9,7 +9,7 @@ Cross-platform PDF generation for Windows, Linux and macOS, based on the [mORMot
 | Windows | Delphi 7+ | GDI (original) | Production |
 | Windows | FreePascal/Lazarus | GDI via interfaces | Production |
 | Linux | FreePascal/Lazarus | FreeType2 | Production |
-| macOS | FreePascal/Lazarus | FreeType2 | Production — build verification outstanding |
+| macOS | FreePascal/Lazarus | FreeType2 | Production |
 
 ## Architecture (3 layers)
 
@@ -158,6 +158,17 @@ The whole face is embedded instead without `libharfbuzz-subset`, for PDF/A-1
 CFF-flavoured OpenType. Text extraction and copy/paste are unaffected either
 way.
 
+The CFF case is the one that bites in practice: macOS ships its CJK faces as
+CFF OpenType, so `chinese_demo` embeds the whole `Hiragino Sans GB` face there
+(~10 MB) while Linux and Windows produce ~10–39 KB. Nothing is wrong with the
+output, it is simply large — see [R-15c](docs/ROADMAP.md). To check any face
+before relying on a subset:
+
+```bash
+hb-info --face-index=0 /path/to/font | grep outlines   # "Postscript" = CFF, no subset
+grep -a -oE "/BaseFont[ ]*/[A-Za-z0-9+,#_-]+" out.pdf  # ABCDEF+ prefix = subset
+```
+
 ---
 
 ## The 6 demos (learning path)
@@ -205,8 +216,9 @@ automated checks use:
 examples/report_demo/bin/<target>/report_demo_crossplat --export report.pdf
 ```
 
-`TGDIPages` is an LCL control, so this still needs a display — on a headless
-machine run it under `xvfb-run`.
+`TGDIPages` is an LCL control, so on Linux/GTK2 this still needs a display —
+on a headless machine run it under `xvfb-run`. The macOS Cocoa widgetset
+exports without one.
 
 ## Runtime dependencies
 
@@ -234,6 +246,7 @@ Fonts from `/Library/Fonts`, `/System/Library/Fonts`, `~/Library/Fonts`.
 ## Open items
 
 - **Symbol fonts on Linux/macOS:** not subset — the whole face is embedded, because hb-subset is not given the glyph IDs behind the `(3,0)` cmap. Windows subsets them (roadmap R-15b)
+- **CFF/OpenType faces:** not subset on Linux/macOS — a CFF subset is not valid in `/FontFile2`, so the whole face is embedded. This is why `chinese_demo` is ~10 MB on macOS (roadmap R-15c)
 - **TTC collections:** only face index 0 is reachable (roadmap R-11)
 - **EMF/MetaFile:** Windows-only (`TPdfDocumentGdi`), not portable
 - **GDI+/Gradient fills:** available only via EMF on Windows
