@@ -1796,7 +1796,7 @@ to swap the font bytes immediately before `GetOrCreateFontFile2`.
 The figures above are sizes and glyph counts. **Nothing was rendered.** Whether
 the subsets display correctly has to be checked during implementation.
 
-### R-14 — Table Row Groups (`THead` / `TBody` / `TFoot`) — **IMPLEMENTED (2026-09-20)**
+### R-14 — Table Row Groups (`THead` / `TBody` / `TFoot`) — **MERGED (2026-09-20)**
 
 **Effort:** ~1 day | **Files:** `src/core/mormot.pdf.types.pas`,
 `src/core/mormot.ui.pdf.pas`, `src/core/mormot.ui.report.pas`,
@@ -1857,8 +1857,11 @@ Implemented on branch `feature/r14-table-row-groups`, on Linux:
 (`pdf_demo`, low-level API): `THead` + `TBody`, all three pages
 pixel-identical to the run before R-14, 46 bytes larger.
 
-**Outstanding:** PAC 2024 on `report_demo_linux_r14.pdf`, plus the macOS and
-Windows builds.
+Merged into `main` on 2026-09-20 (`e28c2a6`).
+
+**Outstanding:** PAC 2024 on `report_demo_linux_r14.pdf` and
+`pdf_demo_linux_r14.pdf`, the macOS and Windows builds, and a run of
+`mormot_demo`, which needs a sample database.
 
 ---
 
@@ -1894,7 +1897,7 @@ Windows-only (`TPdfDocumentGdi`), not portable. No work planned.
 | R-10 | Table row pagination | — | 2–3 days | mormot.ui.report.pas |
 | R-11 | TTC face index | — | 1 day | mormot.pdf.freetype.pas, mormot.pdf.types.pas |
 | R-13 | RTL shaper advance test | — | 0.5 day | tests/ |
-| R-14 | Table row groups `THead`/`TBody`/`TFoot` + `DrawTableFooter` — implemented on Linux, PAC outstanding | **1** | 1 day | mormot.pdf.types.pas, mormot.ui.pdf.pas, mormot.ui.report.pas, demos, tests |
+| R-14 | Table row groups `THead`/`TBody`/`TFoot` + `DrawTableFooter` — merged; PAC, macOS and Windows outstanding | **1** | 1 day | mormot.pdf.types.pas, mormot.ui.pdf.pas, mormot.ui.report.pas, demos, tests |
 
 B-7 … B-11, R-12 and R-14 carry agreed priorities; `—` means unprioritised, not
 lower-ranked.
@@ -1946,6 +1949,7 @@ The remaining R-items are independent and unscheduled; they follow Step 13.
 | B-4 | Text bounding boxes measured with the PDF font engine, in `single` — see [Result (Step 5)](#result-step-5) | mormot.ui.pdfcanvas.pas, pdf_demo, tests |
 | B-6 | `/Alt` written as a PDF string, and onto the `StructElem` — see [Result (Step 5b)](#result-step-5b) | mormot.ui.pdf.pas, tests |
 | R-12 | Font subsetting on POSIX via hb-subset — see [Result (R-12)](#result-r-12) and [R12_PLAN.md](R12_PLAN.md) | mormot.pdf.hbsubset.pas (new), mormot.pdf.types.pas, mormot.ui.pdf.pas, tests |
+| R-14 | Table row groups `THead`/`TBody`/`TFoot` and `DrawTableFooter` — see [Result (R-14)](#result-r-14) | mormot.pdf.types.pas, mormot.ui.pdf.pas, mormot.ui.report.pas, demos, tests |
 | — | `report_demo` and `mormot_demo` export tagged PDF/UA (`TTableLayout`, `DrawHeading`, `SetHeader`/`SetFooter`, `--export` batch mode) | report_demo, mormot_demo, DEMOS.md |
 
 Note on R-5/R-6: table and figure tags were *emitted* but landed flat in the
