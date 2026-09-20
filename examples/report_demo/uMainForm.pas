@@ -315,15 +315,18 @@ begin
   DrawSampleTable(Report);
 
   // ---- Summary ----
+  { Inline runs: the coordinate-less overloads advance CurrentX on the same
+    line and share one BlockId, so the tagged export emits ONE P with the bold
+    label as a nested Span. The coordinate overloads DrawText(X, Y, ...) would
+    make two standalone P elements out of these two halves (ROADMAP B-3). }
   Report.MoveToNextLine(1000);
   Report.SaveLayout;
   Report.SetFont(SansFont, 10);
-  Report.FontStyle := [fsBold];
   Report.TextColor := clBlack;
-  Report.DrawText(0, Report.CurrentY, 'Note:');
-  Report.FontStyle := [];
-  Report.DrawText(2000, Report.CurrentY,
-    '  All prices are exclusive of applicable taxes.');
+  Report.CurrentX := 0;
+  Report.DrawStrong('Note:');
+  Report.DrawText('  All prices are exclusive of applicable taxes.');
+  Report.MoveToNextLine(600);
   Report.RestoreLayout;
 end;
 
@@ -367,22 +370,17 @@ begin
       FormatFloat('#,##0.00', Data[i].Price)]);
     Total := Total + Data[i].Quantity * Data[i].Price;
   end;
+  { The totals line is part of the table, so it is a row: one TR with TD cells,
+    right-aligned by the column layout. Drawn below the table with
+    DrawText + DrawTextRight it would be two separate P elements instead,
+    because only the coordinate-less overloads share one line and one tag. }
+  Report.DrawTableRow(['', 'Total', '', FormatFloat('#,##0.00', Total)]);
   Report.EndTable;
 
-  // ---------- Totals ----------
   Report.MoveToNextLine(300);
   Report.DrawLine(0, Report.CurrentY, Report.PageWidth, Report.CurrentY,
                   2, clBlack);
-  Report.MoveToNextLine(200);
-
-  Report.SaveLayout;
-  Report.SetFont(SansFont, 10);
-  Report.FontStyle := [fsBold];
-  Report.TextColor := clBlack;
-  Report.DrawText(0, Report.CurrentY, 'Total:');
-  Report.DrawTextRight(0, Report.CurrentY, FormatFloat('#,##0.00', Total));
-  Report.MoveToNextLine(600);
-  Report.RestoreLayout;
+  Report.MoveToNextLine(300);
 end;
 
 { ============================================================

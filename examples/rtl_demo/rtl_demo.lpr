@@ -90,7 +90,7 @@ begin
     Doc.EmbeddedTTF      := true;
     // full font stream: required on Windows, where CreateFontPackage drops the
     // shaped GSUB glyphs; Linux/macOS could subset safely (ROADMAP R-12)
-    Doc.EmbeddedWholeTtf := true;
+    Doc.EmbeddedWholeTtf := false;
     Doc.Info.Title       := 'Arabic RTL Demo';
     Doc.DefaultPaperSize := mormot.ui.pdf.psA4;
     GetReportFonts(Doc.EmbeddedTTF, SansFont, SerifFont, MonoFont);

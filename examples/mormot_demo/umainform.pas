@@ -272,15 +272,18 @@ begin
   DrawInvoiceTable(Report);
 
   // ---- Summary ----
+  { Inline runs: the coordinate-less overloads advance CurrentX on the same
+    line and share one BlockId, so the tagged export emits ONE P with the bold
+    label as a nested Span. The coordinate overloads DrawText(X, Y, ...) would
+    make two standalone P elements out of these two halves (ROADMAP B-3). }
   Report.MoveToNextLine(1000);
   Report.SaveLayout;
   Report.SetFont(SansFont, 10);
-  Report.FontStyle := [fsBold];
   Report.TextColor := clBlack;
-  Report.DrawText(0, Report.CurrentY, 'Note:');
-  Report.FontStyle := [];
-  Report.DrawText(2000, Report.CurrentY,
-    '  All prices are exclusive of applicable taxes.');
+  Report.CurrentX := 0;
+  Report.DrawStrong('Note:');
+  Report.DrawText('  All prices are exclusive of applicable taxes.');
+  Report.MoveToNextLine(600);
   Report.RestoreLayout;
 end;
 
@@ -291,7 +294,6 @@ procedure TMainForm.DrawInvoiceTable(Report: TGDIPages);
 var
   Items: TDtoInvoiceRowDynArray;
   Count, i: Integer;
-  y: Integer;
   Total: Currency;
 begin
   Count := TDemoServer(Client.Server).GetInvoiceData(Items);
@@ -320,29 +322,17 @@ begin
       Total := Total + Items[i].ItemsTotal;
     end;
 
+  { The totals line is part of the table, so it is a row: one TR with TD cells,
+    right-aligned by the column layout. Drawn below the table with
+    DrawTextAt + DrawTextRight it would be two separate P elements instead,
+    because only the coordinate-less overloads share one line and one tag. }
+  Report.DrawTableRow(['', 'Total', '', '', FormatFloat('#,##0.00 EUR', Total)]);
   Report.EndTable;
 
-  // ---------- Totals row ----------
-  Report.MoveToNextLine(100);
-  y := Report.CurrentY;
-
-  Report.DrawLine(0, y, Report.PageWidth, y, 2, clBlack);
-  Report.MoveToNextLine(50);
-  y := Report.CurrentY;
-
-  Report.SaveLayout;
-  Report.SetFont(SansFont, 10);
-  Report.FontStyle := [fsBold];
-  Report.TextColor := clBlack;
-
-  Report.DrawTextAt(0, y + 80, 'Total:');
-  // Right-align at page right margin (X=0 means right margin in DrawTextRight)
-  Report.DrawTextRight(0, y + 80, FormatFloat('#,##0.00 EUR', Total));
-
-  Report.MoveToNextLine(650);
+  Report.MoveToNextLine(300);
   Report.DrawLine(0, Report.CurrentY, Report.PageWidth, Report.CurrentY,
-                  3, clBlack);
-  Report.RestoreLayout;
+                  2, clBlack);
+  Report.MoveToNextLine(300);
 end;
 
 { ============================================================

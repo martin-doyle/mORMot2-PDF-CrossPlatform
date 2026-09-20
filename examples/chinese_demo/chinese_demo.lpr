@@ -73,7 +73,7 @@ begin
   Doc := TPdfDocumentVcl.Create;
   try
     Doc.EmbeddedTTF      := true;
-    Doc.EmbeddedWholeTtf := true;  // full font stream — CJK CMAP coverage guaranteed
+    Doc.EmbeddedWholeTtf := false;  // full font stream — CJK CMAP coverage guaranteed
     {$ifdef MSWINDOWS}
     Doc.UseUniscribe     := false; // CJK needs no contextual shaping
     {$endif MSWINDOWS}
