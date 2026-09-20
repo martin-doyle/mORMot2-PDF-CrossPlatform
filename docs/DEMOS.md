@@ -35,6 +35,9 @@ Shows how to produce a 3-page PDF from TCanvas commands using `TPdfDocumentVcl` 
   about 19 KB). Windows has no such subsetter and embeds the whole face
   (a few hundred KB).
 - Struct roles: `psrH1` for headings, `psrP` for body text, `psrFigure` for graphics, `psrTable / psrTR / psrTH / psrTD` for tables
+- Table row groups: the header row sits in `psrTHead`, the data rows in
+  `psrTBody` (ISO 32000-1 14.8.4.3.4). `TGDIPages` emits the groups on its
+  own; with the low-level API the caller opens them, as this demo shows
 
 **Core pattern:**
 

@@ -1848,10 +1848,14 @@ Implemented on branch `feature/r14-table-row-groups`, on Linux:
 | `DrawTableFooter` + `Footer*` fields of `TTableLayout`, defaulting to the header's look; its cells are `TD` | `mormot.ui.report.pas` |
 | `DrawTableHeader` and the footer share `DrawTableStyledRow` | `mormot.ui.report.pas` |
 | Totals line of both GUI demos | `report_demo`, `mormot_demo` |
+| `THead`/`TBody` around the hand-built table of the low-level demo | `pdf_demo` |
+| Table colours of `mormot_demo` aligned with `report_demo`: black bold on light grey instead of black on a dark accent colour, which PAC read as too little contrast | `mormot_demo` |
 | `TestTaggedTableRowGroups` (kids of `Table` are `THead TBody TFoot`, read out of the `/ObjStm`), `TestTableFooterRow`, `TestTableGroupsAcrossPages` | `tests/` |
 
 `report_demo.pdf`: `Table` with `THead`, `TBody`, `TFoot`, 22 `TR`, 4 `TH`,
-84 `TD`; 205 → 208 test assertions, all green.
+84 `TD`; 205 → 208 test assertions, all green. `output_crossplat.pdf`
+(`pdf_demo`, low-level API): `THead` + `TBody`, all three pages
+pixel-identical to the run before R-14, 46 bytes larger.
 
 **Outstanding:** PAC 2024 on `report_demo_linux_r14.pdf`, plus the macOS and
 Windows builds.
