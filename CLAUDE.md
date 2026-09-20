@@ -9,13 +9,13 @@ The original document (`reference/mormot.ui.pdf.pas`) was Windows/GDI-only; this
 
 **RULE: Read the relevant skill file(s) BEFORE doing anything else — before reading source files, before searching, before planning.**
 
-Skills contain complete, distilled API and architectural knowledge. The main source files are very large (mormot.ui.pdf.pas is 12,500+ lines); reading them without necessity wastes context and time.
+Skills contain complete, distilled API and architectural knowledge. The main source files are very large (mormot.ui.pdf.pas is 14,600+ lines, mormot.ui.report.pas 3,200+); reading them without necessity wastes context and time.
 
 | Skill | When to use |
 |---|---|
 | `.claude/skills/pdf-engine.md` | TPdfDocument, TPdfDocumentVcl, TPdfCanvas — full API, enums, encryption, FPImage |
 | `.claude/skills/report-engine.md` | TGDIPages — all methods, tables, command recording, global helpers |
-| `.claude/skills/platform-backends.md` | IPdfPlatformFont/SystemFonts/DC — interfaces, backends, data types |
+| `.claude/skills/platform-backends.md` | IPdfPlatformFont/SystemFonts/DC, optional IPdfTextShaper/IPdfFontSubsetter — interfaces, backends, data types |
 | `.claude/skills/call-graph.md` | Execution paths: registration → rendering → serialization (font lifecycle 4a–4d, image, bookmarks) |
 | `.claude/skills/fonts.md` | Font handling deep reference: dual-instance model, CMAP loading, text rendering chains, RTL/Arabic |
 
@@ -80,12 +80,15 @@ examples/
   chinese_demo/       Demo 5 — CJK text, whole-TTF embedding (console)
   rtl_demo/           Demo 6 — Arabic RTL, HarfBuzz/Uniscribe shaping (console)
 tests/
-  test_pdf_crossplatform.pas   7 tests: platform backend
-  test_pdf_smoke.pas           4 tests: PDF basics
-  test_report_crossplatform.pas 11+ tests: report engine
-  test_pdf_subset.pas          14 tests: font subsetting (R-12)
+  test_runner.lpr              runs every suite below (208 assertions, all green on Linux)
+  test_pdf_crossplatform.pas   platform backend, text shaper, TTC extraction
+  test_pdf_smoke.pas           PDF basics, tagged output, struct tree
+  test_report_crossplatform.pas report engine, tables, tagged export
+  test_pdf_subset.pas          font subsetting: IPdfFontSubsetter and TPdfDocument
+  test_coordinates.pas         page geometry
+  test_report_coordinates.pas  report geometry
 reference/
-  mormot.ui.pdf.pas   Original file (12,500 lines, reference only)
+  mormot.ui.pdf.pas   Original Windows/GDI file (12,514 lines, reference only)
 docs/
   DEMOS.md            Learning path: the 6 demos step by step
   API_REFERENCE.md    TCanvas methods, TReportFormat, TTableLayout
@@ -110,8 +113,9 @@ TPdfDocumentVcl / TPdfVclCanvas       <- TCanvas bridge
 TPdfCanvas / TPdfDocument (mormot.ui.pdf) <- Low-level PDF
     | via interfaces
 IPdfPlatformFont / IPdfSystemFonts / IPdfPlatformDC
-    |
+    |                + optional: IPdfTextShaper, IPdfFontSubsetter
 GDI (Windows)  /  FreeType2 (Linux/macOS)
+                  + HarfBuzz shaping and hb-subset when the libraries load
 ```
 
 For all execution paths through this architecture: `.claude/skills/call-graph.md`
@@ -121,7 +125,7 @@ For interface and backend details: `.claude/skills/platform-backends.md`
 
 | Demo | API | Type | Highlights |
 |---|---|---|---|
-| pdf_demo | `TPdfDocumentVcl` | Console | TCanvas basics, Tagged PDF (H1/P/Figure/Table) |
+| pdf_demo | `TPdfDocumentVcl` | Console | TCanvas basics, Tagged PDF (H1/P/Figure, Table with THead/TBody) |
 | report_demo | `TGDIPages` | GUI | WYSIWYG preview, tagged PDF export, `TTableLayout`, `--export` batch mode |
 | markdown_demo | `TGDIPages` | Console | H1-H6, TTableLayout, LineHeightFactor, ExportPdfTagged |
 | mormot_demo | `TGDIPages` + ORM | GUI | SQLite via TRestClientDB, TTableLayout, tagged PDF, `--export` batch mode |
@@ -170,6 +174,16 @@ metrics the layout is measured with — and both raise `ESynException` if set la
 
 Full details including dual-instance model, CMAP loading, text rendering chains, and RTL/Arabic limitations: `.claude/skills/fonts.md`
 
+### Tagged Tables
+
+`TGDIPages` groups the rows itself: `DrawTableHeader` opens `THead`, the first
+`DrawTableRow` switches to `TBody`, `DrawTableFooter` (a totals line) switches
+to `TFoot`, `EndTable` closes both group and table. A header row repeated on a
+continuation page is an artifact and opens no second `THead`.
+
+With the low-level API the caller opens the groups, as `pdf_demo` shows.
+Details: `.claude/skills/report-engine.md` (Tables), `.claude/skills/call-graph.md` (Path 10)
+
 ### Platform Abstraction
 
 New platform feature: use interface method, do not add `{$ifdef}` inside `mormot.ui.pdf.pas`.
@@ -178,7 +192,8 @@ Details on interfaces and registration: `.claude/skills/platform-backends.md`
 ## Coding Conventions (mORMot2 style)
 
 - **Language: English only** — all code, comments, and identifiers must be in English
-- **Prefer mORMot2 functions** over FPC/LCL alternatives (e.g. `FormatUtf8` over `Format`, `RawUtf8` over `string` for internal strings, `DateToString8` over `FormatDateTime` for file names)
+- **Prefer mORMot2 functions** over FPC/LCL alternatives (e.g. `FormatUtf8` over `Format`, `RawUtf8` over `string` for internal strings, `DateToIso8601(Now, false)` over `FormatDateTime('yyyymmdd', …)` for file names)
+- **Check that a mORMot2 function exists in this tree** before using it: the version here has no `DateToString8`, though older notes suggested it
 - `RawUtf8` instead of `string` for internal strings
 - No blank lines between `begin`/`end` blocks
 - Interfaces with reference counting (`TInterfacedObject`)
@@ -195,14 +210,23 @@ Details on interfaces and registration: `.claude/skills/platform-backends.md`
 "C:\lazarus\lazbuild.exe" examples/mormot_demo/mormot_demo.lpi -B
 "C:\lazarus\lazbuild.exe" examples/chinese_demo/chinese_demo.lpi -B
 "C:\lazarus\lazbuild.exe" examples/rtl_demo/rtl_demo.lpi -B
-"C:\lazarus\lazbuild.exe" tests/test_runner.lpr -B
+"C:\lazarus\lazbuild.exe" tests/test_runner.lpi -B
 
 # Linux/macOS:
 lazbuild examples/pdf_demo/pdf_demo_crossplat.lpi -B
 lazbuild examples/markdown_demo/markdown_demo.lpi -B
 lazbuild examples/chinese_demo/chinese_demo.lpi -B
 lazbuild examples/rtl_demo/rtl_demo.lpi -B
+lazbuild examples/report_demo/mormot_report_demo.lpi -B
+lazbuild examples/mormot_demo/mormot_demo.lpi -B
+lazbuild tests/test_runner.lpi -B && tests/bin/test_runner
 ```
+
+Linking the demos on this Linux machine needs GTK2 development symlinks, which
+are absent — see `docs/ROADMAP.md` (Working Method) for the workaround.
+
+The two GUI demos export without their window, which is how they are checked:
+`report_demo_crossplat --export out.pdf` (needs a display; `xvfb-run` otherwise).
 
 ## Open Items
 
@@ -212,7 +236,11 @@ lazbuild examples/rtl_demo/rtl_demo.lpi -B
 - **TTC collections**: only face index 0 is reachable; `TPdfFontMap` has no face index, so the other faces of a `.ttc` cannot be selected by name
 - **EMF/MetaFile**: Windows-only (`TPdfDocumentGdi`), not portable
 - **GDI+/gradient fills**: Windows-only via EMF
-- **Table pagination**: no row break within a cell
+- **Table pagination**: no row break within a cell (roadmap R-10)
+- **Windows subsetting is planned to improve** (roadmap R-15): pass glyph IDs to `CreateFontPackage` via `TTFCFP_FLAGS_GLYPHLIST`, which would make CJK and shaped Arabic subsettable there too
+
+Current verification status per platform, and the open items in detail:
+`docs/ROADMAP.md`
 
 ## Dependencies
 
