@@ -29,11 +29,11 @@ Shows how to produce a 3-page PDF from TCanvas commands using `TPdfDocumentVcl` 
 - Tagged PDF accessibility marks (`Doc.Tagged := True` auto-raises `FileFormat` to `pdf17`)
 - Tagged output implies **embedded TrueType fonts**: PDF/UA does not allow the
   viewer's own non-embedded base-14 faces, so `Tagged := True` turns
-  `EmbeddedTTF` on and `StandardFontsReplace` off. On Linux/macOS the faces
-  are embedded as subsets through `libharfbuzz-subset`, which keeps glyph IDs
-  and therefore the `/ToUnicode` round-trip (ROADMAP R-12: the demo PDF is
-  about 19 KB). Windows has no such subsetter and embeds the whole face
-  (a few hundred KB).
+  `EmbeddedTTF` on and `StandardFontsReplace` off. The faces are embedded as
+  subsets on every platform — `libharfbuzz-subset` on Linux/macOS (ROADMAP
+  R-12: the demo PDF is about 19 KB), `CreateFontPackage` with a glyph keep
+  list on Windows (R-15: 115 KB). Both keep the glyph IDs, and therefore the
+  `/ToUnicode` round-trip.
 - Struct roles: `psrH1` for headings, `psrP` for body text, `psrFigure` for graphics, `psrTable / psrTR / psrTH / psrTD` for tables
 - Table row groups: the header row sits in `psrTHead`, the data rows in
   `psrTBody` (ISO 32000-1 14.8.4.3.4). `TGDIPages` emits the groups on its

@@ -1,9 +1,16 @@
-/// Cross-Platform PDF Demo
-// - produces a 3-page PDF with text, vector graphics and a table
-// - uses TPdfDocumentVcl (direct recording canvas) when compiled with FPC/Lazarus
-//   because the LCL metafile canvas does not record Brush state reliably
-// - uses TPdfDocumentGdi on Windows only when compiled with Delphi
-// - the TCanvas drawing code is identical on all paths
+/// Cross-Platform PDF Demo — mORMot2 PDF Cross-Platform
+// Produces a 3-page tagged PDF — text and fonts, vector graphics, a table —
+// from plain TCanvas calls, with no report engine and no GUI.
+//
+// Worth noting:
+// - the TCanvas drawing code is identical on all platforms and compilers
+// - FPC/Lazarus always uses TPdfDocumentVcl: the LCL metafile canvas does not
+//   record Brush state reliably, which would turn every fill black
+// - Delphi on Windows uses TPdfDocumentGDI (full GDI + Uniscribe feature set)
+// - Tagged := True must be set before AddPage and before the font names are
+//   resolved; it raises FileFormat to pdf17 and selects the PDF/UA font mode
+// - the low-level API leaves the structure to the caller, so this demo opens
+//   the struct roles and the THead/TBody row groups itself
 program pdf_demo_crossplat;
 
 {$ifdef FPC}

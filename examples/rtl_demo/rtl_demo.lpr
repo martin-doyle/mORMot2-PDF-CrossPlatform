@@ -1,21 +1,21 @@
 /// Arabic RTL PDF Demo — mORMot2 PDF Cross-Platform
-// Demonstrates Arabic contextual shaping and right-to-left text.
+// Draws Arabic with TPdfDocumentVcl, once unshaped and once shaped, so the two
+// paths can be compared side by side in the same PDF.
 //
-// Section 1 (NoShaper path, UseUniscribe=false / HarfBuzz disabled):
-//   1a) Single isolated letter — verifies CMAP fix (DEFAULT_CHARSET).
-//   1b) Multiple isolated letters — verifies per-glyph advance widths from CMAP.
-//
-// Section 2 (shaping path):
-//   Windows : Uniscribe (UseUniscribe=true, RightToLeftText=true)
-//   Linux/macOS: HarfBuzz (PdfTextShaper registered, RightToLeftText=true)
-//   2a) Single char — verifies GetAndMarkGlyphAsUsed Step 2 / HarfBuzz path.
-//   2b) Full words — contextual shaping, RTL bidi, connected Arabic letters.
+// Worth noting:
+// - section 1 draws without a shaper: isolated letters only, resolved through
+//   the CMAP — it verifies the per-glyph advance widths
+// - section 2 shapes: Uniscribe on Windows (UseUniscribe := true), HarfBuzz on
+//   Linux/macOS (mormot.pdf.harfbuzz registers PdfTextShaper at startup);
+//   both need RightToLeftText := true
+// - the face is embedded as a subset: both subsetters receive the shaped glyph
+//   IDs, so the GSUB output survives
 //
 // Font requirement:
 //   Windows  : Tahoma — covers Arabic, pre-installed on all versions
 //   macOS    : Geeza Pro — pre-installed
 //   Linux    : Noto Naskh Arabic — sudo apt install fonts-noto-core
-//              (or DejaVu Sans as fallback; will show boxes for Arabic)
+//              (without it the fallback face shows boxes instead of Arabic)
 //
 // HarfBuzz requirement (Linux/macOS):
 //   sudo apt install libharfbuzz0b   (Debian/Ubuntu)

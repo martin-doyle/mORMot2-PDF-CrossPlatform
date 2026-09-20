@@ -9,7 +9,7 @@ Cross-platform PDF generation for Windows, Linux and macOS, based on the [mORMot
 | Windows | Delphi 7+ | GDI (original) | Production |
 | Windows | FreePascal/Lazarus | GDI via interfaces | Production |
 | Linux | FreePascal/Lazarus | FreeType2 | Production |
-| macOS | FreePascal/Lazarus | FreeType2 | Production |
+| macOS | FreePascal/Lazarus | FreeType2 | Production — build verification outstanding |
 
 ## Architecture (3 layers)
 
@@ -144,13 +144,19 @@ that. `EmbeddedWholeTtf := True` always embeds the complete face.
 |---|---|---|
 | Subsetter | `libharfbuzz-subset` (optional, see dependencies) | `CreateFontPackage`, part of the OS |
 | Latin text | subset | subset |
-| CJK, shaped Arabic | subset | whole face — set `EmbeddedWholeTtf := True` |
-| Tagged output | subset | whole face |
-| `markdown_demo.pdf` | 46 KB | 1.4 MB |
+| CJK, shaped Arabic | subset | subset |
+| Tagged output | subset | subset |
+| `markdown_demo.pdf` | 46 KB | 230 KB |
 
-The whole face is also embedded without `libharfbuzz-subset`, for PDF/A-1
-(which would need a `/CIDSet`), for symbol fonts and for CFF-flavoured
-OpenType. Text extraction and copy/paste are unaffected either way.
+Both subsetters keep the original glyph numbering — `libharfbuzz-subset` by
+retaining glyph IDs, `CreateFontPackage` through a glyph keep list
+(`TTFCFP_FLAGS_GLYPHLIST`) — so Identity-H and the `/ToUnicode` round-trip
+survive, which is what makes CJK and shaped Arabic safe to subset.
+
+The whole face is embedded instead without `libharfbuzz-subset`, for PDF/A-1
+(which would need a `/CIDSet`), for symbol fonts on Linux/macOS and for
+CFF-flavoured OpenType. Text extraction and copy/paste are unaffected either
+way.
 
 ---
 
@@ -162,7 +168,7 @@ OpenType. Text extraction and copy/paste are unaffected either way.
 | [report_demo](examples/report_demo/) | `TGDIPages` + GUI | Preview, tagged tables with row groups and a footer row, running headers/footers, `--export` batch mode |
 | [markdown_demo](examples/markdown_demo/) | `TGDIPages` | H1-H6, TTableLayout, LineHeightFactor, ExportPdfTagged |
 | [mormot_demo](examples/mormot_demo/) | `TGDIPages` + ORM | SQLite database, service layer, TTableLayout, tagged export, `--export` batch mode |
-| [chinese_demo](examples/chinese_demo/) | `TPdfDocumentVcl` | CJK text, full TTF embedding |
+| [chinese_demo](examples/chinese_demo/) | `TPdfDocumentVcl` | CJK text, subset embedding |
 | [rtl_demo](examples/rtl_demo/) | `TPdfDocumentVcl` | Arabic RTL, HarfBuzz / Uniscribe shaping |
 
 Full guide: [docs/DEMOS.md](docs/DEMOS.md)
@@ -227,7 +233,8 @@ Fonts from `/Library/Fonts`, `/System/Library/Fonts`, `~/Library/Fonts`.
 
 ## Open items
 
-- **Font subsetting on Windows:** `CreateFontPackage` takes code points, so shaped Arabic and CJK need `EmbeddedWholeTtf := True` there; Linux/macOS subset those safely. Fix planned (roadmap R-15)
+- **Symbol fonts on Linux/macOS:** not subset — the whole face is embedded, because hb-subset is not given the glyph IDs behind the `(3,0)` cmap. Windows subsets them (roadmap R-15b)
+- **TTC collections:** only face index 0 is reachable (roadmap R-11)
 - **EMF/MetaFile:** Windows-only (`TPdfDocumentGdi`), not portable
 - **GDI+/Gradient fills:** available only via EMF on Windows
 - **Table pagination:** no row wrap within a cell

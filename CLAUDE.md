@@ -77,8 +77,10 @@ examples/
   report_demo/        Demo 2 — TGDIPages, GUI preview, tagged PDF
   markdown_demo/      Demo 3 — TGDIPages, semantics, tables, LineHeightFactor (console)
   mormot_demo/        Demo 4 — TGDIPages + mORMot ORM + TTableLayout, GUI, tagged PDF
-  chinese_demo/       Demo 5 — CJK text, whole-TTF embedding (console)
+  chinese_demo/       Demo 5 — CJK text, subset embedding (console)
   rtl_demo/           Demo 6 — Arabic RTL, HarfBuzz/Uniscribe shaping (console)
+  (each demo folder carries a short README.md; the source header of its .lpr
+   says the same thing in two sentences)
 tests/
   test_runner.lpr              runs every suite below (208 assertions, all green on Linux)
   test_pdf_crossplatform.pas   platform backend, text shaper, TTC extraction
@@ -129,7 +131,7 @@ For interface and backend details: `.claude/skills/platform-backends.md`
 | report_demo | `TGDIPages` | GUI | WYSIWYG preview, tagged PDF export, `TTableLayout`, `--export` batch mode |
 | markdown_demo | `TGDIPages` | Console | H1-H6, TTableLayout, LineHeightFactor, ExportPdfTagged |
 | mormot_demo | `TGDIPages` + ORM | GUI | SQLite via TRestClientDB, TTableLayout, tagged PDF, `--export` batch mode |
-| chinese_demo | `TPdfDocumentVcl` | Console | CJK text, whole-TTF embedding |
+| chinese_demo | `TPdfDocumentVcl` | Console | CJK text, subset embedding |
 | rtl_demo | `TPdfDocumentVcl` | Console | Arabic RTL, HarfBuzz/Uniscribe shaping |
 
 Detailed description with code examples: `docs/DEMOS.md`
@@ -166,9 +168,9 @@ Two modes — do not mix:
 
 **Tagged PDF selects the mode itself.** `Tagged := True` / `ExportPdfTagged := True`
 forces the TrueType mode, because PDF/UA does not allow non-embedded base-14
-fonts. On Linux/macOS the faces are subset by `libharfbuzz-subset` (glyph IDs
-retained, so `/ToUnicode` stays valid); on Windows, where `CreateFontPackage`
-would break the round-trip, the whole face is embedded. Both
+fonts. The faces are subset on every platform — `libharfbuzz-subset` on
+Linux/macOS, `CreateFontPackage` with a glyph keep list on Windows (R-15) —
+both keeping glyph IDs, so `/ToUnicode` stays valid. Both
 have to be set **before the first page is drawn** — the font flags decide which
 metrics the layout is measured with — and both raise `ESynException` if set later.
 
@@ -230,14 +232,14 @@ The two GUI demos export without their window, which is how they are checked:
 
 ## Open Items
 
-- **Font subsetting**: default (`EmbeddedWholeTtf = False`) on all platforms, two implementations. **Linux/macOS** (R-12): `IPdfFontSubsetter` from `mormot.pdf.hbsubset` (`libharfbuzz-subset`, retained glyph IDs) — safe for CJK, RTL and tagged output; 97–99.5% smaller PDFs. Without the library, and for PDF/A-1 (no `/CIDSet`), symbol fonts and CFF faces, the whole face is embedded. **Windows**: `CreateFontPackage`, safe for Latin only; set `EmbeddedWholeTtf := True` for RTL/Arabic and CJK — `Tagged` does that there. See `.claude/skills/fonts.md` §3, §9
+- **Font subsetting**: default (`EmbeddedWholeTtf = False`) on all platforms, two implementations, both keeping the original glyph IDs and therefore safe for CJK, shaped Arabic and tagged output. **Linux/macOS** (R-12): `IPdfFontSubsetter` from `mormot.pdf.hbsubset` (`libharfbuzz-subset`); 97–99.5% smaller PDFs. **Windows** (R-15): `CreateFontPackage` with a glyph keep list (`TTFCFP_FLAGS_GLYPHLIST`). The whole face is embedded instead for PDF/A-1 (no `/CIDSet`), for CFF faces, for symbol fonts on POSIX (R-15b) and when `libharfbuzz-subset` is missing. See `.claude/skills/fonts.md` §3, §9
 - **RTL / Arabic text**: HarfBuzz delivers correct ligatures on Linux/macOS; Windows uses Uniscribe — see `.claude/skills/fonts.md` §10
 - **Testing RTL**: Linux fonts (Noto Naskh Arabic) resolve shaped glyphs through the CMAP, so they never exercise the shaper's own advance path. Validate RTL work against a font without Arabic presentation forms — see `.claude/skills/fonts.md` §10
 - **TTC collections**: only face index 0 is reachable; `TPdfFontMap` has no face index, so the other faces of a `.ttc` cannot be selected by name
 - **EMF/MetaFile**: Windows-only (`TPdfDocumentGdi`), not portable
 - **GDI+/gradient fills**: Windows-only via EMF
 - **Table pagination**: no row break within a cell (roadmap R-10)
-- **Windows subsetting is planned to improve** (roadmap R-15): pass glyph IDs to `CreateFontPackage` via `TTFCFP_FLAGS_GLYPHLIST`, which would make CJK and shaped Arabic subsettable there too
+- **Symbol fonts on POSIX**: excluded from subsetting, the whole face is embedded (roadmap R-15b); neither side is covered by a demo or test
 
 Current verification status per platform, and the open items in detail:
 `docs/ROADMAP.md`

@@ -1,24 +1,17 @@
 /// Chinese (CJK) PDF Demo — mORMot2 PDF Cross-Platform
-// Demonstrates multi-line CJK text rendering with full TTF embedding.
-// CJK has no contextual shaping — UseUniscribe=false is sufficient.
+// Draws multi-line CJK text with TPdfDocumentVcl and embeds the face as a
+// subset on every platform.
 //
-// Root cause of CJK failure (now fixed): lfCharSet = ANSI_CHARSET in
-// TPdfCanvas.SetFont restricted GetFontData to the Latin CMAP only.
-// Fix applied: TPdfVclCanvas.SyncFont passes Font.Charset (DEFAULT_CHARSET),
-// which lets GDI expose the full CJK CMAP to TPdfTtf.Create.
-//
-// File size note: EmbeddedWholeTtf=true embeds the complete TTF binary.
-// Microsoft YaHei covers 28,000+ CJK ideographs (~17 MB); that is why a
-// CJK PDF is ~10x larger than a Latin or Arabic PDF using a smaller font.
-// Subsetting (EmbeddedWholeTtf=false) is reliable on Linux/macOS, where
-// hb-subset keeps every glyph drawn (ROADMAP R-12: 2.3 MB -> 11 KB here);
-// Windows' CreateFontPackage is not reliable for CJK, so the demo keeps the
-// whole face on every platform.
+// Worth noting:
+// - CJK has no contextual shaping, so UseUniscribe stays false
+// - subsetting is what keeps the file small: the whole face costs about 24 MB
+//   against roughly 39 KB for the glyphs actually drawn
+// - the CJK face is picked per platform (see CJK_FONT below)
 //
 // Font requirement:
 //   Windows : Microsoft YaHei — pre-installed on Vista+ (all locales)
 //   macOS   : Hiragino Sans GB — pre-installed
-//   Linux   : sudo apt install fonts-wqy-microhei
+//   Linux   : Droid Sans Fallback — sudo apt install fonts-droid-fallback
 program chinese_demo;
 
 {$ifdef FPC}
