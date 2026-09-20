@@ -66,7 +66,9 @@ Coordinates are in pixels (96 DPI), Y = 0 at the upper-left corner. Full method 
 uses mormot.ui.report;
 
 Report := TGDIPages.Create(nil);
-Report.ExportPdfEmbeddedTTF := False;
+// Tagged PDF/UA: set before drawing — it selects the fonts the layout is
+// measured with, and raises when a page already exists
+Report.ExportPdfTagged := True;
 Report.GetExportFonts(SansFont, SerifFont, MonoFont);
 Report.PaperSize        := psA4;
 Report.MarginLeft       := 1500;   // 15 mm
@@ -80,9 +82,7 @@ Report.DrawTableHeader(['Column 1', 'Column 2']);
 Report.DrawTableRow(['Value A', 'Value B']);      // automatic page break + header repetition
 Report.EndTable;
 Report.EndDoc;
-// Tagged PDF + stream export (file format is automatically raised to pdf17)
-Report.ExportPdfTagged := True;
-Report.ExportPdfStream(Stream);
+Report.ExportPdfStream(Stream);   // file format is raised to pdf17 automatically
 // or: Report.ShowPreviewForm
 Report.Free;
 ```
@@ -91,14 +91,77 @@ Units: 1/100 mm. Learning path with all features: [docs/DEMOS.md](docs/DEMOS.md)
 
 ---
 
+## Tagged PDF (PDF/UA)
+
+`ExportPdfTagged := True` (report engine) or `Tagged := True` (low-level API)
+writes the structure tree that screen readers and accessibility checkers need.
+Both tagged demos pass **PAC 2024**, with one accepted warning for a decorative
+figure in `pdf_demo`.
+
+What the engine emits:
+
+- structure elements `H1`–`H6`, `P`, `Span`, `Figure` with `/Alt`, lists
+  (`L` / `LI` / `Lbl` / `LBody`) and tables
+  (`Table` > `THead` | `TBody` | `TFoot` > `TR` > `TH` | `TD`)
+- a PDF bookmark per heading, the document title in the XMP metadata, plus
+  `/Lang` and `/DisplayDocTitle`
+- running headers and footers, repeated table header rows and decorative
+  graphics as artifacts, so they are not read out twice
+
+Two rules:
+
+- **Fonts are embedded.** PDF/UA does not allow the viewer's own base-14 faces,
+  so tagging turns `EmbeddedTTF` on and `StandardFontsReplace` off. Ask for the
+  font names *after* that, with `GetExportFonts` / `GetReportFonts`.
+- **Switch it on before the first page.** The font flags decide which metrics
+  the layout is measured with; setting them later raises an exception.
+
+```pascal
+// Report engine
+Report.ExportPdfTagged := True;    // first — it selects the fonts to measure with
+Report.UseOutlines     := True;    // one bookmark per heading
+Report.GetExportFonts(SansFont, SerifFont, MonoFont);
+Report.NewPage;
+Report.DrawHeading(1, 'Report title');
+// ... draw, then ExportPdfStream / ExportPDF
+
+// Low-level API
+Doc.Tagged          := True;
+Doc.DefaultLanguage := 'en';
+GetReportFonts(Doc.EmbeddedTTF, SansFont, SerifFont, MonoFont);
+Doc.AddPage;
+Doc.BeginStructContent(psrH1);
+Doc.VclCanvas.TextOut(40, 40, 'Title');
+Doc.EndStructContent;
+```
+
+## Font embedding and subsetting
+
+Embedded fonts hold only the glyphs a document uses, unless something prevents
+that. `EmbeddedWholeTtf := True` always embeds the complete face.
+
+| | Linux / macOS | Windows |
+|---|---|---|
+| Subsetter | `libharfbuzz-subset` (optional, see dependencies) | `CreateFontPackage`, part of the OS |
+| Latin text | subset | subset |
+| CJK, shaped Arabic | subset | whole face — set `EmbeddedWholeTtf := True` |
+| Tagged output | subset | whole face |
+| `markdown_demo.pdf` | 46 KB | 1.4 MB |
+
+The whole face is also embedded without `libharfbuzz-subset`, for PDF/A-1
+(which would need a `/CIDSet`), for symbol fonts and for CFF-flavoured
+OpenType. Text extraction and copy/paste are unaffected either way.
+
+---
+
 ## The 6 demos (learning path)
 
 | Demo | API | What it shows |
 |---|---|---|
-| [pdf_demo](examples/pdf_demo/) | `TPdfDocumentVcl` | Text, graphics, tagged PDF (H1/P/Figure/Table/TR/TH/TD) |
-| [report_demo](examples/report_demo/) | `TGDIPages` + GUI | Preview, tables, headers/footers |
+| [pdf_demo](examples/pdf_demo/) | `TPdfDocumentVcl` | Text, graphics, tagged PDF (H1/P/Figure, Table with THead/TBody/TR/TH/TD) |
+| [report_demo](examples/report_demo/) | `TGDIPages` + GUI | Preview, tagged tables with row groups and a footer row, running headers/footers, `--export` batch mode |
 | [markdown_demo](examples/markdown_demo/) | `TGDIPages` | H1-H6, TTableLayout, LineHeightFactor, ExportPdfTagged |
-| [mormot_demo](examples/mormot_demo/) | `TGDIPages` + ORM | SQLite database, service layer, TTableLayout |
+| [mormot_demo](examples/mormot_demo/) | `TGDIPages` + ORM | SQLite database, service layer, TTableLayout, tagged export, `--export` batch mode |
 | [chinese_demo](examples/chinese_demo/) | `TPdfDocumentVcl` | CJK text, full TTF embedding |
 | [rtl_demo](examples/rtl_demo/) | `TPdfDocumentVcl` | Arabic RTL, HarfBuzz / Uniscribe shaping |
 
@@ -122,7 +185,22 @@ lazbuild examples/pdf_demo/pdf_demo_crossplat.lpi -B
 lazbuild examples/markdown_demo/markdown_demo.lpi -B
 lazbuild examples/chinese_demo/chinese_demo.lpi -B
 lazbuild examples/rtl_demo/rtl_demo.lpi -B
+lazbuild examples/report_demo/mormot_report_demo.lpi -B
+lazbuild examples/mormot_demo/mormot_demo.lpi -B
+
+# Test suite
+lazbuild tests/test_runner.lpi -B && tests/bin/test_runner
 ```
+
+The two GUI demos also export without their window, which is what the
+automated checks use:
+
+```bash
+examples/report_demo/bin/<target>/report_demo_crossplat --export report.pdf
+```
+
+`TGDIPages` is an LCL control, so this still needs a display — on a headless
+machine run it under `xvfb-run`.
 
 ## Runtime dependencies
 
@@ -132,6 +210,7 @@ lazbuild examples/rtl_demo/rtl_demo.lpi -B
 ```bash
 sudo apt install libfreetype6                    # required — PDF font rendering
 sudo apt install libharfbuzz0b                   # optional — Arabic RTL shaping (rtl_demo)
+sudo apt install libharfbuzz-subset0             # optional — font subsetting (HarfBuzz 2.9+)
 sudo apt install fonts-noto-core                 # optional — Noto Naskh Arabic (rtl_demo)
 sudo apt install fonts-wqy-microhei              # optional — CJK font (chinese_demo)
 ```
@@ -140,7 +219,7 @@ Fonts are detected automatically from `/usr/share/fonts`, `/usr/local/share/font
 **macOS:**
 ```bash
 brew install freetype
-brew install harfbuzz          # optional — Arabic RTL shaping (rtl_demo)
+brew install harfbuzz          # optional — Arabic RTL shaping and font subsetting
 ```
 Fonts from `/Library/Fonts`, `/System/Library/Fonts`, `~/Library/Fonts`.
 
@@ -148,10 +227,12 @@ Fonts from `/Library/Fonts`, `/System/Library/Fonts`, `~/Library/Fonts`.
 
 ## Open items
 
-- **Font subsetting:** opt-in via `EmbeddedWholeTtf := False`; not reliable for CJK and RTL/Arabic — full TTF is recommended
+- **Font subsetting on Windows:** `CreateFontPackage` takes code points, so shaped Arabic and CJK need `EmbeddedWholeTtf := True` there; Linux/macOS subset those safely. Fix planned (roadmap R-15)
 - **EMF/MetaFile:** Windows-only (`TPdfDocumentGdi`), not portable
 - **GDI+/Gradient fills:** available only via EMF on Windows
 - **Table pagination:** no row wrap within a cell
+
+Details and the current verification status: [docs/ROADMAP.md](docs/ROADMAP.md)
 
 ---
 
