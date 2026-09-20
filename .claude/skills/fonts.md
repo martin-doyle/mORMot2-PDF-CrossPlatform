@@ -428,6 +428,14 @@ On Unix/macOS: `fCodePage = CP_UTF8 → fCharSet = DEFAULT_CHARSET (1)` — safe
 
 ### Arabic rendering
 
+**Setting the flag: never behind `{$ifdef USE_UNISCRIBE}`.** That symbol is
+defined in `mormot.ui.pdf.pas` and does not reach the units that use it, so a
+guarded `Doc.UseUniscribe := true` compiles to nothing and the shaper never
+runs — Section 2 of `rtl_demo` then produces output byte-identical to its
+no-shaper Section 1. This was ROADMAP R-16. The property is declared
+unconditionally for that reason and is inert where Uniscribe does not exist;
+`TestUseUniscribeIsPortable` fails to compile if it is ever gated again.
+
 `UseUniscribe=true` (Windows, complex scripts):
 - Uniscribe shapes Arabic contextual forms via `ScriptShape` → GSUB glyph IDs
 - `GetAndMarkGlyphAsUsed` registers shaped glyph IDs via reverse CMAP scan (Step 2)

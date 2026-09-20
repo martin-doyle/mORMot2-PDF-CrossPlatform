@@ -88,9 +88,10 @@ begin
   Doc := TPdfDocumentVcl.Create;
   try
     Doc.EmbeddedTTF      := true;
-    // full font stream: required on Windows, where CreateFontPackage drops the
-    // shaped GSUB glyphs; Linux/macOS could subset safely (ROADMAP R-12)
-    Doc.EmbeddedWholeTtf := true;
+    // subset: both subsetters are fed the shaped glyph IDs themselves, so the
+    // GSUB output survives — hb-subset on Linux/macOS (R-12), CreateFontPackage
+    // with a glyph keep list on Windows (R-15)
+    Doc.EmbeddedWholeTtf := false;
     Doc.Info.Title       := 'Arabic RTL Demo';
     Doc.DefaultPaperSize := mormot.ui.pdf.psA4;
     GetReportFonts(Doc.EmbeddedTTF, SansFont, SerifFont, MonoFont);
@@ -100,9 +101,7 @@ begin
     PdfC := (C as TPdfVclCanvas).PdfCanvas;
 
     // === Section 1: NoShaper path (isolated forms, no contextual shaping) ===
-    {$ifdef USE_UNISCRIBE}
     Doc.UseUniscribe     := false;
-    {$endif USE_UNISCRIBE}
     PdfC.RightToLeftText := false;
 
     // --- 1a: Single isolated letter — CMAP fix test ---
@@ -152,9 +151,11 @@ begin
 
     // === Section 2: Shaper path (contextual shaping + RTL bidi) ===
     // Windows: Uniscribe   Linux/macOS: HarfBuzz (if libharfbuzz loaded)
-    {$ifdef USE_UNISCRIBE}
+    // no conditional here: USE_UNISCRIBE lives inside mormot.ui.pdf and never
+    // reaches this unit, so an {$ifdef USE_UNISCRIBE} would compile the
+    // assignment away and the shaper would never run (ROADMAP R-16).
+    // The property exists on every platform and is inert where Uniscribe is.
     Doc.UseUniscribe := true;
-    {$endif USE_UNISCRIBE}
 
     C.Font.Name  := SansFont;
     C.Font.Size  := 13;

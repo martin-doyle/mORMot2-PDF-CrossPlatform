@@ -33,6 +33,7 @@ type
     procedure TestFontEnumeration;
     procedure TestFontMetrics;
     procedure TestTextShaperAdvances;
+    procedure TestUseUniscribeIsPortable;
     {$ifndef MSWINDOWS}
     procedure TestTtcFaceExtraction;
     {$endif MSWINDOWS}
@@ -130,6 +131,29 @@ begin
     PdfPlatformFont.DeleteFont(font);
   finally
     PdfPlatformDCProvider.DeleteDC(dc);
+  end;
+end;
+
+procedure TPdfCrossPlatTests.TestUseUniscribeIsPortable;
+var
+  doc: TPdfDocument;
+begin
+  // ROADMAP R-16: UseUniscribe used to be declared inside {$ifdef
+  // USE_UNISCRIBE}. That symbol is defined in mormot.ui.pdf and does not reach
+  // the units that use it, so callers wrote {$ifdef USE_UNISCRIBE} around the
+  // assignment, it compiled to nothing, and the shaper silently never ran -
+  // rtl_demo produced unshaped Arabic on Windows for exactly that reason.
+  // This test carries no conditional on purpose: if the property is ever made
+  // conditional again, this unit stops compiling, which is the point.
+  doc := TPdfDocument.Create;
+  try
+    Check(not doc.UseUniscribe, 'off by default, for faster content');
+    doc.UseUniscribe := true;
+    Check(doc.UseUniscribe, 'the setter must stick on every platform');
+    doc.UseUniscribe := false;
+    Check(not doc.UseUniscribe, 'and be clearable again');
+  finally
+    doc.Free;
   end;
 end;
 

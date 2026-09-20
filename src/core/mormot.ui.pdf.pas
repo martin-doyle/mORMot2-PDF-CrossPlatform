@@ -1440,9 +1440,7 @@ type
     fForceJPEGCompression: integer;
     fUseOutlines: boolean;
     fUseOptionalContent: boolean;
-    {$ifdef USE_UNISCRIBE}
     fUseUniscribe: boolean;
-    {$endif USE_UNISCRIBE}
     fForceNoBitmapReuse: boolean;
     fUseFontFallBack: boolean;
     fFontFallBackIndex: integer;
@@ -1765,11 +1763,16 @@ type
     // - default value is false (i.e. not embedded standard font)
     property StandardFontsReplace: boolean
       read fStandardFontsReplace write SetStandardFontsReplace;
-    {$ifdef USE_UNISCRIBE}
     /// set if the PDF engine must use the Windows Uniscribe API to
     // render Ordering and/or Shaping of the text
     // - useful for Hebrew, Arabic and some Asiatic languages handling
     // - set to false by default, for faster content generation
+    // - declared on every platform on purpose, so that portable code can set
+    // it without a conditional: USE_UNISCRIBE is defined inside this unit and
+    // does NOT reach the units that use it, so an {$ifdef USE_UNISCRIBE}
+    // around the assignment would silently compile to nothing (ROADMAP R-16)
+    // - it has no effect where Uniscribe does not exist; Linux and macOS shape
+    // through PdfTextShaper (HarfBuzz) whenever RightToLeftText is set
     // - you can set this property temporary to true, when using the Canvas
     // property, but this property must be set appropriately before the content
     // generation if you use any TPdfDocumentGdi.VclCanvas text output with
@@ -1780,7 +1783,6 @@ type
     // or blanks will be drawn for any missing glyph/character
     property UseUniscribe: boolean
       read fUseUniscribe write fUseUniscribe;
-    {$endif USE_UNISCRIBE}
     /// used to define if the PDF document will handle "font fallback" for
     // characters not existing in the current font: it will avoid rendering
     // block/square symbols instead of the correct characters (e.g. for Chinese text)
