@@ -146,11 +146,16 @@ Shows `TGDIPages` with a Lazarus GUI: WYSIWYG preview, print and PDF export via 
 - Position text with `DrawText`, `DrawTextCenter`, `DrawTextRight`
 - `DrawLine`, `DrawFilledRect` for graphics
 - `Columns2` for two-column text
-- Draw table rows manually (low-level variant)
-- Define headers and footers
-- Automatic page break
+- `DrawHeading(1..2, ...)` for headings with PDF bookmarks — PDF/UA expects one
+  bookmark per heading, and a plain `DrawTextCenter` would only be a paragraph
+- `TTableLayout` + `BeginTable`/`DrawTableHeader`/`DrawTableRow`, which builds a
+  real `Table > TR > TH|TD` structure and repeats the header row on page breaks
+- Running header and footer via `SetHeader`/`SetFooter`: the engine repeats them
+  on the continuation pages that table pagination creates, and marks them as
+  artifacts in the tagged export
+- Tagged PDF/UA export (`ExportPdfTagged`), verified with PAC 2024
 - GUI preview with `ShowPreviewForm`
-- PDF export with metadata
+- PDF export with metadata, from the GUI or in batch mode
 
 **Core pattern:**
 
@@ -170,23 +175,16 @@ begin
   Report.MarginLeft   := 1500;  // 15mm
   Report.MarginTop    := 2000;  // 20mm
 
+  Report.UseOutlines := True;   // PDF/UA: one bookmark per heading
+
+  // Running header/footer - before the first NewPage, repeated by the engine
+  Report.SetHeader('Sample Corp Inc.   |   Report 2026');
+  Report.SetFooter('Page {#} of {total}');
+
   Report.NewPage;
 
-  // Header (every page)
-  Report.SaveLayout;
-    Report.SetFont(SansFont, 10);
-    Report.FontStyle := [fsBold];
-    Report.DrawText(0, 0, 'Sample Corp Inc.');
-    Report.DrawTextRight(0, 0, 'Report 2026');
-    Report.DrawLine(0, 800, Report.PageWidth, 800, 2, clNavy);
-    Report.MoveToNextLine(1000);
-  Report.RestoreLayout;
-
-  // Content
-  Report.SetFont(SansFont, 18);
-  Report.FontStyle := [fsBold];
-  Report.DrawTextCenter(0, Report.CurrentY, 'Order List Q1/2026');
-  Report.MoveToNextLine(1200);
+  // Content: H1 writes a struct element and a bookmark
+  Report.DrawHeading(1, 'Order List Q1/2026');
 
   Report.EndDoc;
   Report.ShowPreviewForm;   // or: Report.ExportPdfStream(Stream)
@@ -205,7 +203,13 @@ examples/report_demo/
 ```bash
 "C:\lazarus\lazbuild.exe" examples/report_demo/mormot_report_demo.lpi -B
 examples/report_demo/bin/x86_64-win64/report_demo_crossplat.exe
+
+# batch export, without the GUI - for automated checks (pdffonts, rendering):
+examples/report_demo/bin/aarch64-linux/report_demo_crossplat --export report.pdf
 ```
+
+The batch mode still needs a display, because `TGDIPages` is an LCL control;
+on a headless machine run it under `xvfb-run`.
 
 **Next step:** Demo 3 introduces semantic document layout (H1-H6, inline formatting, `TTableLayout`).
 
@@ -318,6 +322,9 @@ Shows `TGDIPages` with `TTableLayout` (the same as Demo 3), but the data comes f
 - `TTableLayout` with 5 columns: row#, order number, customer, date, amount
 - Automatic page break and table header repetition via `DrawTableRow`
 - Empty-table handling (placeholder row)
+- `DrawHeading(1..2, ...)` for headings with PDF bookmarks
+- Tagged PDF/UA export (`ExportPdfTagged`), set before the first draw command
+- Batch export without the GUI: `mormot_demo --export <file.pdf>`
 
 **Architecture:**
 

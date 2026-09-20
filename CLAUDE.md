@@ -74,9 +74,9 @@ src/
     mormot.lib.uniscribe.pas    Uniscribe text shaping (Windows, optional)
 examples/
   pdf_demo/           Demo 1 — TPdfDocumentVcl, TCanvas API, Tagged PDF (console)
-  report_demo/        Demo 2 — TGDIPages, GUI preview
+  report_demo/        Demo 2 — TGDIPages, GUI preview, tagged PDF
   markdown_demo/      Demo 3 — TGDIPages, semantics, tables, LineHeightFactor (console)
-  mormot_demo/        Demo 4 — TGDIPages + mORMot ORM + TTableLayout, GUI
+  mormot_demo/        Demo 4 — TGDIPages + mORMot ORM + TTableLayout, GUI, tagged PDF
   chinese_demo/       Demo 5 — CJK text, whole-TTF embedding (console)
   rtl_demo/           Demo 6 — Arabic RTL, HarfBuzz/Uniscribe shaping (console)
 tests/
@@ -123,9 +123,9 @@ For interface and backend details: `.claude/skills/platform-backends.md`
 | Demo | API | Type | Highlights |
 |---|---|---|---|
 | pdf_demo | `TPdfDocumentVcl` | Console | TCanvas basics, Tagged PDF (H1/P/Figure/Table) |
-| report_demo | `TGDIPages` | GUI | WYSIWYG preview, PDF export |
+| report_demo | `TGDIPages` | GUI | WYSIWYG preview, tagged PDF export, `TTableLayout`, `--export` batch mode |
 | markdown_demo | `TGDIPages` | Console | H1-H6, TTableLayout, LineHeightFactor, ExportPdfTagged |
-| mormot_demo | `TGDIPages` + ORM | GUI | SQLite via TRestClientDB, TTableLayout |
+| mormot_demo | `TGDIPages` + ORM | GUI | SQLite via TRestClientDB, TTableLayout, tagged PDF, `--export` batch mode |
 | chinese_demo | `TPdfDocumentVcl` | Console | CJK text, whole-TTF embedding |
 | rtl_demo | `TPdfDocumentVcl` | Console | Arabic RTL, HarfBuzz/Uniscribe shaping |
 
