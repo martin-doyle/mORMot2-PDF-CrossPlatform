@@ -268,7 +268,12 @@ var PdfFontSubsetter: IPdfFontSubsetter;  // nil = no subsetter
   libraries leave it unregistered → whole-face embedding
 - Tuning globals: `HbSubsetFlags` (default `RETAIN_GIDS or NOTDEF_OUTLINE or
   NO_HINTING`; `RETAIN_GIDS` is always forced), `HbSubsetDropLayoutTables`
-  (default true: drop `GSUB/GPOS/GDEF`)
+  (default true: drop `GSUB/GPOS/GDEF`). Measured on the untagged
+  `markdown_demo` / CJK / Arabic outputs: defaults 44.7 / 10.8 / 15.1 KB,
+  keeping the layout tables 46.8 / 11.4 / 17.0 KB, keeping the hinting
+  83.8 / 14.7 / 29.1 KB — all three variants render pixel-identically, so the
+  smallest is the default. A PDF viewer never shapes text, and the glyph set
+  of the request already holds every shaped glyph that was drawn
 - Windows registers none and keeps `CreateFontPackage`
 - How the engine builds the request and shares the result: `fonts.md` §3
 

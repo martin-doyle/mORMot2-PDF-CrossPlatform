@@ -60,6 +60,7 @@ or Windows since, and two PDFs are waiting for PAC.
 | macOS build, `test_runner`, demos | R-12, R-14 | Geeza Pro is the only face that exercises the PUA glyph path (`fonts.md` §10); macOS also has the `.ttc` CJK face |
 | Windows build, `test_runner`, demos | R-12, R-14 | no subsetter is registered there, so output must equal the state before R-12: compare `pdffonts` and file sizes |
 | `mormot_demo` run | R-14, tagged export, `--export` batch mode, table colours | needs a sample database; the demo compiles but has never run |
+| Run on a machine **without** `libharfbuzz-subset` | R-12 fallback | `TestSubsetFallbackWithoutSubsetter` only simulates it by clearing `PdfFontSubsetter`; the loader path itself — missing library, or HarfBuzz older than 2.9 — has never run |
 
 ### R-15 — Windows: Subset by Glyph ID (`TTFCFP_FLAGS_GLYPHLIST`) — **Priority 2**
 
@@ -171,7 +172,7 @@ still constrains new work.
 | B-7…B-11 | PAC findings: `DisplayDocTitle`, XMP stream and title, `/Scope` on `TH`, tagged path objects | |
 | B-12…B-14 | Graphics state inside a path object, `Figure` without `/BBox`, headings without bookmarks | `DrawHeading` writes the bookmark; a centred text does not |
 | W-1 | "Possibly inappropriate use of figure" (`pdf_demo`) | accepted, documented in the demo |
-| R-12 | Font subsetting on POSIX via hb-subset — [R12_PLAN.md](R12_PLAN.md) | PDF/A-1, symbol fonts and CFF faces keep the whole face |
+| R-12 | Font subsetting on POSIX via hb-subset | PDF/A-1, symbol fonts and CFF faces keep the whole face; the input is the union of code points **and** glyph IDs |
 | R-14 | Table row groups `THead`/`TBody`/`TFoot`, `DrawTableFooter` | `TGDIPages` emits the groups itself; the low-level API leaves them to the caller |
 | — | `report_demo`, `mormot_demo`: tagged export, `TTableLayout`, `--export` batch mode | the batch mode still needs a display (`TGDIPages` is an LCL control) |
 | — | Crash fix: stale `fUsedWide[]` address in `GetWideCharWidth` | found on aarch64: the call that indexes the array also reallocates it |

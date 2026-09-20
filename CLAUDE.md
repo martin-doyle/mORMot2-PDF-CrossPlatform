@@ -89,8 +89,7 @@ reference/
 docs/
   DEMOS.md            Learning path: the 6 demos step by step
   API_REFERENCE.md    TCanvas methods, TReportFormat, TTableLayout
-  ROADMAP.md          Planned and completed work, with results
-  R12_PLAN.md         R-12 font subsetting on POSIX: plan and results
+  ROADMAP.md          Open work in detail, completed work as one line each
 .claude/skills/
   pdf-engine.md       TPdfDocument, TPdfDocumentVcl, TPdfCanvas — full API, enums, encryption, FPImage
   report-engine.md    TGDIPages — all methods, tables, command recording, global helpers
@@ -207,7 +206,7 @@ lazbuild examples/rtl_demo/rtl_demo.lpi -B
 
 ## Open Items
 
-- **Font subsetting**: default (`EmbeddedWholeTtf = False`) on all platforms, two implementations. **Linux/macOS** (R-12): `IPdfFontSubsetter` from `mormot.pdf.hbsubset` (`libharfbuzz-subset`, retained glyph IDs) — safe for CJK, RTL and tagged output; 97–99.5% smaller PDFs. Without the library, and for PDF/A-1 (no `/CIDSet`), symbol fonts and CFF faces, the whole face is embedded. **Windows**: `CreateFontPackage`, safe for Latin only; set `EmbeddedWholeTtf := True` for RTL/Arabic and CJK — `Tagged` does that there. See `.claude/skills/fonts.md` §3, §9 and `docs/R12_PLAN.md`
+- **Font subsetting**: default (`EmbeddedWholeTtf = False`) on all platforms, two implementations. **Linux/macOS** (R-12): `IPdfFontSubsetter` from `mormot.pdf.hbsubset` (`libharfbuzz-subset`, retained glyph IDs) — safe for CJK, RTL and tagged output; 97–99.5% smaller PDFs. Without the library, and for PDF/A-1 (no `/CIDSet`), symbol fonts and CFF faces, the whole face is embedded. **Windows**: `CreateFontPackage`, safe for Latin only; set `EmbeddedWholeTtf := True` for RTL/Arabic and CJK — `Tagged` does that there. See `.claude/skills/fonts.md` §3, §9
 - **RTL / Arabic text**: HarfBuzz delivers correct ligatures on Linux/macOS; Windows uses Uniscribe — see `.claude/skills/fonts.md` §10
 - **Testing RTL**: Linux fonts (Noto Naskh Arabic) resolve shaped glyphs through the CMAP, so they never exercise the shaper's own advance path. Validate RTL work against a font without Arabic presentation forms — see `.claude/skills/fonts.md` §10
 - **TTC collections**: only face index 0 is reachable; `TPdfFontMap` has no face index, so the other faces of a `.ttc` cannot be selected by name
