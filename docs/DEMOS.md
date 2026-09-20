@@ -148,8 +148,11 @@ Shows `TGDIPages` with a Lazarus GUI: WYSIWYG preview, print and PDF export via 
 - `Columns2` for two-column text
 - `DrawHeading(1..2, ...)` for headings with PDF bookmarks — PDF/UA expects one
   bookmark per heading, and a plain `DrawTextCenter` would only be a paragraph
-- `TTableLayout` + `BeginTable`/`DrawTableHeader`/`DrawTableRow`, which builds a
-  real `Table > TR > TH|TD` structure and repeats the header row on page breaks
+- `TTableLayout` + `BeginTable`/`DrawTableHeader`/`DrawTableRow`/`DrawTableFooter`,
+  which builds a real `Table > THead|TBody|TFoot > TR > TH|TD` structure and
+  repeats the header row on page breaks
+- the totals line is the table's footer row: set apart visually, and held in
+  `TFoot` instead of looking like one more data row
 - Running header and footer via `SetHeader`/`SetFooter`: the engine repeats them
   on the continuation pages that table pagination creates, and marks them as
   artifacts in the tagged export

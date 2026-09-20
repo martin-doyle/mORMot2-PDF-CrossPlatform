@@ -240,14 +240,33 @@ const TABLE_LAYOUT: TTableLayout = (
   BodyFontStyle:     [];
   BodyBkColor:       $FFFFFF;
   AlternateRowColor: $F5F5F5;  // 0 = no alternation
+  { leaving all four Footer* fields at '' / 0 / [] / 0 makes the row drawn by
+    DrawTableFooter look exactly like the header row }
+  FooterFontName:    '';
+  FooterFontSize:    0;
+  FooterFontStyle:   [];
+  FooterBkColor:     0;
 );
 
 Report.BeginTable(TABLE_LAYOUT);
 Report.DrawTableHeader(['Date', 'Description', 'Amount']);
 Report.DrawTableRow(['2026-01-15', 'Consulting', '1,500.00']);
 Report.DrawTableRow(['2026-01-16', 'License', '500.00']);
+Report.DrawTableFooter(['', 'Total', '2,000.00']);   // optional closing row
 Report.EndTable;
 ```
+
+**Row groups (R-14).** A tagged export wraps the rows in the three group
+elements of ISO 32000-1 14.8.4.3.4: `Table > THead | TBody | TFoot > TR >
+TH|TD`. The group follows from the row kind, so nothing has to be declared:
+`DrawTableHeader` opens `THead`, the first `DrawTableRow` switches to `TBody`,
+`DrawTableFooter` switches to `TFoot`, and `EndTable` closes both the open
+group and the table. A repeated header on a continuation page is an artifact
+and leaves the open `TBody` alone.
+
+**`DrawTableFooter(Cells)`** draws the closing row — a totals line, typically.
+Its cells are `TD`, not `TH`. It breaks the page like `DrawTableRow` does, so
+the footer is never orphaned on a page of its own.
 
 **Internal lifecycle of BeginTable(TTableLayout):**
 - `BeginTable(Layout)` calls `SaveLayout` internally — balanced by `EndTable` calling `RestoreLayout`. Set the document body font via `SetFont` **before** `BeginTable` so the save captures it.

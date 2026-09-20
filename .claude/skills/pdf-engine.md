@@ -412,6 +412,8 @@ Brush: `Color`, `Style` (bsSolid/bsClear)
 ## Tagged PDF (ISO 32000-1 §14 — Accessibility)
 
 Tagged PDF adds structure tags (H1–H6, P, …) that screen readers and PDF/UA validators require.
+Table roles: `psrTable`, `psrTR`, `psrTH`, `psrTD`, plus the row groups
+`psrTHead`, `psrTBody` and `psrTFoot` (ISO 32000-1 14.8.4.3.4, R-14).
 
 ### Enum
 

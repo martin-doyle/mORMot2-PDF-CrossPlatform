@@ -672,7 +672,21 @@ Entries accumulate in the page's ExtGState resource dict across multiple calls. 
 
 ---
 
-## Path 10 — Tagged PDF Struct Tree (R-4/R-5/R-6)
+## Path 10 — Tagged PDF Struct Tree (R-4/R-5/R-6/R-14)
+
+Table shape emitted by `TGDIPages.RenderPageToCanvas` (R-14):
+
+```
+dckBeginTable            BeginStructContent(psrTable); fRenderRowGroup := psrTable
+dckBeginTR  Color=1      OpenRowGroup(psrTHead) → BeginStructContent(psrTR) → cells TH
+            Color=0      OpenRowGroup(psrTBody) → TR → cells TD
+            Color=3      OpenRowGroup(psrTFoot) → TR → cells TD
+            Color=2      BeginArtifact: repeated header, no struct, group untouched
+dckEndTable              close the open group, then the Table
+```
+`OpenRowGroup` closes the previous group first, so groups never nest.
+`fRenderRowGroup` is a field: a table continues on the next page while its
+group stays open.
 
 ```
 TPdfDocument.SetTagged(true)
