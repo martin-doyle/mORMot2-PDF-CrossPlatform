@@ -48,6 +48,9 @@ type
   // - psrFigure=9 for image/graphic elements
   // - psrTable=10, psrTR=11, psrTH=12, psrTD=13 for table structure
   // - psrL=14, psrLI=15, psrLbl=16, psrLBody=17 for list structure
+  // - psrTHead=18, psrTBody=19, psrTFoot=20 group the rows of a table
+  // (ISO 32000-1 14.8.4.3.4): a totals row in a TFoot is told apart from the
+  // data rows by assistive technology (ROADMAP R-14)
   // - TPdfStructRole(Level) for heading Level 1..6 gives psrH1..psrH6
   // - new roles are appended at the end: TPdfStructRole(Level) and the
   // dckBeginTR logic in mormot.ui.report depend on the existing ordinals
@@ -55,7 +58,8 @@ type
                     psrP, psrSpan,
                     psrFigure,
                     psrTable, psrTR, psrTH, psrTD,
-                    psrL, psrLI, psrLbl, psrLBody);
+                    psrL, psrLI, psrLbl, psrLBody,
+                    psrTHead, psrTBody, psrTFoot);
 
   /// platform-neutral font handle
   // - on Windows: HGDIOBJ (GDI font handle)

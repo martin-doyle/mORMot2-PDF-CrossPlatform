@@ -8496,7 +8496,8 @@ const
     'Document', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'P', 'Span',
     'Figure',
     'Table', 'TR', 'TH', 'TD',
-    'L', 'LI', 'Lbl', 'LBody');
+    'L', 'LI', 'Lbl', 'LBody',
+    'THead', 'TBody', 'TFoot');
 
   /// roles which only group other elements: they own no marked-content region
   // - a container must not emit BDC/EMC, otherwise the MCID sequence would
@@ -8507,7 +8508,8 @@ const
     false, false,                             // P, Span
     false,                                    // Figure
     true, true, false, false,                 // Table, TR, TH, TD
-    true, true, false, false);                // L, LI, Lbl, LBody
+    true, true, false, false,                 // L, LI, Lbl, LBody
+    true, true, true);                        // THead, TBody, TFoot
 
 destructor TPdfStructElement.Destroy;
 begin

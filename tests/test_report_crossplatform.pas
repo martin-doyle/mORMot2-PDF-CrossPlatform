@@ -41,6 +41,8 @@ type
     procedure TestFontConstants;
     procedure TestPlatformIndependentMetrics;
     procedure TestTaggedRepeatedHeaderAndTitle;
+    procedure TestTableFooterRow;
+    procedure TestTableGroupsAcrossPages;
   end;
 
 implementation
@@ -490,6 +492,116 @@ begin
     CheckEqual('Hello', Report.Pages[2].Commands[1].Text, 'second wrapped line');
     Report.EndDoc;
   finally
+    Report.Free;
+  end;
+end;
+
+
+procedure TReportTests.TestTableFooterRow;
+var
+  Report: TGDIPages;
+  Layout: TTableLayout;
+  MS: TMemoryStream;
+  i, p, Footers, HeaderBk, FooterBk, LastTR: Integer;
+begin
+  Report := TGDIPages.Create(nil);
+  MS := TMemoryStream.Create;
+  try
+    Report.ExportPdfTagged := true;
+    Report.NewPage;
+    Report.DrawHeading(1, 'Order List');
+    FillChar(Layout, SizeOf(Layout), 0);
+    SetLength(Layout.ColumnWidths, 2);
+    SetLength(Layout.ColumnAligns, 2);
+    Layout.ColumnWidths[0] := 5000;
+    Layout.ColumnWidths[1] := 5000;
+    Layout.ColumnAligns[0] := tcaLeft;
+    Layout.ColumnAligns[1] := tcaRight;
+    Layout.HeaderBkColor := clSilver;
+    Layout.BodyBkColor := clWhite;
+    Report.BeginTable(Layout);
+    Report.DrawTableHeader(['Item', 'Value']);
+    for i := 1 to 3 do
+      Report.DrawTableRow(['Row ' + IntToStr(i), IntToStr(i * 10)]);
+    { the Footer* fields are unset, so the footer takes the header's look }
+    Report.DrawTableFooter(['Total', '60']);
+    Report.EndTable;
+    Report.EndDoc;
+    { exactly one footer row (dckBeginTR.Color = 3), and it is the last row }
+    Footers := 0;
+    LastTR := -1;
+    HeaderBk := 0;
+    FooterBk := -1;
+    for p := 0 to Report.PageCount - 1 do
+      for i := 0 to High(Report.Pages[p].Commands) do
+        with Report.Pages[p].Commands[i] do
+          if Kind = dckBeginTR then
+          begin
+            LastTR := Color;
+            if Color = 3 then
+              inc(Footers);
+          end
+          else if Kind = dckFillRect then
+          begin
+            if (LastTR = 1) and (HeaderBk = 0) then
+              HeaderBk := Color;
+            if (LastTR = 3) and (FooterBk < 0) then
+              FooterBk := Color;
+          end;
+    CheckEqual(1, Footers, 'one footer row');
+    CheckEqual(3, LastTR, 'the footer is the last row of the table');
+    CheckEqual(HeaderBk, FooterBk, 'an unset footer style follows the header');
+    { the THead/TBody/TFoot groups have to be opened and closed in order, or
+      the struct stack is unbalanced and the export raises }
+    Check(Report.ExportPdfStream(MS), 'tagged export with a footer succeeds');
+  finally
+    MS.Free;
+    Report.Free;
+  end;
+end;
+
+
+procedure TReportTests.TestTableGroupsAcrossPages;
+var
+  Report: TGDIPages;
+  Layout: TTableLayout;
+  MS: TMemoryStream;
+  i, p, Repeats: Integer;
+begin
+  Report := TGDIPages.Create(nil);
+  MS := TMemoryStream.Create;
+  try
+    Report.ExportPdfTagged := true;
+    Report.NewPage;
+    Report.DrawHeading(1, 'Long List');
+    FillChar(Layout, SizeOf(Layout), 0);
+    SetLength(Layout.ColumnWidths, 2);
+    SetLength(Layout.ColumnAligns, 2);
+    Layout.ColumnWidths[0] := 5000;
+    Layout.ColumnWidths[1] := 5000;
+    Layout.HeaderBkColor := clSilver;
+    Layout.BodyBkColor := clWhite;
+    Report.BeginTable(Layout);
+    Report.DrawTableHeader(['Item', 'Value']);
+    for i := 1 to 150 do
+      Report.DrawTableRow(['Row ' + IntToStr(i), IntToStr(i * 10)]);
+    Report.DrawTableFooter(['Total', '113250']);
+    Report.EndTable;
+    Report.EndDoc;
+    Check(Report.PageCount > 1, 'the table paginates');
+    Repeats := 0;
+    for p := 0 to Report.PageCount - 1 do
+      for i := 0 to High(Report.Pages[p].Commands) do
+        if (Report.Pages[p].Commands[i].Kind = dckBeginTR) and
+           (Report.Pages[p].Commands[i].Color = 2) then
+          inc(Repeats);
+    Check(Repeats > 0, 'the header row is repeated');
+    { A repeated header is an artifact and must not open a second THead, and
+      the TBody stays open across the page break: otherwise a struct element
+      is left open and the export raises instead of returning true (R-14) }
+    Check(Report.ExportPdfStream(MS), 'row groups stay balanced across pages');
+  finally
+    MS.Free;
     Report.Free;
   end;
 end;

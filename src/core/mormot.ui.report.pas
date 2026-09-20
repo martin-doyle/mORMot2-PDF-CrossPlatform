@@ -179,6 +179,12 @@ type
     BodyFontStyle: TFontStyles;               // font style for data rows
     BodyBkColor: TColor;                      // background color for data rows
     AlternateRowColor: TColor;                // alternating row color (0 = off, else applies to odd rows)
+    FooterFontName: string;                   // font name for the footer row
+    FooterFontSize: Integer;                  // font size for the footer row (points)
+    FooterFontStyle: TFontStyles;             // font style for the footer row
+    FooterBkColor: TColor;                    // background color for the footer row
+    // - leave all four Footer* fields at their default ('' / 0 / [] / 0) to
+    // make DrawTableFooter look exactly like the header row
   end;
 
   /// heading information tracked for PDF outline generation
@@ -243,6 +249,10 @@ type
     fTableRowIndex:    Integer;       // current row number (0-based, for alternating colors)
     fTableSavedHeaders: TStringDynArray; // headers saved for continuation-page repetition
     fTableHeaderRepeat: boolean; // true while DrawTableRow repeats the header row
+    // open THead/TBody/TFoot of the table being exported, psrTable = none:
+    // a field, not a local of RenderPageToCanvas, because a table continues
+    // across pages while its row group stays open (R-14)
+    fRenderRowGroup:   TPdfStructRole;
 
     { --- List state (Tagged PDF L/LI grouping) --- }
     fInList:           boolean;       // true between dckBeginList and dckEndList
@@ -354,6 +364,12 @@ type
     procedure RecordWrappedText(X: Integer; var Y: Integer;
                                 const S: string; MaxWidthMM: Integer);
     procedure EmitTextCmd(X, Y: Integer; const S: string; Align: Integer);
+    /// draw one fully styled table row - shared by DrawTableHeader/Footer
+    // - ARowKind travels in dckBeginTR.Color: 1 = header, 2 = its repetition
+    // on a continuation page (an artifact, B-11), 3 = footer
+    procedure DrawTableStyledRow(const Cells: array of string;
+      ARowKind: Integer; const AFontName: string; AFontSize: Integer;
+      AFontStyle: TFontStyles; ABkColor: TColor);
     procedure InitializeFormatRegistry;
     procedure AddHeadingsToOutline(PDF: TPdfDocumentVcl);
     function  NormalizeX(X: Integer): Integer;
@@ -533,6 +549,12 @@ type
     procedure DrawTableHeader(const Headers: array of string);
     /// draw table data row with alternating colors and automatic page breaks
     procedure DrawTableRow(const Values: array of string);
+    /// draw the closing row of a table, e.g. a totals line
+    // - styled by the Footer* fields of TTableLayout, which default to the
+    // header's look, so the footer is set apart from the data rows
+    // - in a tagged export the row lands in a TFoot group instead of TBody
+    // (ISO 32000-1 14.8.4.3.4), so assistive technology can tell it apart
+    procedure DrawTableFooter(const Cells: array of string);
     /// begin table with specified column widths (1/100 mm) and optional alignments
     // - legacy API; prefer BeginTable(const Layout: TTableLayout)
     procedure BeginTable(const ColWidths: array of Integer;
@@ -720,6 +742,7 @@ begin
   fExportPdfStandardFonts := True;
   fExportPdfFileFormat    := pdf13;
   fExportPdfTagged        := False;
+  fRenderRowGroup         := psrTable; // no row group open
   fExportPdfLanguage      := 'en';
 
   // Phase 5: Initialize format registry with default Markdown-style formats
@@ -1926,7 +1949,9 @@ begin
   AddCommand(BTCmd);
 end;
 
-procedure TGDIPages.DrawTableHeader(const Headers: array of string);
+procedure TGDIPages.DrawTableStyledRow(const Cells: array of string;
+  ARowKind: Integer; const AFontName: string; AFontSize: Integer;
+  AFontStyle: TFontStyles; ABkColor: TColor);
 var
   i: Integer;
   Cmd: TDrawCommand;
@@ -1935,30 +1960,17 @@ var
   AlignValue: Integer;
   CellHeight: Integer;
 begin
-  if not fTableInProgress then
-    raise Exception.Create('DrawTableHeader: BeginTable not called');
-
-  // Save header content for automatic repetition on continuation pages
-  SetLength(fTableSavedHeaders, Length(Headers));
-  for i := 0 to High(Headers) do
-    fTableSavedHeaders[i] := Headers[i];
-
   TRCmd := Default(TDrawCommand);
   TRCmd.Kind  := dckBeginTR;
-  { 1 = header row, 2 = its repetition on a continuation page, which the
-    tagged export marks as an artifact instead of tagging it again (B-11) }
-  if fTableHeaderRepeat then
-    TRCmd.Color := 2
-  else
-    TRCmd.Color := 1;
+  TRCmd.Color := ARowKind;
   AddCommand(TRCmd);
   SaveLayout;
   { Use table layout fonts if specified, otherwise use current document font }
-  if fTableLayout.HeaderFontName <> '' then
-    SetFont(fTableLayout.HeaderFontName, fTableLayout.HeaderFontSize)
+  if AFontName <> '' then
+    SetFont(AFontName, AFontSize)
   else
-    { Keep current font name/size, only change style to HeaderFontStyle }
-    fFontStyle := fTableLayout.HeaderFontStyle;
+    { Keep current font name/size, only change style }
+    fFontStyle := AFontStyle;
   fTextColor := clBlack;
 
   { Cell height includes padding above and small padding below text }
@@ -1966,7 +1978,7 @@ begin
 
   { Draw header cells }
   CellX := 0;
-  for i := 0 to Min(High(Headers), High(fTableColWidths)) do
+  for i := 0 to Min(High(Cells), High(fTableColWidths)) do
   begin
     CellWidth := fTableColWidths[i];
 
@@ -1977,7 +1989,7 @@ begin
     Cmd.Y := NormalizeY(fCurrentY);
     Cmd.X2 := NormalizeX(CellX + CellWidth);
     Cmd.Y2 := NormalizeY(fCurrentY + CellHeight);
-    Cmd.Color := fTableLayout.HeaderBkColor;
+    Cmd.Color := ABkColor;
     AddCommand(Cmd);
 
     { Draw header border }
@@ -2004,12 +2016,12 @@ begin
     { WICHTIG: Für Rechtsbündigkeit muss Textlänge SCHON in X-Position eingerechnet sein! }
     case AlignValue of
       1: { Right: X = right_edge - text_width, dann wird Text linksbündig gerendert }
-        EmitTextCmd(NormalizeX(CellX + CellWidth - CELL_PADDING - MeasureTextWidthMM(Headers[i])), NormalizeY(CellY), Headers[i], 0);
+        EmitTextCmd(NormalizeX(CellX + CellWidth - CELL_PADDING - MeasureTextWidthMM(Cells[i])), NormalizeY(CellY), Cells[i], 0);
       2: { Center: use middle of cell }
-        EmitTextCmd(NormalizeX(CellX + CellWidth div 2), NormalizeY(CellY), Headers[i], AlignValue);
+        EmitTextCmd(NormalizeX(CellX + CellWidth div 2), NormalizeY(CellY), Cells[i], AlignValue);
     else
       { Left: normal left-aligned }
-      EmitTextCmd(NormalizeX(CellX + CELL_PADDING), NormalizeY(CellY), Headers[i], AlignValue);
+      EmitTextCmd(NormalizeX(CellX + CELL_PADDING), NormalizeY(CellY), Cells[i], AlignValue);
     end;
 
     CellX := CellX + CellWidth;
@@ -2021,6 +2033,78 @@ begin
   TRCmd := Default(TDrawCommand);
   TRCmd.Kind := dckEndTR;
   AddCommand(TRCmd);
+end;
+
+
+procedure TGDIPages.DrawTableHeader(const Headers: array of string);
+var
+  i: Integer;
+  kind: Integer;
+begin
+  if not fTableInProgress then
+    raise Exception.Create('DrawTableHeader: BeginTable not called');
+
+  // Save header content for automatic repetition on continuation pages
+  SetLength(fTableSavedHeaders, Length(Headers));
+  for i := 0 to High(Headers) do
+    fTableSavedHeaders[i] := Headers[i];
+
+  { 1 = header row, 2 = its repetition on a continuation page, which the
+    tagged export marks as an artifact instead of tagging it again (B-11) }
+  if fTableHeaderRepeat then
+    kind := 2
+  else
+    kind := 1;
+  DrawTableStyledRow(Headers, kind, fTableLayout.HeaderFontName,
+    fTableLayout.HeaderFontSize, fTableLayout.HeaderFontStyle,
+    fTableLayout.HeaderBkColor);
+end;
+
+procedure TGDIPages.DrawTableFooter(const Cells: array of string);
+var
+  nam: string;
+  siz: Integer;
+  sty: TFontStyles;
+  bk: TColor;
+  RowHeight: Integer;
+begin
+  if not fTableInProgress then
+    raise Exception.Create('DrawTableFooter: BeginTable not called');
+
+  { an unset Footer* set means "look like the header row" }
+  nam := fTableLayout.FooterFontName;
+  siz := fTableLayout.FooterFontSize;
+  sty := fTableLayout.FooterFontStyle;
+  bk  := fTableLayout.FooterBkColor;
+  if (nam = '') and
+     (siz = 0) and
+     (sty = []) and
+     (bk = 0) then
+  begin
+    nam := fTableLayout.HeaderFontName;
+    siz := fTableLayout.HeaderFontSize;
+    sty := fTableLayout.HeaderFontStyle;
+    bk  := fTableLayout.HeaderBkColor;
+  end;
+
+  { never leave the footer alone on a page without its table: break first,
+    repeating the column headers like DrawTableRow does }
+  RowHeight := LineHeightMM + CELL_PADDING;
+  if fCurrentY + RowHeight > fPageHeight then
+  begin
+    ForceNewPage;
+    if Length(fTableSavedHeaders) > 0 then
+    begin
+      fTableHeaderRepeat := true;
+      try
+        DrawTableHeader(fTableSavedHeaders);
+      finally
+        fTableHeaderRepeat := false;
+      end;
+    end;
+  end;
+
+  DrawTableStyledRow(Cells, 3, nam, siz, sty, bk);
 end;
 
 procedure TGDIPages.DrawTableRow(const Values: array of string);
@@ -2328,6 +2412,28 @@ var
       result := psrP;
   end;
 
+  { the row group a dckBeginTR belongs to, by its Color: 1 header, 3 footer }
+  function RowGroupOf(ARowKind: Integer): TPdfStructRole;
+  begin
+    case ARowKind of
+      1: result := psrTHead;
+      3: result := psrTFoot;
+    else
+      result := psrTBody;
+    end;
+  end;
+
+  { make ARole the open row group, closing the previous one if it differs }
+  procedure OpenRowGroup(ARole: TPdfStructRole);
+  begin
+    if fRenderRowGroup = ARole then
+      exit;
+    if fRenderRowGroup <> psrTable then
+      fActivePdfDoc.EndStructContent;
+    fActivePdfDoc.BeginStructContent(ARole);
+    fRenderRowGroup := ARole;
+  end;
+
   { open the struct element matching the current dckDrawText command
     - an inline line opens it without a region: every run of the line adds
       its own, so plain runs and Span kids stay in reading order (B-3) }
@@ -2517,17 +2623,29 @@ begin
       end;
       dckBeginTable:
         if fActivePdfDoc <> nil then
+        begin
           fActivePdfDoc.BeginStructContent(psrTable);
+          fRenderRowGroup := psrTable; // = no row group open yet
+        end;
       dckEndTable:
       begin
         if fActivePdfDoc <> nil then
-          fActivePdfDoc.EndStructContent;
+        begin
+          if fRenderRowGroup <> psrTable then
+          begin
+            fActivePdfDoc.EndStructContent; // close THead/TBody/TFoot
+            fRenderRowGroup := psrTable;
+          end;
+          fActivePdfDoc.EndStructContent;   // close Table
+        end;
         InTableRow  := false;
         InHeaderRow := false;
       end;
       dckBeginTR:
       begin
-        InHeaderRow := Cmd.Color <> 0;
+        { only rows 1 and 2 hold header cells; 3 is the footer, whose cells
+          are TD like any data cell }
+        InHeaderRow := Cmd.Color in [1, 2];
         InTableRow  := true;
         if fActivePdfDoc <> nil then
           if Cmd.Color = 2 then
@@ -2540,7 +2658,14 @@ begin
             fActivePdfDoc := nil;
           end
           else
+          begin
+            { rows live in a THead/TBody/TFoot group (ISO 32000-1 14.8.4.3.4):
+              open the one this row belongs to, closing the previous group.
+              A repeated header (Color = 2) is an artifact and is handled
+              above, so it never interrupts the open TBody (R-14) }
+            OpenRowGroup(RowGroupOf(Cmd.Color));
             fActivePdfDoc.BeginStructContent(psrTR);
+          end;
       end;
       dckEndTR:
       begin
