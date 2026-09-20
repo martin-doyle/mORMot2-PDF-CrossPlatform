@@ -602,10 +602,10 @@ var
 begin
   tagged := BuildPdf(SansFont, 'Hello', false, true, false);
   whole := BuildPdf(SansFont, 'Hello', true, false, false);
-  if PdfFontSubsetter = nil then
+  if not PdfCanSubsetRetainingGids then
   begin
     Check(FirstFontFile(tagged) = FirstFontFile(whole),
-      'without a subsetter Tagged embeds the whole face (ROADMAP P-6)');
+      'without a retain-GID subsetter Tagged embeds the whole face (P-6)');
     exit;
   end;
   // PDF/UA allows subsets, and retained glyph IDs keep the round-trip
@@ -625,9 +625,9 @@ begin
   whole := BuildPdf(SansFont, 'Hello', true, false, false);
   Check(FirstFontFile(pdfa1) = FirstFontFile(whole),
     'PDF/A-1 embeds the whole face');
-  {$ifndef MSWINDOWS}
+  // R-15 gave the Windows CreateFontPackage path the same guard, so this
+  // now holds on every platform
   CheckEqual(FirstSubsetTag(pdfa1), '', 'no subset tag');
-  {$endif MSWINDOWS}
 end;
 
 end.

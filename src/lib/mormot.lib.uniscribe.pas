@@ -319,6 +319,21 @@ var
     pusSubsetKeepList: pointer; usSubsetKeepListCount: word;
     lpfnAllocate, lpfnReAllocate, lpfnFree, reserved: pointer): cardinal; cdecl;
 
+const
+  /// GetGlyphIndicesW() flag: unmapped code points come back as $FFFF
+  // - without it they silently resolve to glyph 0, which would add .notdef
+  // to a subset keep list instead of telling us the character is missing
+  GGI_MARK_NONEXISTING_GLYPHS = 1;
+
+/// map code points to their glyph indices in the font selected into aDC
+// - needed to express a CreateFontPackage() keep list as glyph indices
+// (TTFCFP_FLAGS_GLYPHLIST), since only the code points of the simple WinAnsi
+// font instance are known as characters - see ROADMAP R-15
+// - not declared by the FPC windows unit, hence imported here
+function GetGlyphIndicesW(DC: HDC; Str: PWideChar; Count: integer;
+  Glyphs: PWord; Flags: cardinal): cardinal; stdcall;
+  external 'gdi32.dll' name 'GetGlyphIndicesW';
+
 /// resolve CreateFontPackage() API call from FontSub.dll
 function HasCreateFontPackage: boolean;
 

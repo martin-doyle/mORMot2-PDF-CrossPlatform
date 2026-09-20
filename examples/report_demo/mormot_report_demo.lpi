@@ -72,7 +72,7 @@
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>
       <Libraries Value="obj/$(TargetCPU)-$(TargetOS)"/>
-      <OtherUnitFiles Value="../../src/core;../../src/platform/windows;../../src/platform/unix;../../../Github/martin/mORMot2/src/lib"/>
+      <OtherUnitFiles Value="../../src/core;../../src/platform/windows;../../src/platform/unix;../../src/lib"/>
     </SearchPaths>
     <Parsing>
       <SyntaxOptions>

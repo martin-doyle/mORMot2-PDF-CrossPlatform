@@ -73,7 +73,9 @@ begin
   Doc := TPdfDocumentVcl.Create;
   try
     Doc.EmbeddedTTF      := true;
-    Doc.EmbeddedWholeTtf := true;  // full font stream — CJK CMAP coverage guaranteed
+    Doc.EmbeddedWholeTtf := false; // subset: hb-subset on POSIX (R-12),
+                                   // CreateFontPackage on Windows (R-15) —
+                                   // both keep the glyph IDs CJK is drawn with
     {$ifdef MSWINDOWS}
     Doc.UseUniscribe     := false; // CJK needs no contextual shaping
     {$endif MSWINDOWS}
@@ -122,9 +124,11 @@ begin
   PdfSize := mormot.core.os.FileSize(OUTPUT_PDF);
   WriteLn('PDF saved : ', OUTPUT_PDF);
   WriteLn('File size : ', PdfSize div 1024, ' KB');
-  WriteLn('Font used : ', CJK_FONT, '  (EmbeddedWholeTtf=true)');
+  WriteLn('Font used : ', CJK_FONT, '  (EmbeddedWholeTtf=false)');
   WriteLn('');
-  WriteLn('Large file size is expected: YaHei/WQY covers 28000+ CJK glyphs (~17 MB TTF).');
-  WriteLn('Subsetting (EmbeddedWholeTtf=false) reduces this to a few KB on');
-  WriteLn('Linux/macOS (hb-subset); on Windows keep whole-TTF embedding for CJK.');
+  WriteLn('YaHei/WQY covers 28000+ CJK glyphs (~17 MB TTF), so only the glyphs');
+  WriteLn('actually drawn are embedded: hb-subset on Linux/macOS (ROADMAP R-12),');
+  WriteLn('CreateFontPackage with a glyph keep list on Windows (R-15). Both keep');
+  WriteLn('the glyph numbering, so Identity-H and /ToUnicode stay valid.');
+  WriteLn('Set EmbeddedWholeTtf := true to embed the complete face instead.');
 end.

@@ -4,7 +4,7 @@ The six demos show the framework from bottom to top: from the direct PDF API up 
 
 ```
 Demo 6 — rtl_demo         Arabic RTL text + HarfBuzz / Uniscribe shaping
-Demo 5 — chinese_demo     CJK (Chinese) text with whole-TTF embedding
+Demo 5 — chinese_demo     CJK (Chinese) text with font subsetting
 Demo 4 — mormot_demo      ORM + database
 Demo 3 — markdown_demo    Semantic document layout
 Demo 2 — report_demo      GUI preview + interactive export
@@ -409,16 +409,16 @@ examples/mormot_demo/bin/x86_64-win64/mormot_demo.exe
 
 ## Demo 5 — chinese_demo
 
-**Specialised: CJK (Chinese) text with whole-TTF embedding**
+**Specialised: CJK (Chinese) text with font subsetting**
 
-Shows how to render Chinese (CJK) text with `TPdfDocumentVcl`. CJK ideographs require the full CMAP of a CJK-capable font, full TTF embedding and no contextual shaping.
+Shows how to render Chinese (CJK) text with `TPdfDocumentVcl`. CJK ideographs require the full CMAP of a CJK-capable font and no contextual shaping.
 
 **What you learn:**
 - CJK has no contextual shaping — `UseUniscribe := False` is sufficient on Windows
-- `EmbeddedWholeTtf := True` embeds the complete TTF binary (required for full CJK CMAP coverage)
+- `EmbeddedWholeTtf := False` embeds only the glyphs actually drawn, on every platform: hb-subset on Linux/macOS (ROADMAP R-12), `CreateFontPackage` driven by a glyph keep list on Windows (R-15). Both keep the glyph numbering, so Identity-H and `/ToUnicode` stay valid
 - Root cause of the historic CJK failure: `lfCharSet = ANSI_CHARSET` restricted CMAP to Latin only; the fix passes `Font.Charset` (DEFAULT_CHARSET) via `TPdfVclCanvas.SyncFont`
-- Why CJK PDFs are large: Microsoft YaHei / WQY covers 28,000+ ideographs (~17 MB TTF); the whole font is embedded
-- Font subsetting (`EmbeddedWholeTtf := False`) is safe for CJK on Linux/macOS (hb-subset, ROADMAP R-12: 2.3 MB → 11 KB); on Windows `CreateFontPackage` is safe only for Latin, so the demo keeps the whole face
+- What subsetting saves here: Microsoft YaHei / WQY covers 28,000+ ideographs (~17 MB TTF), so embedding the whole face costs about 24 MB where the subset costs 39 KB
+- `EmbeddedWholeTtf := True` still embeds the complete TTF binary, should a consumer need the full CMAP
 - Platform-specific CJK fonts: Microsoft YaHei (Windows) / Hiragino Sans GB (macOS) / WQY MicroHei (Linux)
 
 **Font requirements:**
@@ -440,7 +440,7 @@ var Doc: TPdfDocumentVcl; C: TCanvas;
 begin
   Doc := TPdfDocumentVcl.Create;
   Doc.EmbeddedTTF      := True;
-  Doc.EmbeddedWholeTtf := True;   // full font stream — CJK CMAP coverage guaranteed
+  Doc.EmbeddedWholeTtf := False;  // subset: only the glyphs actually drawn
   {$ifdef MSWINDOWS}
   Doc.UseUniscribe     := False;  // CJK needs no contextual shaping
   {$endif}
@@ -477,10 +477,10 @@ end;
 ```bash
 lazbuild examples/chinese_demo/chinese_demo.lpi -B
 examples/chinese_demo/bin/x86_64-linux/chinese_demo
-# -> produces output_chinese.pdf (~10–17 MB due to whole-TTF embedding)
+# -> produces output_chinese.pdf (~40 KB: only the glyphs drawn are embedded)
 ```
 
-**Note:** The large file size is expected. YaHei / WQY covers 28,000+ CJK glyphs, and the whole font is embedded. On Linux/macOS `EmbeddedWholeTtf := False` reduces the output to a few KB (hb-subset); the demo keeps the whole face because Windows' `CreateFontPackage` is not reliable for CJK.
+**Note:** With `EmbeddedWholeTtf := True` the same document comes out at roughly 24 MB, because YaHei / WQY covers 28,000+ CJK glyphs. Subsetting is safe for CJK on every platform now that the Windows keep list is a glyph list (R-15) rather than a list of code points — measured on Windows: 23,924,686 B → 39,279 B with byte-identical `pdftotext` output.
 
 ---
 

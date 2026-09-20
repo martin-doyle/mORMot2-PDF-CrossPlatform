@@ -305,10 +305,12 @@ begin
       PDF.Tagged := true;
       Check(PDF.EmbeddedTTF, 'Tagged turns embedding on');
       Check(not PDF.StandardFontsReplace, 'Tagged drops the base-14 Type1 mode');
-      // a retain-GID subset keeps the round-trip (R-12): only without a
-      // PdfFontSubsetter - i.e. on Windows - does Tagged force the whole face
-      Check(PDF.EmbeddedWholeTtf = (PdfFontSubsetter = nil),
-        'Tagged subsets only through PdfFontSubsetter');
+      // a retain-GID subset keeps the round-trip, so Tagged may subset:
+      // through PdfFontSubsetter on POSIX (R-12), through CreateFontPackage
+      // with a glyph keep list on Windows (R-15) - only a platform offering
+      // neither falls back to the whole face
+      Check(PDF.EmbeddedWholeTtf = not PdfCanSubsetRetainingGids,
+        'Tagged embeds the whole face only without a retain-GID subsetter');
       PDF.AddPage;
       PDF.BeginStructContent(psrP);
       PDF.VclCanvas.Font.Size := 12;

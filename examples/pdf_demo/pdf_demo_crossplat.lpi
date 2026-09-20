@@ -25,7 +25,7 @@
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
-            <OtherUnitFiles Value="..\src\core;..\..\Github\martin\mORMot2\src\lib;..\src\platform\windows"/>
+            <OtherUnitFiles Value="..\..\src\core;..\..\src\platform\unix;..\..\src\platform\windows;..\..\src\lib"/>
             <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
           <Parsing>
@@ -60,7 +60,7 @@
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
-            <OtherUnitFiles Value="..\..\src\core;..\..\src\platform\windows"/>
+            <OtherUnitFiles Value="..\..\src\core;..\..\src\platform\unix;..\..\src\platform\windows;..\..\src\lib"/>
             <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
           <CodeGeneration>
@@ -110,7 +110,7 @@
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>
-      <OtherUnitFiles Value="..\..\src\core;..\..\src\platform\unix;..\..\src\platform\windows"/>
+      <OtherUnitFiles Value="..\..\src\core;..\..\src\platform\unix;..\..\src\platform\windows;..\..\src\lib"/>
       <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
     </SearchPaths>
     <CodeGeneration>
