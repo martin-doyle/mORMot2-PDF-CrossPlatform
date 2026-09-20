@@ -62,6 +62,37 @@ or Windows since, and two PDFs are waiting for PAC.
 | `mormot_demo` run | R-14, tagged export, `--export` batch mode, table colours | needs a sample database; the demo compiles but has never run |
 | Run on a machine **without** `libharfbuzz-subset` | R-12 fallback | `TestSubsetFallbackWithoutSubsetter` only simulates it by clearing `PdfFontSubsetter`; the loader path itself — missing library, or HarfBuzz older than 2.9 — has never run |
 
+### Order of Work (agreed 2026-09-20)
+
+1. **Windows first.** It is the only platform where the code may not even
+   compile: the R-12 hook casts `HDC` to `TPdfPlatformDC` and declares `sub`
+   inside the `{$ifdef USE_UNISCRIBE}` branch, neither of which has ever been
+   through a Windows compiler. Everything else depends on a working build —
+   PAC runs only there, and R-15 is Windows-only work.
+2. **macOS in two passes.** First **without** HarfBuzz installed: that covers
+   the loader-absent row of the table above at no extra cost. Then
+   `brew install harfbuzz` and repeat, with Geeza Pro for the PUA glyph path
+   and the `.ttc` CJK face.
+3. **Compare the platforms — but not pixel by pixel.** The demos resolve
+   different families (Calibri/Cambria/Consolas, Liberation, Trebuchet
+   MS/Georgia/Andale Mono), so different advance widths, line breaks and page
+   counts are correct behaviour, not a defect. B-5 made the measurement
+   platform-independent *for one face*, not the faces themselves. What must
+   match: `pdftotext` output, the structure tree (roles and their counts),
+   `pdffonts` (embedded, subset, `uni`), page count and the PAC result. A
+   pixel comparison stays valid **within** one platform, before against after.
+   A true cross-platform render diff would need a demo that forces one face on
+   all three systems — worth building only if this comparison is to be
+   automated.
+4. **`veraPDF --flavour ua1`** has never run. It checks PDF/UA mechanically and
+   is scriptable, unlike PAC's GUI — the objective half of step 3.
+5. **R-15** last, then PAC again: tagged output would start subsetting on
+   Windows, which changes the embedded fonts.
+
+`mormot_demo` joins whichever pass is current when its sample database is
+ready. Once all three platforms are green, that is the point for a first
+version tag — the project has none.
+
 ### R-15 — Windows: Subset by Glyph ID (`TTFCFP_FLAGS_GLYPHLIST`) — **Priority 2**
 
 **Effort:** 0.5–1 day, on a Windows machine | **File:**
