@@ -5,12 +5,13 @@ unit uMainForm;
 { ============================================================
   mORMot2 - TGDIPages Report Demo (Lazarus / FPC)
   Demonstrates typical usage of mormot.ui.report.pas:
-    - Page headers and footers
+    - Running page headers and footers (SetHeader/SetFooter)
     - Multi-column text
-    - Tables with ruled lines
+    - Tables via TTableLayout (auto page break, repeated header row)
     - Graphical elements (lines, rectangles)
-    - PDF export
+    - Tagged PDF export (PDF/UA): headings, bookmarks, table structure
     - Print preview (Windows: native; Linux/macOS: PDF viewer)
+    - Batch export without the GUI:  mormot_report_demo --export out.pdf
   ============================================================ }
 
 interface
@@ -63,20 +64,25 @@ type
       The caller is responsible for freeing it. }
     function BuildReport: TGDIPages;
 
-    { Draws the page header on every page }
-    procedure DrawPageHeader(Report: TGDIPages);
-
-    { Draws the page footer on every page }
-    procedure DrawPageFooter(Report: TGDIPages);
+    { Defines the H1/H2 formats used by DrawHeading }
+    procedure DefineHeadingFormats(Report: TGDIPages);
 
     { Draws the main content area (table, paragraphs, etc.) }
     procedure DrawReportBody(Report: TGDIPages);
 
-    { Helper: draws a sample data table }
+    { Helper: draws the sample data table }
     procedure DrawSampleTable(Report: TGDIPages);
 
     procedure Log(const Msg: string);
+  public
+    { Builds the report and writes it to AFileName - used by the GUI action
+      and by the --export batch mode }
+    procedure ExportToFile(const AFileName: string);
   end;
+
+{ True when the command line asks for a batch export (--export <file>);
+  the caller then runs ExportToFile instead of Application.Run }
+function BatchExportFile(out AFileName: string): boolean;
 
 var
   MainForm: TMainForm;
@@ -89,6 +95,7 @@ uses
   Printers,   // for TPrinter
   mormot.core.base,
   mormot.core.text,
+  mormot.core.datetime,
   mormot.core.unicode;
 
 { ============================================================
@@ -96,6 +103,7 @@ uses
   ============================================================ }
 const
   DEMO_ROWS = 20;
+
 
 type
   TDemoRow = record
@@ -110,6 +118,34 @@ var
   SansFont: String;
   SerifFont: String;
   MonoFont: String;
+
+{ Table layout for the order list. Built at runtime instead of as a typed
+  constant: the [1000, ...] syntax for the dynamic array fields needs
+  {$mode delphi}, and this unit is compiled in objfpc mode.
+  Empty font names and size 0 inherit the document font set before BeginTable. }
+function OrderTableLayout: TTableLayout;
+begin
+  // widths in 1/100 mm; 18000 = A4 portrait (21000) minus the 2 x 15 mm margins
+  SetLength(Result.ColumnWidths, 4);
+  Result.ColumnWidths[0] := 1200;   // #
+  Result.ColumnWidths[1] := 10300;  // Article
+  Result.ColumnWidths[2] := 2500;   // Qty
+  Result.ColumnWidths[3] := 4000;   // Price
+  SetLength(Result.ColumnAligns, 4);
+  Result.ColumnAligns[0] := tcaRight;
+  Result.ColumnAligns[1] := tcaLeft;
+  Result.ColumnAligns[2] := tcaRight;
+  Result.ColumnAligns[3] := tcaRight;
+  Result.HeaderFontName    := '';
+  Result.HeaderFontSize    := 0;
+  Result.HeaderFontStyle   := [fsBold];
+  Result.HeaderBkColor     := $00E0E0E0;
+  Result.BodyFontName      := '';
+  Result.BodyFontSize      := 0;
+  Result.BodyFontStyle     := [];
+  Result.BodyBkColor       := clWhite;
+  Result.AlternateRowColor := $00F0F0F0;
+end;
 
 function GetDemoData: TDemoRowArray;
 var
@@ -150,8 +186,17 @@ function TMainForm.BuildReport: TGDIPages;
 begin
   Result := TGDIPages.Create(nil);
   try
-    Result.ExportPdfEmbeddedTTF := False;
+    { Tagged export (PDF/UA): this also selects the font mode - embedded
+      TrueType instead of the viewer's base-14 faces - so it has to be set
+      BEFORE anything is drawn, because the export font flags decide which
+      metrics the layout is measured with. On Linux/macOS the faces are
+      embedded as subsets (ROADMAP R-12), on Windows as whole faces. }
+    Result.ExportPdfTagged   := True;
+    Result.ExportPdfLanguage := 'en';
+    Result.UseOutlines       := True;  // PDF/UA: one bookmark per heading
+    // asked afterwards, so the names match the mode just selected
     Result.GetExportFonts(SansFont, SerifFont, MonoFont);
+    DefineHeadingFormats(Result);
     // --- Page format ---
     Result.PaperSize  := psA4;
     Result.Orientation := poPortrait;
@@ -167,16 +212,16 @@ begin
     Result.Author  := 'mORMot2 Demo';
     Result.Subject := edtCompany.Text;
 
+    { Running header/footer: the engine repeats them on every page, including
+      the continuation pages that table pagination creates, and marks them as
+      artifacts in the tagged export. Must be set before the first NewPage. }
+    if chkHeader.Checked then
+      Result.SetHeader(edtCompany.Text + '   |   ' + edtTitle.Text);
+    if chkFooter.Checked then
+      Result.SetFooter('Created: ' + DateToStr(Now) + '        Page {#} of {total}');
+
     // --- Begin first page ---
     Result.NewPage;
-
-    // Set up header (printed on every page)
-    if chkHeader.Checked then
-      DrawPageHeader(Result);
-
-    // Set up footer (printed on every page)
-    if chkFooter.Checked then
-      DrawPageFooter(Result);
 
     // Report content
     DrawReportBody(Result);
@@ -191,60 +236,23 @@ begin
 end;
 
 { ============================================================
-  DrawPageHeader
+  DefineHeadingFormats – appearance of DrawHeading(1..2)
   ============================================================ }
-procedure TMainForm.DrawPageHeader(Report: TGDIPages);
+procedure TMainForm.DefineHeadingFormats(Report: TGDIPages);
+var
+  Fmt: TReportFormat;
 begin
-  // SaveLayout / RestoreLayout preserves the current state
-  Report.SaveLayout;
-  try
-    // Font for header area
-    Report.SetFont(SansFont, 10);
-    Report.FontStyle := [fsBold];
-    Report.TextColor := clNavy;
-
-    // Left: company name
-    Report.DrawText(0, 0, edtCompany.Text);
-
-    // Right: title right-aligned
-    Report.DrawTextRight(0, 0, edtTitle.Text);
-
-    // Separator line below the header
-    Report.DrawLine(0, 800, Report.PageWidth, 800, 2, clNavy);
-
-    // Advance past the header (at least 10mm)
-    Report.MoveToNextLine(1000);
-  finally
-    Report.RestoreLayout;
-  end;
-end;
-
-{ ============================================================
-  DrawPageFooter
-  ============================================================ }
-procedure TMainForm.DrawPageFooter(Report: TGDIPages);
-begin
-  Report.SaveLayout;
-  try
-    Report.SetFont(SansFont, 8);
-    Report.FontStyle := [];
-    Report.TextColor := clGray;
-
-    // Separator line above the footer
-    Report.DrawLine(0, Report.PageHeight - 300,
-                    Report.PageWidth, Report.PageHeight - 300, 1, clGray);
-
-    // Left: creation date — use mORMot NowToString for ISO date/time
-    Report.DrawTextAt(0, Report.PageHeight - 250,
-                      'Created: ' + DateToStr(Now));
-
-    // Right: page number
-    Report.DrawTextRight(0, Report.PageHeight - 250,
-                         'Page ' + IntToStr(Report.CurrentPageIndex) +
-                         ' of {total}');
-  finally
-    Report.RestoreLayout;
-  end;
+  Fmt.FontName    := SansFont;
+  Fmt.FontStyle   := [fsBold];
+  Fmt.Color       := clNavy;
+  Fmt.FontSize    := 18;
+  Fmt.SpaceBefore := 0;
+  Fmt.SpaceAfter  := 800;
+  Report.DefineFormat('H1', Fmt);
+  Fmt.FontSize    := 13;
+  Fmt.SpaceBefore := 600;
+  Fmt.SpaceAfter  := 400;
+  Report.DefineFormat('H2', Fmt);
 end;
 
 { ============================================================
@@ -253,22 +261,20 @@ end;
 procedure TMainForm.DrawReportBody(Report: TGDIPages);
 begin
   // ---- Cover area ----
-  // IMPORTANT: all Y positions are RELATIVE to Report.CurrentY (set by DrawPageHeader)
+  // IMPORTANT: all Y positions are RELATIVE to Report.CurrentY
   // Do not use absolute positions like Y=500!
   Report.SaveLayout;
 
-  // Large title — RELATIVE to CurrentY
-  Report.SetFont(SansFont, 18);
-  Report.FontStyle  := [fsBold];
-  Report.TextColor  := clNavy;
-  Report.DrawTextCenter(0, Report.CurrentY, edtTitle.Text);
-  Report.MoveToNextLine(1200);
+  { DrawHeading writes an H1 structure element and a PDF bookmark - PAC 2024
+    reports a heading without a bookmark as a quality issue (ROADMAP B-14).
+    A plain DrawTextCenter would only be a paragraph in the structure tree. }
+  Report.DrawHeading(1, edtTitle.Text);
 
-  // Subtitle
+  // Subtitle, left-aligned like the H1 above it
   Report.SetFont(SansFont, 12);
   Report.FontStyle := [];
   Report.TextColor := clBlack;
-  Report.DrawTextCenter(0, Report.CurrentY,
+  Report.DrawText(0, Report.CurrentY,
     edtCompany.Text + '  |  ' + DateToStr(Now));
   Report.MoveToNextLine(800);
 
@@ -305,6 +311,7 @@ begin
   Report.RestoreLayout;
 
   // ---- Data table ----
+  Report.DrawHeading(2, 'Order Items');
   DrawSampleTable(Report);
 
   // ---- Summary ----
@@ -321,120 +328,60 @@ begin
 end;
 
 { ============================================================
-  DrawSampleTable – table with borders and alternating rows
+  DrawSampleTable – table via TTableLayout
+
+  BeginTable/DrawTableHeader/DrawTableRow build a real Table > TR > TH|TD
+  structure in the tagged PDF, break pages on their own and repeat the header
+  row. Drawing the cells by hand (DrawTextAt per column) would look the same
+  but leave a flat list of paragraphs for a screen reader.
   ============================================================ }
 procedure TMainForm.DrawSampleTable(Report: TGDIPages);
-const
-  COL_NR      = 1000;
-  COL_ARTICLE = 7000;
-  COL_QTY     = 2000;
-  COL_PRICE   = 2000;
-  ROW_HEIGHT  = 650;
 var
-  Data: array of TDemoRow;
-  i:    Integer;
-  x, y: Integer;
-  Total: Currency;
-  RowColor: TColor;
+  Data:   TDemoRowArray;
+  Layout: TTableLayout;
+  i:      Integer;
+  Total:  Currency;
 begin
   Data := GetDemoData;
   Total := 0;
 
-  // ---------- Table header ----------
-  Report.SaveLayout;
-  Report.SetFont(SansFont, 10);
-  Report.FontStyle  := [fsBold];
-  Report.TextColor  := clWhite;
-
-  y := Report.CurrentY;
-  x := 0;
-
-  // Background rectangle for header
+  Layout := OrderTableLayout;
   if chkColors.Checked then
-    Report.DrawFilledRect(x, y, Report.PageWidth, y + ROW_HEIGHT, $00AA5500)
-  else
-    Report.DrawFilledRect(x, y, Report.PageWidth, y + ROW_HEIGHT, clNavy);
+    Layout.HeaderBkColor := $00D8C0A8;  // light blue-grey (BGR)
+  if not chkGrid.Checked then
+    Layout.AlternateRowColor := 0;      // 0 = no alternating row colour
 
-  // Column titles
-  Report.DrawTextAt(x + 50,           y + 80, '#');
-  Report.DrawTextAt(x + COL_NR + 50,  y + 80, 'Article');
-  Report.DrawTextRight(x + COL_NR + COL_ARTICLE,           y + 80, 'Qty');
-  Report.DrawTextRight(x + COL_NR + COL_ARTICLE + COL_QTY, y + 80, 'Price');
+  // the table inherits this font: set it BEFORE BeginTable, which saves the layout
+  Report.SetFont(SansFont, 9);
+  Report.FontStyle := [];
+  Report.TextColor := clBlack;
 
-  Report.MoveToNextLine(ROW_HEIGHT);
-  Report.RestoreLayout;
-
-  // ---------- Data rows ----------
+  Report.BeginTable(Layout);
+  Report.DrawTableHeader(['#', 'Article', 'Qty', 'Price']);
   for i := 0 to High(Data) do
   begin
-    // Check for page break
-    if Report.CurrentY + ROW_HEIGHT > Report.PageHeight - 2500 then
-    begin
-      Report.NewPage;
-      if chkHeader.Checked then DrawPageHeader(Report);
-      if chkFooter.Checked then DrawPageFooter(Report);
-    end;
-
-    y := Report.CurrentY;
-    x := 0;
-
-    // Alternating row colour
-    if chkGrid.Checked then
-    begin
-      if Odd(i) then
-        RowColor := $00F0F0FF
-      else
-        RowColor := clWhite;
-      Report.DrawFilledRect(x, y, Report.PageWidth, y + ROW_HEIGHT, RowColor);
-    end;
-
-    // Cell content
-    Report.SaveLayout;
-    Report.SetFont(SansFont, 9);
-    Report.FontStyle := [];
-    Report.TextColor := clBlack;
-
-    Report.DrawTextAt(x + 50,           y + 70, IntToStr(Data[i].Nr));
-    Report.DrawTextAt(x + COL_NR + 50,  y + 70, Data[i].Article);
-    Report.DrawTextRight(
-      x + COL_NR + COL_ARTICLE, y + 70,
-      IntToStr(Data[i].Quantity));
-    Report.DrawTextRight(
-      x + COL_NR + COL_ARTICLE + COL_QTY, y + 70,
-      FormatFloat('#,##0.00', Data[i].Price));
-
+    Report.DrawTableRow([
+      IntToStr(Data[i].Nr),
+      Data[i].Article,
+      IntToStr(Data[i].Quantity),
+      FormatFloat('#,##0.00', Data[i].Price)]);
     Total := Total + Data[i].Quantity * Data[i].Price;
-
-    Report.RestoreLayout;
-    Report.MoveToNextLine(ROW_HEIGHT);
-
-    // Horizontal separator line
-    if chkGrid.Checked then
-      Report.DrawLine(0, Report.CurrentY,
-                      Report.PageWidth, Report.CurrentY, 1, clSilver);
   end;
+  Report.EndTable;
 
-  // ---------- Totals row ----------
-  Report.MoveToNextLine(100);
-  y := Report.CurrentY;
-
-  Report.DrawLine(0, y, Report.PageWidth, y, 2, clBlack);
-  Report.MoveToNextLine(50);
-  y := Report.CurrentY;
+  // ---------- Totals ----------
+  Report.MoveToNextLine(300);
+  Report.DrawLine(0, Report.CurrentY, Report.PageWidth, Report.CurrentY,
+                  2, clBlack);
+  Report.MoveToNextLine(200);
 
   Report.SaveLayout;
   Report.SetFont(SansFont, 10);
-  Report.FontStyle  := [fsBold];
-  Report.TextColor  := clBlack;
-
-  Report.DrawTextAt(0, y + 80, 'Total:');
-  Report.DrawTextRight(
-    COL_NR + COL_ARTICLE + COL_QTY, y + 80,
-    FormatFloat('#,##0.00', Total));
-
-  Report.MoveToNextLine(ROW_HEIGHT);
-  Report.DrawLine(0, Report.CurrentY, Report.PageWidth, Report.CurrentY,
-                  3, clBlack);
+  Report.FontStyle := [fsBold];
+  Report.TextColor := clBlack;
+  Report.DrawText(0, Report.CurrentY, 'Total:');
+  Report.DrawTextRight(0, Report.CurrentY, FormatFloat('#,##0.00', Total));
+  Report.MoveToNextLine(600);
   Report.RestoreLayout;
 end;
 
@@ -472,40 +419,69 @@ begin
   Log('Print complete.');
 end;
 
-procedure TMainForm.actExportPDFExecute(Sender: TObject);
+procedure TMainForm.ExportToFile(const AFileName: string);
 var
-  Report:  TGDIPages;
-  PdfFile: string;
+  Report: TGDIPages;
 begin
-  SaveDialog1.Filter      := 'PDF Document (*.pdf)|*.pdf';
-  SaveDialog1.DefaultExt  := 'pdf';
-  // DateToString8 (mORMot) returns 'YYYYMMDD' — preferred over FormatDateTime
-  SaveDialog1.FileName    := 'report_' +
-    Utf8ToString(DateToStr(Now)) + '.pdf';
-
-  if not SaveDialog1.Execute then Exit;
-
-  PdfFile := SaveDialog1.FileName;
-  Log('Exporting PDF: ' + PdfFile + '...');
-
   Report := BuildReport;
   try
     // ExportPDF uses mormot.ui.pdf (cross-platform)
-    Report.ExportPDF(PdfFile,
+    Report.ExportPDF(AFileName,
       False,  // no password protection
       False,  // no encryption
       edtTitle.Text,
       edtCompany.Text);
-    Log('PDF saved: ' + PdfFile);
-    ShowMessage('PDF successfully saved:'#13#10 + PdfFile);
   finally
     Report.Free;
   end;
 end;
 
+procedure TMainForm.actExportPDFExecute(Sender: TObject);
+var
+  PdfFile: string;
+begin
+  SaveDialog1.Filter      := 'PDF Document (*.pdf)|*.pdf';
+  SaveDialog1.DefaultExt  := 'pdf';
+  // DateToIso8601 (mORMot) returns 'YYYYMMDD' — preferred over FormatDateTime
+  SaveDialog1.FileName    := 'report_' +
+    Utf8ToString(DateToIso8601(Now, {Expanded=}false)) + '.pdf';
+
+  if not SaveDialog1.Execute then Exit;
+
+  PdfFile := SaveDialog1.FileName;
+  Log('Exporting PDF: ' + PdfFile + '...');
+  ExportToFile(PdfFile);
+  Log('PDF saved: ' + PdfFile);
+  ShowMessage('PDF successfully saved:'#13#10 + PdfFile);
+end;
+
 procedure TMainForm.actCloseExecute(Sender: TObject);
 begin
   Close;
+end;
+
+{ ============================================================
+  Batch mode:  mormot_report_demo --export <file.pdf>
+  - builds and exports the same report as the GUI action, without showing
+    the window, so the demo can be checked automatically (PDF size, pdffonts,
+    rendering) like the console demos
+  ============================================================ }
+function BatchExportFile(out AFileName: string): boolean;
+var
+  i: Integer;
+begin
+  result := false;
+  AFileName := '';
+  for i := 1 to ParamCount do
+    if ParamStr(i) = '--export' then
+    begin
+      if i < ParamCount then
+        AFileName := ParamStr(i + 1)
+      else
+        AFileName := 'report_demo.pdf';
+      result := true;
+      exit;
+    end;
 end;
 
 end.
