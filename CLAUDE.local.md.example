@@ -1,0 +1,21 @@
+# Local Toolchain — Development Machines (template)
+
+Copy this file to `CLAUDE.local.md` and fill in the paths of your own machines.
+`CLAUDE.local.md` is listed in `.gitignore` and is never committed: absolute
+paths, user names and a tool inventory of a private machine do not belong in a
+published repository.
+
+Claude Code reads `CLAUDE.local.md` alongside `CLAUDE.md`, so whatever you put
+here is available as context without being published.
+
+Record per machine only what is not derivable from the repository:
+
+## <Platform> (<role: build / verification / …>)
+
+- `lazbuild`: `<full path>` (note it here when it is not on `PATH`)
+- mORMot2 sources: `<full path>`
+- Target: `<cpu-os>`
+- Build workarounds this machine needs (missing development symlinks,
+  linker flags, …)
+- Available for checking output: `<tools>`
+- Missing: `<tools>`, and what you substitute for them

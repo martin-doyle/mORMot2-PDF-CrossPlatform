@@ -36,45 +36,41 @@ a PAC error like "unbalanced marked content" then names no culprit.
 | Development, build, fast iteration | **Linux** |
 | PAC 2024 + tag-tree inspection | **Windows** (only platform; mandatory) |
 | Third-platform verification per change | macOS |
-| `veraPDF --flavour ua1` | any; not installed on the dev machine yet |
+| `veraPDF --flavour ua1` | any; not yet part of the verification runs |
 
 **PAC caveat.** The traffic-light status is not enough: a flat tree of
 individually valid `Table`/`TR`/`TD` elements passes while the nesting is
 broken. Always open the *Logical Structure* view as well.
 
-**Toolchain on the Linux development machine.** `lazbuild` lives at
-`/home/parallels/fpc-fixes/lazarus/lazbuild` (not on `PATH`), the mORMot2
-sources at `/home/parallels/synopse/mORMot2`. Linking the demos needs GTK2
-development symlinks, which are absent: symlink `libgtk-x11-2.0.so`,
+**Toolchain.** The paths of the individual development machines are not part of
+this repository; record them in `CLAUDE.local.md` (not versioned,
+`CLAUDE.local.md.example` shows the format). A Lazarus installed outside the
+distribution packages usually leaves `lazbuild` off `PATH` — use the full path
+then. What holds regardless of the machine:
+
+**Linux.** Linking the demos needs the GTK2 development symlinks, which
+distributions do not always install: symlink `libgtk-x11-2.0.so`,
 `libgdk-x11-2.0.so` and `libatk-1.0.so` to their `.so.0` files in a scratch
-directory and build with `lazbuild --opt=-Fl<dir>`. Available for checking
-output: `pdffonts`, `pdfinfo`, `pdftotext`, `pdftoppm`, `python3`. Missing:
-`qpdf`, `mutool`, `veraPDF`, ImageMagick.
+directory and build with `lazbuild --opt=-Fl<dir>`.
 
-**Toolchain on the Windows machine.** `lazbuild` at `C:\lazarus\lazbuild.exe`
-with its bundled FPC 3.2.2 (`C:\lazarus\fpc\3.2.2\bin\x86_64-win64`), mORMot2
-sources beside this repo. Target is **x86_64-win64**; an aarch64-win64 FPC is
-not usable — mORMot2 ships no static libraries for it. Build every project with
-`-B`: stale `.ppu` files in `examples/*/lib/` outlive a unit-path change and
-will hide it. For checking output there is only `pdftotext`, and it is xpdf
-4.00, not poppler — no `-bbox`, so use `-layout` for column and line alignment.
-Missing: `pdffonts`, `pdfinfo`, `pdftoppm`, `python3`, `strings`. `/BaseFont`
-survives as plain text in the file, so
-`grep -a -oE "/BaseFont[ ]*/[A-Za-z0-9+,#_-]+"` substitutes for `pdffonts` well
-enough to tell a subset (six-letter prefix) from a whole face.
+**Windows.** Target **x86_64-win64**; an aarch64-win64 FPC is not usable —
+mORMot2 ships no static libraries for it. Build every project with `-B`: stale
+`.ppu` files in `examples/*/lib/` outlive a unit-path change and will hide it.
+Where the only `pdftotext` available is xpdf's rather than poppler's, there is
+no `-bbox` — use `-layout` for column and line alignment. Without `pdffonts`,
+`/BaseFont` survives as plain text in an uncompressed file, so
+`grep -a -oE "/BaseFont[ ]*/[A-Za-z0-9+,#_-]+"` tells a subset (six-letter
+prefix) from a whole face well enough.
 
-**Toolchain on the macOS machine.** Target **aarch64-darwin**. `lazbuild` lives
-at `/Users/lutz/fpcupdeluxe/lazarus/lazbuild` (Lazarus 4.9, FPC 3.2.3, not on
-`PATH`), the mORMot2 sources at `/Users/lutz/Documents/Github/mORMot2`. Linking
-prints a wall of `ld: warning: object file ... built for newer macOS version
-(11.0) than being linked (10.15)` — noise from the prebuilt mORMot2 units, not
-an error. HarfBuzz comes from Homebrew (`/opt/homebrew/lib`), which is one of
-the paths `mormot.pdf.hbsubset` probes, so no linker flag is needed. `hb-info`
-ships with it and is the quickest way to tell a CFF face from a `glyf` one —
-see R-15c. Available: `python3`, `grep -a`. Missing: `pdffonts`, `pdftotext`,
-`pdftoppm`, PAC 2024, so output is checked by file size and by reading the font
-dictionaries with `python3` — inflating the object streams first, since the
-tagged demos deflate `/BaseFont` out of reach of the grep.
+**macOS.** Target **aarch64-darwin**. Linking prints a wall of `ld: warning:
+object file ... built for newer macOS version (11.0) than being linked
+(10.15)` — noise from the prebuilt mORMot2 units, not an error. HarfBuzz from
+Homebrew (`/opt/homebrew/lib`) is on one of the paths `mormot.pdf.hbsubset`
+probes, so no linker flag is needed; `hb-info` ships with it and is the
+quickest way to tell a CFF face from a `glyf` one — see R-15c. Where the
+poppler tools are missing, output is checked by file size and by reading the
+font dictionaries with `python3` — inflating the object streams first, since
+the tagged demos deflate `/BaseFont` out of reach of the grep.
 
 **Checking a change.** Build all six demos and `test_runner`, then compare the
 PDFs with the previous run: file size, `pdffonts`, `pdftotext` output, and the

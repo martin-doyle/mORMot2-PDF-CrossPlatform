@@ -1,8 +1,0 @@
-Hint: (11030) Start of reading config file C:\lazarus\fpc\3.2.2\bin\x86_64-win64\fpc.cfg
-Hint: (11031) End of reading config file C:\lazarus\fpc\3.2.2\bin\x86_64-win64\fpc.cfg
-Free Pascal Compiler version 3.2.2 [2026/02/20] for x86_64
-Copyright (c) 1993-2021 by Florian Klaempfl and others
-(1002) Target OS: Win64 for x64
-(3104) Compiling test_report_coordinates.pas
-C:\Users\Lutz Tietze\Documents\mormot-pdf-crossplatform\tests\test_report_coordinates.pas(11,3) Fatal: (10022) Can't find unit Interfaces used by test_report_coordinates
-Fatal: (1018) Compilation aborted

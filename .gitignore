@@ -43,3 +43,7 @@ examples/chinese_demo/backup/
 examples/chinese_demo/bin/
 examples/mormot_demo/bin/
 examples/mormot_demo/data/mormot_demo.db
+
+# machine-specific toolchain notes (see CLAUDE.local.md.example)
+CLAUDE.local.md
+tests/temp

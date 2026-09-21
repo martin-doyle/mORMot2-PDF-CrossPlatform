@@ -224,12 +224,17 @@ lazbuild examples/mormot_demo/mormot_demo.lpi -B
 lazbuild tests/test_runner.lpi -B && tests/bin/test_runner
 ```
 
-`lazbuild` is not on `PATH` on either dev machine: it is at
-`/home/parallels/fpc-fixes/lazarus/lazbuild` on Linux and at
-`/Users/lutz/fpcupdeluxe/lazarus/lazbuild` (Lazarus 4.9) on macOS — use the
-full path. Linking the demos on the Linux machine needs GTK2 development
-symlinks, which are absent — see `docs/ROADMAP.md` (Working Method) for the
-workaround and for the macOS `ld` warnings, which are noise.
+A Lazarus installed outside the distribution packages — `fpcupdeluxe`, a
+source build — usually leaves `lazbuild` off `PATH`; use the full path then.
+Record the paths of your own machines in `CLAUDE.local.md`, which is not
+versioned; `CLAUDE.local.md.example` shows the format, and Claude Code reads
+the file alongside this one.
+
+Two build notes that are not machine-specific: linking the demos on Linux needs
+the GTK2 development symlinks, which distributions do not always install, and
+the macOS linker prints `ld: warning: object file … built for newer macOS
+version` for the prebuilt mORMot2 units — noise, not an error. See
+`docs/ROADMAP.md` (Working Method).
 
 The two GUI demos export without their window, which is how they are checked:
 `report_demo_crossplat --export out.pdf`. On Linux/GTK2 this still needs a
