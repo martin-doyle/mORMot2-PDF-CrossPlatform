@@ -191,8 +191,50 @@ longer inherits a known POSIX defect through the A level.
 
 **`chinese_demo` and `rtl_demo` are not tagged**, so `ua1` is the wrong profile
 for them; their extra failures (7.1, 6.2) are artifacts of that choice. Their
-7.21.5 hits are not re-measured — CJK and Arabic go through the CID `/W` path,
-not the WinAnsi `/Widths` path fixed here.
+7.21.5 hits were re-measured after the fix anyway, because 7.21.5 is about the
+font dictionary and does not depend on tagging:
+
+| Demo | Before | After |
+|---|---|---|
+| `chinese_demo` | 7.21.5 ×1 | **none** |
+| `rtl_demo` | 7.21.5 ×9 | **×1** — see U-2 |
+
+Both carry Latin text in a WinAnsi font beside the CJK/Arabic, and that is what
+the fix cleared: `chinese_demo`'s single hit was the em dash, 8 of `rtl_demo`'s
+9 were the em dash and Latin rounding. The CID `/W` path was never in scope
+here, and one hit in it remains.
+
+### U-2 — One Shaped Arabic Glyph Has a Wrong `/W` Entry (macOS) — open
+
+**Found 2026-09-23** while re-measuring `rtl_demo` after U-1. It is what is left
+of that demo's nine 7.21.5 hits once the WinAnsi ones are gone, and it is a
+**different defect in a different code path** — the CID `/W` array, not
+`/Widths`.
+
+    WQQPKW+GeezaPro  gid 273   font program 407.7758   /W entry 316   diff -92
+
+Glyph 273's true advance is 407.78, and the neighbouring glyphs 268 and 272
+have the **same** advance in the face and are written correctly as 407. Only
+273 is wrong, so this is not a scaling or rounding error — the value 316 comes
+from somewhere other than `hmtx`.
+
+**Its `/ToUnicode` entry identifies the path:** code `<0111>` maps to `<E111>`,
+a PUA value. Per `fonts.md` §10 that is the Step 3 marker — the glyph was
+registered by `GetAndMarkGlyphAsUsedWithWidth`, and its width is the **HarfBuzz
+`x_advance`**, not the `hmtx` value. So U-2 lives in the shaper width path.
+
+**This is the path `fonts.md` §10 warns is invisible on Linux.** Geeza Pro has
+no Arabic presentation forms in its CMAP, so macOS takes Step 3; Noto Naskh
+Arabic on Linux has them and takes Step 2, where the HarfBuzz advance is
+computed and discarded. Expect this to reproduce on macOS only, and note that
+P3-A already went wrong once by writing HarfBuzz advances into `/W`
+unconditionally — `x_advance` is legitimately 0 for cursive-attachment medial
+forms. Whatever fixes 316 must not reintroduce that.
+
+**Not fixed with U-1 deliberately.** U-1 was a WinAnsi `/Widths` defect with a
+proven cause and a regression test; this is a single glyph in a path with a
+history of subtle breakage, and it deserves its own measurement rather than
+being folded into a commit that was already verified green.
 
 ### R-17 — Verify PDF/A-3A, and Add the U Conformance Level
 
