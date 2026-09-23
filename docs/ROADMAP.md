@@ -82,7 +82,7 @@ cross-platform comparison and the paths no pass has covered.
 | ~~PAC 2024 on the macOS-built PDFs~~ | **done 2026-09-23**: all four tagged demos green in PAC, alongside the veraPDF 106/106 |
 | ~~Linux re-measurement after U-1~~ | **done 2026-09-23**: all six demos rebuilt on Linux and run through veraPDF. 7.21.5 went 5 → 0, 64 → 0, 63 → 0, 99 → 0 on the four tagged demos, which now pass `ua1` 106/106; the two untagged ones clear 7.21.5 as well |
 | ~~PAC 2024 on `mormot_demo`~~ | **done 2026-09-23**, with the sample database: green, and the 5-page table is **one** `Table` in the structure. The counts hold on the Linux file too — 207 `TR` = 1 header + 206 data rows, 1030 `TD` = 206 × 5 columns, and `TH` stays 5. A repeated header that opened a second `THead` would give `TH` 25 and `TR` 211, so this measures the artifact marking directly |
-| Run on a machine **without** `libharfbuzz-subset` | `TestSubsetFallbackWithoutSubsetter` only simulates it by clearing `PdfFontSubsetter`; the loader path itself — missing library, or HarfBuzz older than 2.9 — has never run. **`tests/no_hbsubset.sh` does the first half** (Linux only): it mirrors the system libraries into a scratch directory without `libharfbuzz-subset`, then runs the suite and the demos under `LD_LIBRARY_PATH`. The old-HarfBuzz half still needs an old distribution |
+| ~~Run on a machine **without** `libharfbuzz-subset`~~ | **done 2026-09-23** via `tests/no_hbsubset.sh` (Linux, aarch64, HarfBuzz 6.1.0). All three `libharfbuzz-subset.so*` files masked inside a mount namespace: the suite stays green at 197 assertions against 222 with the library, the two subset suites standing down (19 → 7 and 22 → 9) instead of failing. **The loader's missing-library path is now measured, not simulated.** What is still untested is a HarfBuzz *older than 2.9*, which loads but lacks `hb_subset_or_fail` — that needs an old distribution, e.g. Debian 11 |
 
 **Comparing the platforms — but not pixel by pixel.** The demos resolve
 different families (Calibri/Cambria/Consolas, Liberation, Trebuchet MS/Georgia/
@@ -111,10 +111,10 @@ too.
 for a first version tag, and the project still has none.
 
 Two things the green does not cover, worth naming before tagging rather than
-after: the missing-`libharfbuzz-subset` path has never actually run (only the
-simulation in `TestSubsetFallbackWithoutSubsetter` — `tests/no_hbsubset.sh` is
-there to close this on Linux), and the U-2 fix is exercised on macOS only,
-because no Linux Arabic face reaches the code it repairs (see its entry).
+after: the U-2 fix is exercised on macOS only, because no Linux Arabic face
+reaches the code it repairs (see its entry); and while the **missing**
+`libharfbuzz-subset` is now covered by `tests/no_hbsubset.sh`, a HarfBuzz
+*older than 2.9* — which loads but lacks `hb_subset_or_fail` — still is not.
 
 ### U-1 — Glyph Widths Disagree With the Embedded Font Program (POSIX) — done 2026-09-23
 

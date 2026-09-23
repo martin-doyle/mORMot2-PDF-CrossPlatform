@@ -68,7 +68,7 @@ for d in /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu /usr/lib64 \
          /usr/lib /lib/x86_64-linux-gnu /lib; do
   [ -d "$d" ] || continue
   for so in "$d"/libharfbuzz-subset.so*; do
-    [ -e "$so" ] && libs="$libs $so"
+    [ -e "$so" ] && libs="${libs:+$libs }$so"
   done
 done
 
@@ -82,7 +82,7 @@ if [ -z "$libs" ]; then
   echo "install the library and run this script again."
   exit 0
 fi
-echo "== found:$libs"
+echo "== found: $libs"
 echo
 
 subset_count() {
