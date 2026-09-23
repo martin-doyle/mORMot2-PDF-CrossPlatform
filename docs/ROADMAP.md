@@ -79,9 +79,9 @@ cross-platform comparison and the paths no pass has covered.
 | What | Why it matters |
 |---|---|
 | ~~Linux rebuild of all six demos~~ | **done 2026-09-23** together with the U-1 re-measurement below: all six were rebuilt and checked |
-| PAC 2024 on the macOS-built PDFs | the macOS pass checked sizes and fonts, not the tag tree; PAC runs only on Windows. veraPDF has since covered the mechanical half, and after U-1 the macOS demos pass it 106/106 |
+| ~~PAC 2024 on the macOS-built PDFs~~ | **done 2026-09-23**: all four tagged demos green in PAC, alongside the veraPDF 106/106 |
 | ~~Linux re-measurement after U-1~~ | **done 2026-09-23**: all six demos rebuilt on Linux and run through veraPDF. 7.21.5 went 5 → 0, 64 → 0, 63 → 0, 99 → 0 on the four tagged demos, which now pass `ua1` 106/106; the two untagged ones clear 7.21.5 as well |
-| PAC 2024 on `mormot_demo` | it ran on macOS (tag tree complete by inspection: 1 `Table` with `THead`/`TBody`/`TFoot`, 207 `TR`, 5 `TH`, 1030 `TD`), but has never been through PAC |
+| ~~PAC 2024 on `mormot_demo`~~ | **done 2026-09-23**, with the sample database: green, and the 5-page table is **one** `Table` in the structure. The counts hold on the Linux file too — 207 `TR` = 1 header + 206 data rows, 1030 `TD` = 206 × 5 columns, and `TH` stays 5. A repeated header that opened a second `THead` would give `TH` 25 and `TR` 211, so this measures the artifact marking directly |
 | Run on a machine **without** `libharfbuzz-subset` | `TestSubsetFallbackWithoutSubsetter` only simulates it by clearing `PdfFontSubsetter`; the loader path itself — missing library, or HarfBuzz older than 2.9 — has never run |
 
 **Comparing the platforms — but not pixel by pixel.** The demos resolve
@@ -106,11 +106,15 @@ on **all three platforms**, verified by veraPDF, and PAC 2024 passes the same
 four. `chinese_demo` and `rtl_demo` are untagged, but clear 7.21.5 everywhere
 too.
 
-**All three platforms are now green on the tagged demos**, which was the stated
-gate for a first version tag — the project still has none. What is *not* covered
-by that statement, and should be weighed before tagging: `mormot_demo` has never
-been through PAC, the missing-`libharfbuzz-subset` path has never run, and the
-U-2 fix is exercised on macOS only (see its entry).
+**All three platforms are now green on the tagged demos**, in **both** checkers
+— veraPDF 106/106 and PAC 2024, `mormot_demo` included. That was the stated gate
+for a first version tag, and the project still has none.
+
+Two things the green does not cover, worth naming before tagging rather than
+after: the missing-`libharfbuzz-subset` path has never actually run (only the
+simulation in `TestSubsetFallbackWithoutSubsetter`), and the U-2 fix is
+exercised on macOS only, because no Linux Arabic face reaches the code it
+repairs (see its entry).
 
 ### U-1 — Glyph Widths Disagree With the Embedded Font Program (POSIX) — done 2026-09-23
 
