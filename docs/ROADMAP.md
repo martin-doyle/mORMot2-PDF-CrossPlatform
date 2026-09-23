@@ -204,7 +204,7 @@ the fix cleared: `chinese_demo`'s single hit was the em dash, 8 of `rtl_demo`'s
 9 were the em dash and Latin rounding. The CID `/W` path was never in scope
 here, and one hit in it remains.
 
-### U-2 — One Shaped Arabic Glyph Has a Wrong `/W` Entry (macOS) — open
+### U-2 — One Shaped Arabic Glyph Has a Wrong `/W` Entry (macOS) — done 2026-09-23
 
 **Found 2026-09-23** while re-measuring `rtl_demo` after U-1. It is what is left
 of that demo's nine 7.21.5 hits once the WinAnsi ones are gone, and it is a
@@ -255,14 +255,42 @@ viewer, fatal to a PDF/UA claim, and it would become visible the moment the
 compensation is removed or a consumer reads `/W` without replaying the `TJ`
 offsets (text extraction, reflow, a screen reader computing positions).
 
-**Not fixed with U-1 deliberately.** U-1 was a WinAnsi `/Widths` defect with a
-proven cause and a regression test; this is a single glyph in a path with a
-history of subtle breakage, and it deserves its own measurement rather than
-being folded into a commit that was already verified green. The ±91
-compensation is also a warning for whoever fixes it: correcting `/W` **without**
-removing the compensation would move the glyph 91 units in the wrong direction
-— the two changes belong in one commit, verified by rendering, not only by
-veraPDF.
+**The cause, measured with HarfBuzz directly.** Shaping the word gives
+
+    gid 241 adv 292   gid 244 adv 297   gid 261 adv 614
+    gid 273 adv 317 x_offset -91        gid 345 adv 439
+
+Four of the five advances equal the face's own `hmtx` value within rounding.
+Only gid 273 differs — by exactly its GPOS offset. HarfBuzz returns the
+**positioned** advance: a cursively attached glyph is shifted left by 91 and its
+advance shortened by the same 91, so the pen still lands correctly. `/W` must
+state what the font program states, which is the *unpositioned* advance.
+`GetAndMarkGlyphAsUsedWithWidth` stored the shaper's value, so the dictionary
+disagreed with the face while the page stayed correct.
+
+**The fix, in `mormot.ui.pdf`:** `/W` now comes from a new `GlyphHmtxWidth()`,
+which reads `hmtx`/`head`/`hhea` through the platform backend and caches them
+per font instance; the shaper's advance is kept only as a fallback when those
+tables cannot be read. Because the viewer advances the pen by `/W`, correcting
+it alone **would have moved the text** — so `AddUnicodeHexTextHarfBuzz` now adds
+`Widths[i] - Advances[i]` into the `TJ` kerning of every glyph, which makes the
+emitted run reproduce the shaper's advances whatever `/W` says. That also picks
+up the sub-unit rounding the old fast path ignored, so a run with no GPOS
+offsets at all can now emit small corrections.
+
+Verified on the rendering, not only on the checker: the run is
+
+    [<00F1> -1<00F4> -1<0105> 91<0111><0159> -1] TJ
+
+with `/W` 292 296 614 **407** 438, giving a pen movement of 292+296+614+407+438
+− (−1−1+91−1) = **1959** — exactly HarfBuzz's total, unchanged from before the
+fix. Only the dictionary changed.
+
+**Regression test:** `TestShapedGlyphWidthFromHmtx` shapes the word, requires a
+face that actually applies a GPOS offset (skipping otherwise, which is what
+Linux does), then builds a PDF and reads the `/W` entry back out of it,
+asserting it equals the `hmtx` advance and **not** the shaper's. Verified to
+fail 2/9 against the pre-fix engine. Total assertions 230 → 239.
 
 ### R-17 — Verify PDF/A-3A, and Add the U Conformance Level
 

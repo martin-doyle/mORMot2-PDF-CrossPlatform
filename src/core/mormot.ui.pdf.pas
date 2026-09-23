@@ -2823,6 +2823,11 @@ type
     fIsSymbolFont: boolean;
     // 1-based index in fDoc.fFontSubsets[], 0 if this font is not subset
     fSubsetIndex: integer;
+    {$ifndef OSWINDOWS}
+    // 'hmtx'/'head'/'hhea' cache for GlyphHmtxWidth, filled on first use
+    fHmtx, fHmtxHead, fHmtxHhea: TWordDynArray;
+    fHmtxChecked: boolean;
+    {$endif OSWINDOWS}
     // below are some bigger structures
     {$ifdef OSWINDOWS}
     fLogFont: TLogFontW;
@@ -2862,9 +2867,17 @@ type
     {$ifndef OSWINDOWS}
     // register a shaped glyph with a known advance width from HarfBuzz
     // - used by AddUnicodeHexTextHarfBuzz to implement Step 3 on POSIX:
-    //   GSUB-substituted glyphs get a PUA slot with the HarfBuzz advance width
+    //   GSUB-substituted glyphs get a PUA slot with the true 'hmtx' advance
     //   instead of falling back to /DW (which would cause character overlap)
+    // - aWidth is the shaper's advance, used only if 'hmtx' cannot be read
     procedure GetAndMarkGlyphAsUsedWithWidth(aGlyph: word; aWidth: integer);
+    // the advance width of aGlyph in PDF units, straight from the font's
+    // 'hmtx' table - the value /W has to carry per ISO 14289-1 7.21.5
+    // - returns 0 when the tables cannot be read, so the caller can fall back
+    function GlyphHmtxWidth(aGlyph: word): integer;
+    // the width registered for aGlyph, i.e. the one that will reach /W
+    // - returns 0 if the glyph is not registered on this font instance
+    function UsedWideGlyphWidth(aGlyph: word): integer;
     {$endif OSWINDOWS}
   public
     /// create the TrueType font object instance
@@ -5772,6 +5785,7 @@ var
   Clusters: TIntegerDynArray;
   i, kern:  integer;
   hasOffsets: boolean;
+  Widths:   TIntegerDynArray;
 begin
   result := false;
   if (PdfTextShaper = nil) or (WinAnsiTtf = nil) then
@@ -5786,45 +5800,57 @@ begin
   Canvas.SetPdfFont(WinAnsiTtf.UnicodeFont, Canvas.fPage.FontSize);
   if NextLine then
     Canvas.MoveToNextLine;
+  // register every glyph first, and keep the width that actually lands in /W.
+  // It is the font's own 'hmtx' advance, which is what ISO 14289-1 7.21.5
+  // requires and is not always what the shaper returns: HarfBuzz reports the
+  // *positioned* advance, so a glyph with a GPOS cursive adjustment comes back
+  // shortened by the same amount it is offset. The viewer advances the pen by
+  // /W, so wherever the two differ the difference has to be made up in the TJ
+  // array - otherwise correcting /W would move the text (U-2).
+  SetLength(Widths, length(Glyphs));
+  for i := 0 to high(Glyphs) do
+  begin
+    WinAnsiTtf.GetAndMarkGlyphAsUsedWithWidth(Glyphs[i], Advances[i]);
+    Widths[i] := WinAnsiTtf.UsedWideGlyphWidth(Glyphs[i]);
+    if Widths[i] <= 0 then
+      Widths[i] := Advances[i]; // unknown: assume the shaper's value is used
+  end;
   hasOffsets := false;
-  for i := 0 to high(Offsets) do
-    if Offsets[i] <> 0 then
+  for i := 0 to high(Glyphs) do
+    if (Offsets[i] <> 0) or
+       (Widths[i] <> Advances[i]) then
     begin
       hasOffsets := true;
       break;
     end;
   if not hasOffsets then
   begin
-    // fast path: no GPOS offsets — single Tj
+    // fast path: nothing to correct — single Tj
     Add('<');
     for i := 0 to high(Glyphs) do
-    begin
-      WinAnsiTtf.GetAndMarkGlyphAsUsedWithWidth(Glyphs[i], Advances[i]);
       AddHex4(Glyphs[i]);
-    end;
     Add('> Tj'#10);
   end
   else
   begin
-    // GPOS x_offset present — use TJ array for per-glyph positioning
+    // per-glyph positioning via TJ.
     // PDF TJ: positive kern = shift left by kern/1000 text units.
     // HarfBuzz x_offset > 0 = shift right → TJ kern = -x_offset.
-    // Between glyph i-1 and i: kern = Offsets[i-1] - Offsets[i]
+    // Between glyph i-1 and i: kern = Offsets[i-1] - Offsets[i], plus the
+    // advance error (Widths[i-1] - Advances[i-1]) the viewer has just applied.
     Add('[');
     if Offsets[0] <> 0 then
       Add(-Offsets[0]).Add(' ');
     for i := 0 to high(Glyphs) do
     begin
-      WinAnsiTtf.GetAndMarkGlyphAsUsedWithWidth(Glyphs[i], Advances[i]);
       Add('<');
       AddHex4(Glyphs[i]);
       Add('>');
+      kern := Widths[i] - Advances[i];
       if i < high(Glyphs) then
-      begin
-        kern := Offsets[i] - Offsets[i + 1];
-        if kern <> 0 then
-          Add(' ').Add(kern);
-      end;
+        inc(kern, Offsets[i] - Offsets[i + 1]);
+      if kern <> 0 then
+        Add(' ').Add(kern);
     end;
     // restore pen position after last offset
     if Offsets[high(Offsets)] <> 0 then
@@ -6759,13 +6785,67 @@ begin
 end;
 
 {$ifndef OSWINDOWS}
+function TPdfFontTrueType.UsedWideGlyphWidth(aGlyph: word): integer;
+// the width /W will state for aGlyph: the entries are kept on the WinAnsi
+// instance, which is what the /W array is built from when saving
+var
+  i: PtrInt;
+begin
+  result := 0;
+  for i := 0 to fUsedWideChar.Count - 1 do
+    if fUsedWide[i].Glyph = aGlyph then
+    begin
+      result := fUsedWide[i].Width;
+      exit;
+    end;
+end;
+
+function TPdfFontTrueType.GlyphHmtxWidth(aGlyph: word): integer;
+// the advance width of aGlyph as the embedded font program states it
+var
+  head: ^TCmapHEAD;
+  numOfLongHorMetrics: word;
+begin
+  result := 0;
+  if not fHmtxChecked then
+  begin
+    fHmtxChecked := true; // read the three tables once per font instance
+    fDoc.GetDCWithFont(self);
+    if (GetTtfData(fDoc.fDC, 'head', fHmtxHead) = nil) or
+       (GetTtfData(fDoc.fDC, 'hmtx', fHmtx) = nil) or
+       (GetTtfData(fDoc.fDC, 'hhea', fHmtxHhea) = nil) then
+    begin
+      fHmtxHead := nil; // mark as unusable, so the caller falls back
+      fHmtx := nil;
+      fHmtxHhea := nil;
+    end;
+  end;
+  if (fHmtx = nil) or (fHmtxHead = nil) or (fHmtxHhea = nil) then
+    exit;
+  head := pointer(fHmtxHead);
+  if head^.UnitsPerEm = 0 then
+    exit;
+  // hmtx holds numOfLongHorMetrics (advance, bearing) pairs, then bearings
+  // only - a glyph past the last pair keeps the advance of that pair, which
+  // is how monospaced tails are encoded
+  numOfLongHorMetrics := fHmtxHhea[17];
+  if numOfLongHorMetrics = 0 then
+    exit;
+  if aGlyph >= numOfLongHorMetrics then
+    aGlyph := numOfLongHorMetrics - 1;
+  if aGlyph * 2 >= length(fHmtx) then
+    exit;
+  result := (int64(fHmtx[aGlyph * 2]) * 1000) div head^.UnitsPerEm;
+end;
+
 procedure TPdfFontTrueType.GetAndMarkGlyphAsUsedWithWidth(aGlyph: word; aWidth: integer);
 // POSIX equivalent of GetAndMarkGlyphAsUsed Step 3:
-// registers a GSUB-substituted glyph with its HarfBuzz advance width so that
-// the /W array gets the correct value instead of falling back to /DW.
+// registers a GSUB-substituted glyph so that the /W array gets a width
+// instead of falling back to /DW.
 var
   i:       PtrInt;
   idx:     integer;
+  w:       integer;
   synChar: WideChar;
 begin
   // Step 1: already registered in WinAnsi tracking arrays — nothing to do
@@ -6781,11 +6861,24 @@ begin
           idx := WinAnsiFont.FindOrAddUsedWideChar(WideChar(fUsedWideChar.Values[i]));
           exit; // width from CMAP hmtx data
         end;
-  // Step 3: GSUB-only glyph not in CMAP — register PUA slot with HarfBuzz width
+  // Step 3: GSUB-only glyph not in CMAP — register a PUA slot for it.
+  // The width must come from the font's 'hmtx' table, NOT from the shaper:
+  // HarfBuzz returns the *positioned* advance, which for a glyph carrying a
+  // GPOS x_offset differs from the font's own advance. /W has to state what
+  // the embedded font program states (ISO 14289-1 7.21.5), and the offset is
+  // rendered separately as a TJ adjustment by the caller - writing the shaped
+  // advance here made both wrong at once, cancelling out on screen while the
+  // dictionary disagreed with the face (U-2). Geeza Pro glyph 273: 'hmtx'
+  // says 407, HarfBuzz says 317 with x_offset -91.
+  // Fall back to the shaper's value only if the tables cannot be read, which
+  // is still far better than /DW.
   synChar := WideChar($E000 or (aGlyph and $0FFF));
   idx := FindOrAddUsedWideChar(synChar);
   fUsedWide[idx].Glyph := aGlyph;
-  fUsedWide[idx].Width := aWidth;
+  w := GlyphHmtxWidth(aGlyph);
+  if w <= 0 then
+    w := aWidth;
+  fUsedWide[idx].Width := w;
 end;
 {$endif OSWINDOWS}
 

@@ -34,6 +34,9 @@ type
     procedure TestFontMetrics;
     procedure TestWinAnsiHighRangeWidths;
     procedure TestTextShaperAdvances;
+    {$ifndef MSWINDOWS}
+    procedure TestShapedGlyphWidthFromHmtx;
+    {$endif MSWINDOWS}
     procedure TestUseUniscribeIsPortable;
     {$ifndef MSWINDOWS}
     procedure TestTtcFaceExtraction;
@@ -203,6 +206,245 @@ begin
     PdfPlatformDCProvider.DeleteDC(dc);
   end;
 end;
+
+{$ifndef MSWINDOWS}
+procedure TPdfCrossPlatTests.TestShapedGlyphWidthFromHmtx;
+const
+  // 'marhaba': with a font that attaches cursively (Geeza Pro) one glyph of
+  // this word carries a GPOS x_offset, which is what U-2 was about
+  MARHABA: array[0..4] of WideChar = (
+    #$0645, #$0631, #$062D, #$0628, #$0627);
+  ARABIC_FONTS: array[0..3] of RawUtf8 = (
+    'Geeza Pro', 'Noto Naskh Arabic', 'Tahoma', 'DejaVu Sans');
+var
+  dc: TPdfPlatformDC;
+  lf: TPdfLogFont;
+  font, prev: TPdfPlatformFontHandle;
+  glyphs: TWordDynArray;
+  advances, offsets, clusters: TIntegerDynArray;
+  tbl: TWordDynArray;
+  doc: TPdfDocument;
+  ms: TMemoryStream;
+  pdf: RawByteString;
+  i, f, g, shifted, upm, nlhm, hmtxWords, hmtxAdv, wEntry: integer;
+
+  function Swap16(w: word): word;
+  begin
+    result := (w shr 8) or (w shl 8);
+  end;
+
+  // the /W entry this PDF states for aGlyph, or -1 if it is not found.
+  // /W is written as "<cid>[<w1> <w2> ...]" runs, so a glyph's width is the
+  // n-th number of the run whose first cid is <= aGlyph
+  function WFor(const aPdf: RawByteString; aGlyph: word): integer;
+  var
+    p, e, runStart, cid, n: PtrInt;
+    v: integer;
+  begin
+    result := -1;
+    p := PosEx('/W [', aPdf);
+    if p = 0 then
+      exit;
+    inc(p, 4);
+    e := PosEx(']/', aPdf, p); // the /W array ends before the next key
+    if e = 0 then
+      e := length(aPdf);
+    while p < e do
+    begin
+      while (p < e) and
+            (aPdf[p] = ' ') do
+        inc(p);
+      cid := 0;
+      runStart := p;
+      while (p < e) and
+            (aPdf[p] >= '0') and
+            (aPdf[p] <= '9') do
+      begin
+        cid := cid * 10 + ord(aPdf[p]) - 48;
+        inc(p);
+      end;
+      if p = runStart then
+        break; // not a number: end of the array
+      if (p >= e) or
+         (aPdf[p] <> '[') then
+        continue;
+      inc(p);
+      n := cid;
+      while (p < e) and
+            (aPdf[p] <> ']') do
+      begin
+        while (p < e) and
+              (aPdf[p] = ' ') do
+          inc(p);
+        v := 0;
+        runStart := p;
+        while (p < e) and
+              (aPdf[p] >= '0') and
+              (aPdf[p] <= '9') do
+        begin
+          v := v * 10 + ord(aPdf[p]) - 48;
+          inc(p);
+        end;
+        if p = runStart then
+          break;
+        if n = aGlyph then
+        begin
+          result := v;
+          exit;
+        end;
+        inc(n);
+      end;
+      if (p < e) and
+         (aPdf[p] = ']') then
+        inc(p);
+    end;
+  end;
+
+  function ReadTable(const aTag: RawUtf8; out aWords: TWordDynArray): boolean;
+  var
+    n: cardinal;
+  begin
+    result := false;
+    n := PdfPlatformFont.GetFontData(dc, PCardinal(pointer(aTag))^, 0, nil, 0);
+    if (n = PdfPlatformFont.FontDataError) or
+       (n < 4) then
+      exit;
+    SetLength(aWords, n shr 1);
+    result := PdfPlatformFont.GetFontData(dc, PCardinal(pointer(aTag))^, 0,
+      pointer(aWords), n) <> PdfPlatformFont.FontDataError;
+  end;
+
+begin
+  // U-2: the /W width of a shaped glyph must be the font's own 'hmtx' advance,
+  // not the shaper's. HarfBuzz returns the *positioned* advance, so a glyph
+  // carrying a GPOS cursive adjustment comes back shortened by exactly the
+  // amount it is offset. Writing that value as the glyph width made the font
+  // dictionary disagree with the embedded font program (ISO 14289-1 7.21.5)
+  // while the page still looked right, because the shortened advance and the
+  // offset cancelled each other out on screen.
+  if PdfTextShaper = nil then
+  begin
+    Check(true, 'SKIP: no IPdfTextShaper registered (libharfbuzz absent)');
+    exit;
+  end;
+  dc := PdfPlatformDCProvider.CreateDC;
+  try
+    font := nil;
+    for f := 0 to high(ARABIC_FONTS) do
+    begin
+      FillChar(lf, SizeOf(lf), 0);
+      lf.FaceName := ARABIC_FONTS[f];
+      lf.Height := -1000;
+      lf.Weight := 400;
+      font := PdfPlatformFont.CreateFont(lf);
+      if font <> nil then
+        break;
+    end;
+    if font = nil then
+    begin
+      Check(true, 'SKIP: no Arabic-capable font found on this system');
+      exit;
+    end;
+    prev := PdfPlatformFont.SelectFont(dc, font);
+    try
+      Check(PdfTextShaper.ShapeText(@MARHABA[0], length(MARHABA), font, true,
+        glyphs, advances, offsets, clusters), 'ShapeText must succeed');
+      shifted := 0;
+      for i := 0 to high(glyphs) do
+        if offsets[i] <> 0 then
+          inc(shifted);
+      if shifted = 0 then
+      begin
+        // this face shapes the word without cursive attachment and so cannot
+        // exercise the defect - Noto Naskh Arabic behaves this way, which is
+        // why U-2 was invisible on Linux
+        Check(true, 'SKIP: font applies no GPOS x_offset to this word');
+        exit;
+      end;
+      // read the face's own metrics: 'head' for unitsPerEm (offset 18 bytes),
+      // 'hhea' for numOfLongHorMetrics (offset 34), 'hmtx' for the advances
+      if not ReadTable('head', tbl) then
+      begin
+        Check(true, 'SKIP: cannot read the head table');
+        exit;
+      end;
+      upm := Swap16(tbl[9]);
+      Check(upm > 0, 'unitsPerEm must be > 0');
+      if not ReadTable('hhea', tbl) then
+      begin
+        Check(true, 'SKIP: cannot read the hhea table');
+        exit;
+      end;
+      nlhm := Swap16(tbl[17]);
+      Check(nlhm > 0, 'numOfLongHorMetrics must be > 0');
+      if not ReadTable('hmtx', tbl) then
+      begin
+        Check(true, 'SKIP: cannot read the hmtx table');
+        exit;
+      end;
+      hmtxWords := length(tbl);
+      // build a PDF with this very text, and read back what /W states for the
+      // shifted glyphs. That is the assertion that bites: the engine used to
+      // write advances[i] there, and it has to write the hmtx advance.
+      doc := TPdfDocument.Create;
+      try
+        doc.EmbeddedTTF := true;
+        doc.AddPage;
+        doc.Canvas.SetFont(ARABIC_FONTS[f], 24, []);
+        doc.Canvas.RightToLeftText := true;
+        doc.Canvas.TextOutW(40, 700, @MARHABA[0]);
+        ms := TMemoryStream.Create;
+        try
+          doc.SaveToStream(ms);
+          SetLength(pdf, ms.Size);
+          ms.Position := 0;
+          ms.Read(pointer(pdf)^, ms.Size);
+        finally
+          ms.Free;
+        end;
+      finally
+        doc.Free;
+      end;
+      Check(length(pdf) > 100, 'the test PDF must have been written');
+      for i := 0 to high(glyphs) do
+        if offsets[i] <> 0 then
+        begin
+          g := glyphs[i];
+          if g >= nlhm then
+            g := nlhm - 1;
+          if g * 2 >= hmtxWords then
+            continue;
+          hmtxAdv := (int64(Swap16(tbl[g * 2])) * 1000) div upm;
+          Check(hmtxAdv > 0, 'hmtx advance must be > 0');
+          // the two really are different for a cursively attached glyph, which
+          // is the precondition that makes the rest of this test meaningful
+          Check(hmtxAdv <> advances[i],
+            'a cursively shifted glyph must not have shaper advance = hmtx advance');
+          Check(Abs((hmtxAdv - advances[i]) - Abs(offsets[i])) <= 2,
+            'the advance difference must match the GPOS offset');
+          // and this is the regression itself: /W must state the hmtx value.
+          // WFor(g) finds "<glyph>[<width>]" in the /W array of the CID font.
+          wEntry := WFor(pdf, glyphs[i]);
+          if wEntry < 0 then
+            Check(true, 'SKIP: /W entry not found (deflated object stream)')
+          else
+          begin
+            Check(Abs(wEntry - hmtxAdv) <= 1,
+              'the /W entry must be the hmtx advance');
+            Check(Abs(wEntry - advances[i]) > 2,
+              'the /W entry must not be the shaper advance');
+          end;
+        end;
+    finally
+      if prev <> nil then
+        PdfPlatformFont.SelectFont(dc, prev);
+      PdfPlatformFont.DeleteFont(font);
+    end;
+  finally
+    PdfPlatformDCProvider.DeleteDC(dc);
+  end;
+end;
+{$endif MSWINDOWS}
 
 procedure TPdfCrossPlatTests.TestUseUniscribeIsPortable;
 var

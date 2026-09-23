@@ -468,7 +468,16 @@ unconditionally for that reason and is inert where Uniscribe does not exist;
 `GetAndMarkGlyphAsUsed` Step 3 uses `GetCharABCWidthsI` (GDI API, Windows only).
 On Linux/macOS the equivalent is `GetAndMarkGlyphAsUsedWithWidth(aGlyph, aWidth)`:
 - Called from `AddUnicodeHexTextHarfBuzz` instead of `GetAndMarkGlyphAsUsed`
-- `aWidth` comes from HarfBuzz `positions[i].x_advance`
+- the width written to `/W` comes from `GlyphHmtxWidth()`, i.e. the font's own
+  `hmtx` advance. `aWidth` — the HarfBuzz `x_advance` — is only a fallback for
+  when the tables cannot be read.
+- **The two are not the same number.** HarfBuzz returns the *positioned*
+  advance, so a glyph with a GPOS cursive adjustment comes back shortened by
+  exactly the amount it is offset. `/W` must state the unpositioned advance
+  (ISO 14289-1 7.21.5), and the caller makes up the difference in `TJ`, so the
+  pen still moves by the shaper's advance. Writing `aWidth` into `/W` made both
+  wrong at once and cancelled out on screen — invisible in a viewer, a PDF/UA
+  failure (U-2).
 - Same PUA slot logic as Step 3: `synChar := WideChar($E000 or (aGlyph and $0FFF))`
 - Result: GSUB-only shaped glyphs get correct `/W` entries; no `/DW` overlap
 
