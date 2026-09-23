@@ -18,7 +18,19 @@ produces **one** `Table` element: 207 `TR` (1 header + 206 data rows), 1030 `TD`
 (206 × 5 columns), 5 `TH`. The header repeated on continuation pages is marked
 as an artifact and opens no second `THead`.
 
-Test suite: 239 assertions across 7 suites, green on all three platforms.
+Test suite green on all three platforms: 239 assertions on macOS, 222 on Linux.
+The difference is skips, not failures — tests stand down when the machine lacks
+what they need (no `.ttc` collections on Linux, no Arabic face there that
+applies a GPOS offset) and say so rather than reporting a green they did not
+earn. Linux runs two assertions macOS cannot, having Droid Sans Fallback
+installed, so the platforms complement each other rather than one covering a
+subset of the other.
+
+**The fallback without `libharfbuzz-subset` is measured, not simulated.**
+`tests/no_hbsubset.sh` masks the library inside a mount namespace and runs the
+suite again: it stays green at 197 assertions, with the two subset suites
+standing down (19 → 7, 22 → 9) instead of failing. The nine that remain include
+the tests for the whole-face path itself.
 
 ### Fixed in this release
 
@@ -46,6 +58,14 @@ Test suite: 239 assertions across 7 suites, green on all three platforms.
 Both fixes are in POSIX code; Windows was already correct and served as the
 reference for the expected values.
 
+One test was fixed too, and it is worth naming because it was wrong in an
+instructive way. `TestWinAnsiHighRangeWidths` asserted that the bullet's advance
+differs from the `.notdef` advance, treating equality as proof of a failed
+lookup. Nothing stops a font from giving `.notdef` the same advance as a real
+glyph, and the face picked on Linux does exactly that — so a correct lookup
+failed the check. It now compares two *unmapped* WinAnsi codes with each other
+instead, which assumes nothing about the face's metrics.
+
 ### Known limitations
 
 Documented in `docs/ROADMAP.md`, and none of them blocks normal use:
@@ -54,10 +74,11 @@ Documented in `docs/ROADMAP.md`, and none of them blocks normal use:
   code path it repairs — Noto Naskh Arabic resolves shaped glyphs through the
   CMAP — so the regression test skips itself there rather than reporting a
   false green.
-- The **fallback without `libharfbuzz-subset`** has never run on a machine that
-  actually lacks the library; it is only simulated in the test suite. Without
-  the library the whole face is embedded instead of a subset, which is correct
-  but produces much larger files.
+- The **fallback without `libharfbuzz-subset`** is verified for a *missing*
+  library (`tests/no_hbsubset.sh`, see Verification above), but not for a **HarfBuzz older
+  than 2.9**, which loads and then turns out to lack `hb_subset_or_fail`. That
+  needs an old distribution to test. Without a usable subsetter the whole face
+  is embedded, which is correct but produces much larger files.
 - **Symbolic fonts are not subset on POSIX** (R-15b), **table rows do not split
   across pages** (R-10), and **only face index 0 of a `.ttc` is reachable**
   (R-11).
