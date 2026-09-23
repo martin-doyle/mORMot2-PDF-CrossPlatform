@@ -341,15 +341,19 @@ output has ever been looked at. No conformance checker has ever run.
 
 #### Clarify first — both before any estimate is believed
 
-1. **Read every `fPdfA` branch.** There are 13 outside the accessors: 5855,
-   7317, 7331, 7504, 8208, 8210, 8331, 8446, 8479, 8481, 8503, 9079, 9622.
+1. **Read every `fPdfA` branch.** There are 13 outside the accessors. As of
+   `v0.9.0` they sit at 5881, 7410, 7424, 7597, 8301, 8303, 8424, 8539, 8572,
+   8574, 8596, 9172, 9715 — but line numbers move, so find them with
+   `grep -n fPdfA src/core/mormot.ui.pdf.pas` rather than trusting this list.
    Those checked so far are right, but each `fPdfA <> pdfaNone` that means
    "PDF/A-1" is too strict under A-3, and each A-1 rule applied to all levels
    likewise. A reading pass, not a change.
 2. ~~**Install veraPDF.**~~ **Done 2026-09-22** — 1.30.2 greenfield on macOS,
    with the `3a`, `3b` and `3u` profiles. Its first run found **U-1**, which
-   R-17 inherits through the A level — on POSIX only; Windows passes PDF/UA
-   outright.
+   R-17 would have inherited through the A level. **Both U-1 and U-2 are fixed
+   as of `v0.9.0`**, so R-17 no longer starts with a known width defect: PDF/UA
+   is green on all three platforms, and the A level builds on that rather than
+   having to clear it first.
 
 #### The one real gap: `pdfa3U`
 
@@ -369,6 +373,25 @@ characters gets none. That is exactly the unused WinAnsi peer beside a CJK font
 possibly required to carry a `/ToUnicode` it cannot have. poppler already
 reports it. Whether veraPDF calls it a violation is the first thing to measure,
 and it may make that entry a prerequisite of this one rather than a loose end.
+
+#### Where to start, concretely
+
+Half a day before any of the above is worth arguing about, because no PDF/A
+output has ever been looked at:
+
+1. Take `pdf_demo` or `markdown_demo`, set `PdfA := pdfa3B`, and run the result
+   through `verapdf -f 3b`. That is the cheapest possible first measurement and
+   it needs no code change. A-3B is the weakest level, so whatever it reports
+   is a genuine defect rather than a level mismatch.
+2. Repeat with `pdfa3A` and `-f 3a`. The difference between the two runs is
+   exactly what the A level costs here, measured instead of estimated.
+3. Only then read the 13 `fPdfA` branches, with the failures in hand — they
+   will point at which branch is too strict or too lax, instead of the reading
+   pass having to anticipate it.
+
+The `pdfa3U` enum member is best added *after* step 2, since A implies U: if
+3A comes out clean, U is nearly free; if it does not, the failures decide
+whether U is reachable on its own.
 
 #### What A-3A costs beyond A-3B
 
