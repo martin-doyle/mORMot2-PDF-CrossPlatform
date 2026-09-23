@@ -190,14 +190,30 @@ begin
     // three in any text face - a .notdef box would not order this way
     Check(emdash > letter, 'em dash must be wider than M');
     Check(bullet < letter, 'bullet must be narrower than M');
-    // .notdef is what the defect returned: assert the two are not simply it.
-    // Code #$81 is unassigned in WinAnsi and maps to no glyph, so it is the
-    // .notdef advance on any backend
+    // .notdef is what the defect returned, so the two must not silently be it.
+    // Code #$81 is unassigned in WinAnsi and maps to no glyph, so its advance
+    // is the .notdef advance on any backend.
+    //
+    // Comparing bullet <> .notdef directly would be wrong: nothing stops a
+    // font from giving .notdef the same advance as a real glyph, and the face
+    // the Linux CI picks does exactly that - it failed this check while the
+    // lookup was perfectly correct. Compare the two *unmapped* codes with each
+    // other instead: #$81 and #$8D are both unassigned in WinAnsi and map to
+    // C1 controls no CMAP carries, so they must agree; and the bullet and em
+    // dash must not both collapse onto that value. Both hold whatever widths
+    // the face happens to use.
+    // Note that assertion #5 above already catches the original defect on any
+    // font without assuming anything: with the bug, bullet and em dash both
+    // returned the .notdef advance, and one number cannot be both wider and
+    // narrower than M.
     notdef := Advance($81);
     if notdef > 0 then
     begin
-      Check(bullet <> notdef, 'bullet must not fall back to .notdef');
-      Check(emdash <> notdef, 'em dash must not fall back to .notdef');
+      Check(Advance($8D) = notdef,
+        'two unassigned WinAnsi codes must share the .notdef advance');
+      Check((bullet <> notdef) or
+            (emdash <> notdef),
+        'bullet and em dash must not both fall back to .notdef');
     end;
     if prev <> nil then
       PdfPlatformFont.SelectFont(dc, prev);
