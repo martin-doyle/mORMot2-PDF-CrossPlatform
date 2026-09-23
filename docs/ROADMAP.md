@@ -82,7 +82,7 @@ cross-platform comparison and the paths no pass has covered.
 | ~~PAC 2024 on the macOS-built PDFs~~ | **done 2026-09-23**: all four tagged demos green in PAC, alongside the veraPDF 106/106 |
 | ~~Linux re-measurement after U-1~~ | **done 2026-09-23**: all six demos rebuilt on Linux and run through veraPDF. 7.21.5 went 5 → 0, 64 → 0, 63 → 0, 99 → 0 on the four tagged demos, which now pass `ua1` 106/106; the two untagged ones clear 7.21.5 as well |
 | ~~PAC 2024 on `mormot_demo`~~ | **done 2026-09-23**, with the sample database: green, and the 5-page table is **one** `Table` in the structure. The counts hold on the Linux file too — 207 `TR` = 1 header + 206 data rows, 1030 `TD` = 206 × 5 columns, and `TH` stays 5. A repeated header that opened a second `THead` would give `TH` 25 and `TR` 211, so this measures the artifact marking directly |
-| Run on a machine **without** `libharfbuzz-subset` | `TestSubsetFallbackWithoutSubsetter` only simulates it by clearing `PdfFontSubsetter`; the loader path itself — missing library, or HarfBuzz older than 2.9 — has never run |
+| Run on a machine **without** `libharfbuzz-subset` | `TestSubsetFallbackWithoutSubsetter` only simulates it by clearing `PdfFontSubsetter`; the loader path itself — missing library, or HarfBuzz older than 2.9 — has never run. **`tests/no_hbsubset.sh` does the first half** (Linux only): it mirrors the system libraries into a scratch directory without `libharfbuzz-subset`, then runs the suite and the demos under `LD_LIBRARY_PATH`. The old-HarfBuzz half still needs an old distribution |
 
 **Comparing the platforms — but not pixel by pixel.** The demos resolve
 different families (Calibri/Cambria/Consolas, Liberation, Trebuchet MS/Georgia/
@@ -112,9 +112,9 @@ for a first version tag, and the project still has none.
 
 Two things the green does not cover, worth naming before tagging rather than
 after: the missing-`libharfbuzz-subset` path has never actually run (only the
-simulation in `TestSubsetFallbackWithoutSubsetter`), and the U-2 fix is
-exercised on macOS only, because no Linux Arabic face reaches the code it
-repairs (see its entry).
+simulation in `TestSubsetFallbackWithoutSubsetter` — `tests/no_hbsubset.sh` is
+there to close this on Linux), and the U-2 fix is exercised on macOS only,
+because no Linux Arabic face reaches the code it repairs (see its entry).
 
 ### U-1 — Glyph Widths Disagree With the Embedded Font Program (POSIX) — done 2026-09-23
 
