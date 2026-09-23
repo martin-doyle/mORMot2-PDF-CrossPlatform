@@ -231,10 +231,38 @@ P3-A already went wrong once by writing HarfBuzz advances into `/W`
 unconditionally — `x_advance` is legitimately 0 for cursive-attachment medial
 forms. Whatever fixes 316 must not reintroduce that.
 
+**Verified against the embedded font program, not just against veraPDF**
+(2026-09-23, after the question was raised whether this is a false alarm). The
+subset in the PDF was extracted and read directly: it has 365 glyphs with
+`numOfLongHorMetrics` 365 and keeps the original glyph IDs, so no renumbering
+can confuse the index, and its own `hmtx` gives gid 273 an advance of 902/2212
+= 407.7758. The `/W` entry of 316 contradicts the very file it ships with.
+**veraPDF is right.**
+
+**But the rendering is correct, and that is the interesting part.** The text
+run is
+
+    [<00F1><00F4><0105> 91<0111> -91<0159>] TJ
+
+— a `TJ` array with explicit adjustments of **+91 and −91** bracketing exactly
+this glyph. The deficit is 407.78 − 316 = **91.78**. The shaper's positioning
+pass notices that the advance it asked for and the width in the dictionary
+disagree, and emits a kerning correction that cancels the error out. The glyph
+lands in the right place; only the dictionary lies.
+
+That makes U-2 **a conformance defect, not a layout defect**: invisible in any
+viewer, fatal to a PDF/UA claim, and it would become visible the moment the
+compensation is removed or a consumer reads `/W` without replaying the `TJ`
+offsets (text extraction, reflow, a screen reader computing positions).
+
 **Not fixed with U-1 deliberately.** U-1 was a WinAnsi `/Widths` defect with a
 proven cause and a regression test; this is a single glyph in a path with a
 history of subtle breakage, and it deserves its own measurement rather than
-being folded into a commit that was already verified green.
+being folded into a commit that was already verified green. The ±91
+compensation is also a warning for whoever fixes it: correcting `/W` **without**
+removing the compensation would move the glyph 91 units in the wrong direction
+— the two changes belong in one commit, verified by rendering, not only by
+veraPDF.
 
 ### R-17 — Verify PDF/A-3A, and Add the U Conformance Level
 
