@@ -78,9 +78,9 @@ cross-platform comparison and the paths no pass has covered.
 
 | What | Why it matters |
 |---|---|
-| Linux rebuild of all six demos | the R-15/R-15a/R-16 engine changes are argued to be POSIX-neutral from the `{$ifdef}` structure, not measured. Expect every PDF unchanged except `chinese_demo` and `rtl_demo`, which no longer pin the whole face |
+| ~~Linux rebuild of all six demos~~ | **done 2026-09-23** together with the U-1 re-measurement below: all six were rebuilt and checked |
 | PAC 2024 on the macOS-built PDFs | the macOS pass checked sizes and fonts, not the tag tree; PAC runs only on Windows. veraPDF has since covered the mechanical half, and after U-1 the macOS demos pass it 106/106 |
-| Linux re-measurement after U-1 | the U-1 fix is in `mormot.pdf.freetype`, shared by Linux and macOS, and macOS went from 11/83 failures to none. Linux should follow, but has not been run |
+| ~~Linux re-measurement after U-1~~ | **done 2026-09-23**: all six demos rebuilt on Linux and run through veraPDF. 7.21.5 went 5 → 0, 64 → 0, 63 → 0, 99 → 0 on the four tagged demos, which now pass `ua1` 106/106; the two untagged ones clear 7.21.5 as well |
 | PAC 2024 on `mormot_demo` | it ran on macOS (tag tree complete by inspection: 1 `Table` with `THead`/`TBody`/`TFoot`, 207 `TR`, 5 `TH`, 1030 `TD`), but has never been through PAC |
 | Run on a machine **without** `libharfbuzz-subset` | `TestSubsetFallbackWithoutSubsetter` only simulates it by clearing `PdfFontSubsetter`; the loader path itself — missing library, or HarfBuzz older than 2.9 — has never run |
 
@@ -101,12 +101,16 @@ comparison above, where PAC offers only a GUI and cannot check PDF/A at all. It
 is not yet part of the routine verification runs.
 
 **Its first runs found a POSIX defect PAC never reported — U-1 below, fixed
-2026-09-23.** All four tagged demos now pass PDF/UA 106/106 on Windows and
-macOS; **Linux is still to be re-measured**, the fix being in shared POSIX
-code.
+2026-09-23, with U-2 beside it.** All four tagged demos now pass PDF/UA 106/106
+on **all three platforms**, verified by veraPDF, and PAC 2024 passes the same
+four. `chinese_demo` and `rtl_demo` are untagged, but clear 7.21.5 everywhere
+too.
 
-Once all three platforms are green, that is the point for a first version tag —
-the project has none.
+**All three platforms are now green on the tagged demos**, which was the stated
+gate for a first version tag — the project still has none. What is *not* covered
+by that statement, and should be weighed before tagging: `mormot_demo` has never
+been through PAC, the missing-`libharfbuzz-subset` path has never run, and the
+U-2 fix is exercised on macOS only (see its entry).
 
 ### U-1 — Glyph Widths Disagree With the Embedded Font Program (POSIX) — done 2026-09-23
 
@@ -128,13 +132,18 @@ widths in the embedded font program.
 | `markdown_demo.pdf` | macOS | 105 passed, 7.21.5 ×83 | **PASS — 106/106** |
 | `report_demo` (`--export`) | macOS | 7.21.5 ×63 (Linux figure) | **PASS — 106/106** |
 | `mormot_demo` (`--export`) | macOS | 7.21.5 ×99 (Linux figure) | **PASS — 106/106** |
+| `pdf_demo_linux_fix1` | **Linux** | 7.21.5 ×5 | **PASS — 106/106** |
+| `markdown_demo_linux_fix1` | **Linux** | 7.21.5 ×64 | **PASS — 106/106** |
+| `report_demo_linux_fix1` | **Linux** | 7.21.5 ×63 | **PASS — 106/106** |
+| `mormot_demo_linux_fix1` | **Linux** | 7.21.5 ×99 | **PASS — 106/106** |
 
 Both defects were in `TPdfFreeTypeFontProvider.GetCharABCWidths`, exactly where
 the first analysis placed them — in `mormot.pdf.freetype`, not in
 `mormot.ui.pdf`. Windows was the reference for what the values should be, and
-POSIX now matches it. **Linux is still to be re-measured**; the fix is in
-shared POSIX code and the macOS numbers cover the same path, but that is an
-argument, not a measurement.
+POSIX now matches it on **both** POSIX platforms: the Linux files were rebuilt
+and measured on 2026-09-23, with the before/after counts in the table above
+taken on the same machine and the same profile. PAC 2024 passes the same four
+files, and the RTL alignment was checked by eye.
 
 **(b) The genuinely wrong widths — an ANSI/Unicode mix-up.** The engine calls
 `GetCharABCWidths(dc, 32, 255, W)` and indexes the result by WinAnsi byte,
@@ -291,6 +300,13 @@ face that actually applies a GPOS offset (skipping otherwise, which is what
 Linux does), then builds a PDF and reads the `/W` entry back out of it,
 asserting it equals the `hmtx` advance and **not** the shaper's. Verified to
 fail 2/9 against the pre-fix engine. Total assertions 230 → 239.
+
+**Confirmed to be macOS-only, by measurement** (2026-09-23). The Linux
+`rtl_demo` was checked for the marker: its `/ToUnicode` holds 25 real code
+points and **no PUA entry at all**, so every shaped glyph resolved through the
+CMAP (Step 2) and the Step 3 width path never ran. The U-2 fix is therefore
+*not* covered by the Linux pass — as `fonts.md` §10 predicts, and the reason
+the test skips itself there rather than reporting a false green.
 
 ### R-17 — Verify PDF/A-3A, and Add the U Conformance Level
 
