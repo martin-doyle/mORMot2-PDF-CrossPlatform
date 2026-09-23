@@ -32,6 +32,7 @@ type
     procedure TestDCProvider;
     procedure TestFontEnumeration;
     procedure TestFontMetrics;
+    procedure TestWinAnsiHighRangeWidths;
     procedure TestTextShaperAdvances;
     procedure TestUseUniscribeIsPortable;
     {$ifndef MSWINDOWS}
@@ -126,6 +127,75 @@ begin
     Check(abc[0].abcA + integer(abc[0].abcB) + abc[0].abcC > 0,
       'Space advance width must be > 0');
     // Restore previous font
+    if prev <> nil then
+      PdfPlatformFont.SelectFont(dc, prev);
+    PdfPlatformFont.DeleteFont(font);
+  finally
+    PdfPlatformDCProvider.DeleteDC(dc);
+  end;
+end;
+
+procedure TPdfCrossPlatTests.TestWinAnsiHighRangeWidths;
+var
+  dc: TPdfPlatformDC;
+  lf: TPdfLogFont;
+  font: TPdfPlatformFontHandle;
+  prev: TPdfPlatformFontHandle;
+  abc: TPdfCharABCArray;
+  notdef, bullet, emdash, letter: integer;
+
+  function Advance(aCode: cardinal): integer;
+  begin
+    with abc[aCode - 32] do
+      result := abcA + integer(abcB) + abcC;
+  end;
+
+begin
+  // U-1b: GetCharABCWidths takes WinAnsi byte values, because that is what the
+  // Windows GetCharABCWidthsA counterpart takes. Codes 128..159 map to code
+  // points well above U+00FF - the bullet #$95 is U+2022, the em dash #$97 is
+  // U+2014 - so a backend that hands the byte to a Unicode lookup unchanged
+  // lands on an unassigned C1 control, misses the CMAP and returns .notdef.
+  // That wrote a wrong /Widths entry and broke ISO 14289-1 7.21.5 on POSIX.
+  dc := PdfPlatformDCProvider.CreateDC;
+  try
+    FillChar(lf, SizeOf(lf), 0);
+    lf.FaceName := 'Arial';
+    lf.Height := -1000;
+    lf.Weight := 400; // FW_NORMAL
+    font := PdfPlatformFont.CreateFont(lf);
+    if font = nil then
+    begin
+      lf.FaceName := 'DejaVu Sans';
+      font := PdfPlatformFont.CreateFont(lf);
+    end;
+    if font = nil then
+    begin
+      Check(true, 'SKIP: no test font found on this system');
+      exit;
+    end;
+    prev := PdfPlatformFont.SelectFont(dc, font);
+    Check(PdfPlatformFont.GetCharABCWidths(dc, 32, 255, abc),
+      'GetCharABCWidths must succeed');
+    Check(Length(abc) = 224, 'ABC widths: expected 224 entries (32..255)');
+    bullet := Advance($95);
+    emdash := Advance($97);
+    letter := Advance(ord('M'));
+    Check(bullet > 0, 'bullet #$95 must have a positive advance');
+    Check(emdash > 0, 'em dash #$97 must have a positive advance');
+    // an em dash is one em wide by definition, so it is the widest of the
+    // three in any text face - a .notdef box would not order this way
+    Check(emdash > letter, 'em dash must be wider than M');
+    Check(bullet < letter, 'bullet must be narrower than M');
+    // .notdef is what the defect returned: assert the two are not simply it.
+    // Code #$81 is unassigned in WinAnsi and maps to no glyph, so it is the
+    // .notdef advance on any backend
+    notdef := Advance($81);
+    if notdef > 0 then
+    begin
+      Check(bullet <> notdef, 'bullet must not fall back to .notdef');
+      Check(emdash <> notdef, 'em dash must not fall back to .notdef');
+    end;
     if prev <> nil then
       PdfPlatformFont.SelectFont(dc, prev);
     PdfPlatformFont.DeleteFont(font);

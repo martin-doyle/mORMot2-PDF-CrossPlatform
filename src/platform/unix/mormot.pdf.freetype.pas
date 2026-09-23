@@ -712,13 +712,16 @@ function TPdfFreeTypeFontProvider.GetCharABCWidths(ADC: TPdfPlatformDC;
   FirstChar, LastChar: cardinal;
   out AWidths: TPdfCharABCArray): boolean;
 var
-  dc:   PPdfFTDC;
-  ctx:  PPdfFTContext;
-  n, i: integer;
-  slot: PFT_GlyphSlotRec;
-  adv:  FT_Pos;
-  lsb:  FT_Pos;   // left side bearing (A width)
-  rsb:  FT_Pos;   // right side bearing (C width)
+  dc:    PPdfFTDC;
+  ctx:   PPdfFTContext;
+  n, i:  integer;
+  slot:  PFT_GlyphSlotRec;
+  adv:   FT_Pos;
+  lsb:   FT_Pos;   // left side bearing (A width)
+  rsb:   FT_Pos;   // right side bearing (C width)
+  code:  cardinal;
+  a, c:  integer;
+  total: integer;
 begin
   result := false;
   dc := PPdfFTDC(ADC);
@@ -732,10 +735,19 @@ begin
   for i := 0 to n - 1 do
   begin
     FillChar(AWidths[i], SizeOf(AWidths[i]), 0);
+    code := FirstChar + cardinal(i);
+    // the caller asks for 32..255, i.e. WinAnsi byte values, because that is
+    // what the Windows counterpart GetCharABCWidthsA takes - an ANSI call that
+    // maps through the DC codepage. FT_Load_Char expects a Unicode code point,
+    // so the byte has to be translated first: without this, 128..159 are read
+    // as the unassigned C1 controls, miss the CMAP and silently return the
+    // .notdef advance. That is what put the bullet (#$95 -> U+2022) and the
+    // em dash (#$97 -> U+2014) into /Widths with a wrong value (U-1b).
+    if code <= high(WinAnsiConvert.AnsiToWide) then
+      code := WinAnsiConvert.AnsiToWide[code];
     // Use FT_LOAD_NO_SCALE to get raw design units (like faceRec^.ascender),
     // then apply uniform ScaleDesignUnit(value, UPM) across all metrics.
-    if FreeType.LoadChar(ctx^.Face, FirstChar + cardinal(i),
-       FT_LOAD_NO_SCALE) = 0 then
+    if FreeType.LoadChar(ctx^.Face, code, FT_LOAD_NO_SCALE) = 0 then
     begin
       slot := PFT_GlyphSlotRec(PFT_FaceRec(ctx^.Face)^.glyph);
       // FreeType metrics in design units:
@@ -746,13 +758,19 @@ begin
       adv := slot^.metrics.horiAdvance;
       // Calculate right side bearing
       // rsb = horiAdvance - horiBearingX - glyph_width
-      // For simplicity: rsb = horiAdvance - horiBearingX - (width_pixels)
-      // But we don't have glyph width, so use approximation:
-      rsb := adv - lsb - (slot^.metrics.width);
-
-      AWidths[i].abcA := ScaleDesignUnit(lsb, ctx^.UnitsPerEM);
-      AWidths[i].abcB := ScaleDesignUnit(adv - lsb - rsb, ctx^.UnitsPerEM);
-      AWidths[i].abcC := ScaleDesignUnit(rsb, ctx^.UnitsPerEM);
+      rsb := adv - lsb - slot^.metrics.width;
+      // the engine uses abcA + abcB + abcC as the advance width, and that sum
+      // ends up in /Widths. Scaling the three parts on their own rounds three
+      // times, so the sum could miss the scaled advance by up to 1.5 units -
+      // enough to break ISO 14289-1 7.21.5, which allows 1 (U-1a). Scale the
+      // advance once, and give abcB whatever the two bearings leave over, so
+      // the sum is exact by construction.
+      total := ScaleDesignUnit(adv, ctx^.UnitsPerEM);
+      a := ScaleDesignUnit(lsb, ctx^.UnitsPerEM);
+      c := ScaleDesignUnit(rsb, ctx^.UnitsPerEM);
+      AWidths[i].abcA := a;
+      AWidths[i].abcB := cardinal(total - a - c);
+      AWidths[i].abcC := c;
     end;
   end;
   result := true;

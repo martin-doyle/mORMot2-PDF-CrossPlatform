@@ -27,7 +27,12 @@ IPdfPlatformFont = interface
   // Retrieve extended outline metrics (ascent, descent, em-square, etc.)
   function  GetOutlineMetrics(ADC: TPdfPlatformDC;
                               out AMetrics: TPdfOutlineMetrics): boolean;
-  // Retrieve ABC advance widths for characters FirstChar..LastChar
+  // Retrieve ABC advance widths for characters FirstChar..LastChar.
+  // FirstChar/LastChar are WinAnsi (cp1252) BYTE values, not Unicode code
+  // points - the engine calls (32, 255) and indexes the result by WinAnsi
+  // byte. Bytes 128..159 are printable punctuation in WinAnsi but unassigned
+  // C1 controls in Unicode, so a backend doing a Unicode lookup must
+  // translate first (see U-1).
   function  GetCharABCWidths(ADC: TPdfPlatformDC;
                              FirstChar, LastChar: cardinal;
                              out AWidths: TPdfCharABCArray): boolean;
@@ -175,7 +180,15 @@ end;
 TPdfCharABCArray = array of TPdfCharABC;
 ```
 
-Total character advance = `abcA + abcB + abcC`.
+Total character advance = `abcA + abcB + abcC`, and that sum is what reaches
+`/Widths` in the PDF.
+
+**The sum must equal the scaled advance exactly.** A backend scaling design
+units to the 1000-per-em grid rounds each of the three members, and three
+roundings accumulate to ±1.5 — enough to break ISO 14289-1 7.21.5, which allows
+a deviation of 1 against the embedded font program. Scale the advance once and
+give `abcB` the remainder after the two bearings; the bearings stay correct
+individually, which is what the other callers of the triple need. See U-1.
 
 ---
 
@@ -190,7 +203,7 @@ GDI API mapping:
 | `SelectFont` | `SelectObject` |
 | `GetTextMetrics` | `GetTextMetricsW` |
 | `GetOutlineMetrics` | `GetOutlineTextMetricsW` |
-| `GetCharABCWidths` | `GetCharABCWidthsA` (ANSI — code points above 255 are not reachable through this call) |
+| `GetCharABCWidths` | `GetCharABCWidthsA` (ANSI — maps the byte through the DC codepage, so bytes 128..159 resolve to their WinAnsi characters; code points above 255 are not reachable through this call) |
 | `GetFontData` | `GetFontData` |
 | `FontDataError` | returns `GDI_ERROR` ($FFFFFFFF) |
 | `EnumTrueTypeFonts` | `EnumFontFamiliesExW` with TRUETYPE_FONTTYPE |
@@ -213,7 +226,7 @@ FreeType2 API mapping:
 | `SelectFont` | internal context switch |
 | `GetTextMetrics` | `FT_FaceRec.ascender/descender/height` |
 | `GetOutlineMetrics` | `FT_FaceRec.bbox` + scaled values |
-| `GetCharABCWidths` | `FT_Load_Char` + `horiAdvance` |
+| `GetCharABCWidths` | `WinAnsiConvert.AnsiToWide[]`, then `FT_Load_Char` + `horiAdvance` |
 | `GetFontData` | `FT_Load_Sfnt_Table` |
 | `FontDataError` | returns $FFFFFFFF |
 | `EnumTrueTypeFonts` | filesystem scan + `FT_New_Face` |

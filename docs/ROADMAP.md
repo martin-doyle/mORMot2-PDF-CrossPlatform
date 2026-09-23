@@ -79,7 +79,8 @@ cross-platform comparison and the paths no pass has covered.
 | What | Why it matters |
 |---|---|
 | Linux rebuild of all six demos | the R-15/R-15a/R-16 engine changes are argued to be POSIX-neutral from the `{$ifdef}` structure, not measured. Expect every PDF unchanged except `chinese_demo` and `rtl_demo`, which no longer pin the whole face |
-| PAC 2024 on the macOS-built PDFs | the macOS pass checked sizes and fonts, not the tag tree; PAC runs only on Windows. veraPDF has since covered the mechanical half on all three platforms (U-1) |
+| PAC 2024 on the macOS-built PDFs | the macOS pass checked sizes and fonts, not the tag tree; PAC runs only on Windows. veraPDF has since covered the mechanical half, and after U-1 the macOS demos pass it 106/106 |
+| Linux re-measurement after U-1 | the U-1 fix is in `mormot.pdf.freetype`, shared by Linux and macOS, and macOS went from 11/83 failures to none. Linux should follow, but has not been run |
 | PAC 2024 on `mormot_demo` | it ran on macOS (tag tree complete by inspection: 1 `Table` with `THead`/`TBody`/`TFoot`, 207 `TR`, 5 `TH`, 1030 `TD`), but has never been through PAC |
 | Run on a machine **without** `libharfbuzz-subset` | `TestSubsetFallbackWithoutSubsetter` only simulates it by clearing `PdfFontSubsetter`; the loader path itself — missing library, or HarfBuzz older than 2.9 — has never run |
 
@@ -99,13 +100,15 @@ serves both this section and R-17 — the objective, scriptable half of the
 comparison above, where PAC offers only a GUI and cannot check PDF/A at all. It
 is not yet part of the routine verification runs.
 
-**Its first runs found a POSIX defect PAC never reported — see U-1 below.**
-Windows passes PDF/UA outright (106/106); Linux and macOS do not.
+**Its first runs found a POSIX defect PAC never reported — U-1 below, fixed
+2026-09-23.** All four tagged demos now pass PDF/UA 106/106 on Windows and
+macOS; **Linux is still to be re-measured**, the fix being in shared POSIX
+code.
 
 Once all three platforms are green, that is the point for a first version tag —
 the project has none.
 
-### U-1 — Glyph Widths Disagree With the Embedded Font Program (POSIX) — unprioritised
+### U-1 — Glyph Widths Disagree With the Embedded Font Program (POSIX) — done 2026-09-23
 
 **Found 2026-09-22** by the first veraPDF runs ever made on this project, over
 the Linux, macOS and Windows PDFs of 2026-09-20. **PAC 2024 passed the files
@@ -115,63 +118,81 @@ overlap, so a PDF/UA claim needs both.
 ISO 14289-1 **7.21.5** — the `/Widths` (and `/W`) entries must agree with the
 widths in the embedded font program.
 
-| PDF | Platform | Result | rounding | real |
+| PDF | Platform | Before | After |
+|---|---|---|---|
+| `pdf_demo_windows_final` | **Windows** | PASS — 106/106 | unchanged |
+| `markdown_demo_windows_final` | **Windows** | PASS — 106/106 | unchanged |
+| `report_demo_windows` | **Windows** | PASS — 106/106 | unchanged |
+| `mormot_demo_windows` | **Windows** | PASS — 106/106 | unchanged |
+| `output_crossplat.pdf` | macOS | 105 passed, 7.21.5 ×11 | **PASS — 106/106** |
+| `markdown_demo.pdf` | macOS | 105 passed, 7.21.5 ×83 | **PASS — 106/106** |
+| `report_demo` (`--export`) | macOS | 7.21.5 ×63 (Linux figure) | **PASS — 106/106** |
+| `mormot_demo` (`--export`) | macOS | 7.21.5 ×99 (Linux figure) | **PASS — 106/106** |
+
+Both defects were in `TPdfFreeTypeFontProvider.GetCharABCWidths`, exactly where
+the first analysis placed them — in `mormot.pdf.freetype`, not in
+`mormot.ui.pdf`. Windows was the reference for what the values should be, and
+POSIX now matches it. **Linux is still to be re-measured**; the fix is in
+shared POSIX code and the macOS numbers cover the same path, but that is an
+argument, not a measurement.
+
+**(b) The genuinely wrong widths — an ANSI/Unicode mix-up.** The engine calls
+`GetCharABCWidths(dc, 32, 255, W)` and indexes the result by WinAnsi byte,
+because the Windows counterpart is `GetCharABCWidthsA` — an **ANSI** call that
+maps the byte through the DC codepage (1252). The FreeType backend passed the
+same byte straight to `FT_Load_Char`, which expects a **Unicode code point**.
+For 32..127 and 160..255 the two agree, which is why this stayed hidden. For
+**128..159 they do not**: those bytes are the unassigned C1 controls in Unicode
+but printable punctuation in WinAnsi. `FT_Load_Char` missed the CMAP and
+returned the `.notdef` advance.
+
+Two characters were affected in practice, both common in prose:
+
+| Byte | WinAnsi | Font program | Written | Source of the wrong value |
 |---|---|---|---|---|
-| `pdf_demo_windows_final` | **Windows** | **PASS — 106/106** | 0 | 0 |
-| `markdown_demo_windows_final` | **Windows** | **PASS — 106/106** | 0 | 0 |
-| `report_demo_windows` | **Windows** | **PASS — 106/106** | 0 | 0 |
-| `mormot_demo_windows` | **Windows** | **PASS — 106/106** | 0 | 0 |
-| `pdf_demo_linux_final1` | Linux | 105 passed, 7.21.5 ×5 | 4 | **1** |
-| `markdown_demo_linux_final` | Linux | 105 passed, 7.21.5 ×64 | 56 | **8** |
-| `report_demo_linux_final1` | Linux | 105 passed, 7.21.5 ×63 | 63 | 0 |
-| `mormot_demo_linux_final1` | Linux | 105 passed, 7.21.5 ×99 | 99 | 0 |
-| `output_crossplat.pdf` | macOS | 105 passed, 7.21.5 ×11 | 10 | **1** |
-| `markdown_demo.pdf` | macOS | 105 passed, 7.21.5 ×83 | 75 | **8** |
+| `#$95` | bullet U+2022 | Georgia 392.58 | **1000** | Georgia `.notdef` = 1000 |
+| `#$95` | bullet U+2022 | Trebuchet 524.41 | **501** | Trebuchet `.notdef` ≈ 500 |
+| `#$97` | em dash U+2014 | Georgia 856.93 | **1000** | Georgia `.notdef` = 1000 |
+| `#$97` | em dash U+2014 | Trebuchet 734.38 | **501** | Trebuchet `.notdef` ≈ 500 |
 
-**Windows is clean, POSIX is not.** Every Windows file passes all 106 rules; no
-width deviates at all. So this is **not** a property of the engine — GDI's
-`GetCharABCWidths` returns the same integers that end up in the dictionary,
-while the POSIX path does not. The defect is in `IPdfPlatformFont` on
-FreeType, and the fix belongs in `mormot.pdf.freetype`, not in
-`mormot.ui.pdf`. Windows is the reference for what the values should be.
+That is the whole of (b): 1 check in `pdf_demo`, 8 in `markdown_demo`, which is
+why the counts matched across Linux and macOS despite different font families —
+the same two characters in the same demo text, and `.notdef` on both. The
+earlier guess that `/DW` or `fDefaultWidth` was the source was wrong; the
+recurring `750`/`778` in the first notes were the `abcB` component, not the
+written advance. `report_demo` and `mormot_demo` showed no (b) simply because
+their text has no bullet and no em dash.
 
-**This is the second time a difference between the platforms turned out to be a
-POSIX shortcoming rather than a platform property** — R-15b is the other. Same
-conclusion: align by improving POSIX, not by relaxing Windows.
+The fix translates the byte before the lookup, with
+`WinAnsiConvert.AnsiToWide[]` — the same table `mormot.ui.pdf` already uses for
+`/ToUnicode`.
 
-Two distinct defects hide under the one clause:
+**(a) The rounding — three roundings where one was needed.** `MulDiv` in the
+backend rounds to nearest, so scaling one value can be off by at most 0.5,
+comfortably inside the ±1 the rule allows. But the backend scaled `abcA`,
+`abcB` and `abcC` **separately**, and every consumer sums the three. Three
+roundings accumulate to ±1.5, and the observed deviations of up to 2.8 units
+follow from that. Nothing was wrong with the metrics — only with rounding them
+three times.
 
-**(a) Rounding — the large majority.** One to three units: `722.16796875` in the
-face against `725` in the dictionary, `556.15234375` against `555`. FreeType
-returns 26.6 fixed-point values that get rounded on the way into the dictionary,
-while veraPDF reads the exact `hmtx` value. Both directions occur, so it is not
-a systematic floor or ceiling. Invisible in rendering, but it is what makes the
-rule fail.
+The fix scales the advance **once** and gives `abcB` the remainder after the
+two bearings, so `abcA + abcB + abcC` equals the scaled advance by
+construction. Both bearings stay individually correct, which is what the other
+callers of the ABC triple need.
 
-**(b) Genuinely wrong widths — 9 checks in two files.** Not rounding:
+**Regression test:** `TestWinAnsiHighRangeWidths` in
+`test_pdf_crossplatform.pas` asserts that the bullet and em dash have sane
+advances (em dash wider than `M`, bullet narrower) and — the check that
+actually bites — that neither equals the `.notdef` advance. Verified to fail
+3/8 against the pre-fix backend. Total assertions 222 → 230.
 
-    font=556.15234375  dict=750   diff=+194
-    font=350.09765625  dict=750   diff=+400
-    font=1000          dict=750   diff=-250
-    font=889.16015625  dict=778   diff=-111
-
-The recurring `750` and `778` on the dictionary side look like a default width
-written instead of the measured one — `/DW`, `fDefaultWidth`, or a glyph whose
-measurement failed and fell back. Chase this half first: a wrong width is a
-wrong advance and can move text visibly, whereas (a) cannot.
-
-**The (b) counts match across the two POSIX platforms exactly** — 1 for
-`pdf_demo`, 8 for `markdown_demo`, on Linux and macOS, with entirely different
-font families (Liberation Sans vs Trebuchet MS). Same glyphs, same count, and
-zero on Windows. `report_demo` and `mormot_demo` show no (b) at all, so it
-correlates with something those two demos do not do.
-
-**Bearing on R-17:** PDF/A-3A includes the PDF/UA requirements, so this is
-inherited there — on POSIX only. Worth settling before the A level is claimed.
+**Bearing on R-17:** PDF/A-3A includes the PDF/UA requirements, so R-17 no
+longer inherits a known POSIX defect through the A level.
 
 **`chinese_demo` and `rtl_demo` are not tagged**, so `ua1` is the wrong profile
-for them; their extra failures (7.1, 6.2) are artifacts of that choice. They do
-also hit 7.21.5.
+for them; their extra failures (7.1, 6.2) are artifacts of that choice. Their
+7.21.5 hits are not re-measured — CJK and Arabic go through the CID `/W` path,
+not the WinAnsi `/Widths` path fixed here.
 
 ### R-17 — Verify PDF/A-3A, and Add the U Conformance Level
 
