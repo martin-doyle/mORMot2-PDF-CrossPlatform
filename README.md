@@ -2,6 +2,9 @@
 
 Cross-platform PDF generation for Windows, Linux and macOS, based on the [mORMot2](https://github.com/synopse/mORMot2) PDF engine (`mormot.ui.pdf.pas`). The original implementation is Windows/GDI-only; this project abstracts all platform calls behind interfaces and provides a FreeType2 backend for Unix/macOS.
 
+**Current release: [v0.9.0](CHANGELOG.md)** — tagged PDF output verified by
+veraPDF (106/106) and PAC 2024 on all three platforms.
+
 ## Platforms
 
 | Platform | Compiler | Backend | Status |

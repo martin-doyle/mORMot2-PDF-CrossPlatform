@@ -489,19 +489,24 @@ face index. Add one so the remaining faces can be selected by name. The
 FreeType backend already extracts a single face as a standalone sfnt
 (`ExtractSfntFromTtc`), so the embedding side needs no change.
 
-### R-13 — RTL Shaper Advance Test — unprioritised
+### R-13 — RTL Shaper Advance Test — mostly done 2026-09-23
 
-**Effort:** 0.5 day | **File:** `tests/`
+**Effort:** 0.5 day remaining | **File:** `tests/`
 
-Linux fonts (Noto Naskh Arabic) resolve shaped glyphs through the CMAP, so the
-shaper's own advance path never runs there — a bug in it is invisible on Linux
-and fatal on macOS. Add a test against a font **without** Arabic presentation
-forms. Background: `.claude/skills/fonts.md` §10.
+The advance half is **done**, as a by-product of U-2.
+`TestShapedGlyphWidthFromHmtx` is exactly what this item asked for: it shapes
+Arabic, requires a face that applies a GPOS offset — which Noto Naskh Arabic
+does not, so the test skips itself on Linux instead of reporting a false green
+— and then asserts against the generated PDF that `/W` carries the `hmtx`
+advance rather than the shaper's. It fails 2/9 against the pre-U-2 engine, so it
+guards the path that is invisible on Linux and was fatal on macOS. Background:
+`.claude/skills/fonts.md` §10.
 
-`TestUseUniscribeIsPortable` (from R-16) is a compile-time guard, not an output
-check: nothing yet asserts that shaped Arabic actually reaches the PDF. An
-end-to-end test belongs with this item, checking the `/ToUnicode` entries for
-`U+FExx` after drawing with `UseUniscribe` set.
+**What is left** is the end-to-end half. `TestUseUniscribeIsPortable` (from
+R-16) is a compile-time guard, not an output check: nothing yet asserts that
+shaped Arabic actually reaches the PDF on the Windows path, by checking the
+`/ToUnicode` entries for `U+FExx` after drawing with `UseUniscribe` set. That
+is a Windows-side test and remains open.
 
 ### EMF/MetaFile and GDI+ Gradients — no work planned
 
