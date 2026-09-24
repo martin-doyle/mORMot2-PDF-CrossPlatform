@@ -448,7 +448,16 @@ is accepted for profile EN 16931.
   same text as `factur-x.xml`, legibly arranged; the placeholders
   (`[Seller name]` …) are the KoSIT original's. One quality hint remains,
   accepted as **W-2** below.
-- **Linux and Windows** — everything above is macOS only.
+- ~~**Linux and Windows**~~ — **green on both** (2026-09-24), built there and
+  checked on macOS: veraPDF `3u` 148/148 and `ua1` 106/106, Mustang valid
+  (flavour 3u), PAC 2024 green with the same W-2 hint. The three files agree
+  in everything that has to match: roles and counts (1 `Table`, 6 `TR`,
+  5 `TH`, 25 `TD`, 7 `P`, 1 `H1`), the embedded XML byte-identical to
+  `factur-x.xml`, `/AFRelationship /Alternative`, `fx:ConformanceLevel`
+  `EN 16931`, `pdfaid:conformance` U. Faces differ as expected — Trebuchet MS,
+  Liberation Sans, Calibri, each subset; Windows is 94 KB against about 20 KB
+  because its `CreateFontPackage` subsets are larger, as in the other demos.
+  Not repeated there: the CJK peer check with a `glyf` face.
 - **A-3A** with PAC 2024 on Windows.
 - **Documentation**: `docs/DEMOS.md`, the demo's README, `CLAUDE.md`, the
   skills, and the scope statement (B2B hybrid invoices, not B2G) in the
