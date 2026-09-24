@@ -209,6 +209,7 @@ const
   pdfa2B = mormot.ui.pdf.pdfa2B;
   pdfa3A = mormot.ui.pdf.pdfa3A;
   pdfa3B = mormot.ui.pdf.pdfa3B;
+  pdfa3U = mormot.ui.pdf.pdfa3U;
 
 implementation
 

@@ -19,6 +19,7 @@ uses
   test_pdf_crossplatform,
   test_pdf_smoke,
   test_pdf_subset,
+  test_pdf_pdfa,
   test_report_crossplatform,
   test_coordinates,
   test_report_coordinates;
@@ -34,7 +35,7 @@ type
 procedure TIntegrationTests.TestPDF;
 begin
   AddCase([TPdfCrossPlatTests, TPdfSmokeTests, TPdfSubsetTests,
-    TPdfSubsetEngineTests]);
+    TPdfSubsetEngineTests, TPdfATests]);
 end;
 
 procedure TIntegrationTests.TestReport;

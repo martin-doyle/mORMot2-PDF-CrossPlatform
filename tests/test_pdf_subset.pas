@@ -68,6 +68,7 @@ type
     procedure TestSubsetFallbackWithoutSubsetter;
     procedure TestTaggedSubsetKeepsToUnicode;
     procedure TestPdfA1StillWholeFace;
+    procedure TestPdfA3Subsets;
   end;
 
 /// number of non-overlapping occurrences of Sub in s
@@ -689,6 +690,24 @@ begin
   // R-15 gave the Windows CreateFontPackage path the same guard, so this
   // now holds on every platform
   CheckEqual(FirstSubsetTag(pdfa1), '', 'no subset tag');
+end;
+
+procedure TPdfSubsetEngineTests.TestPdfA3Subsets;
+var
+  pdfa3, whole: RawByteString;
+begin
+  // the /CIDSet guard is PDF/A-1 only: A-2 and A-3 subset like any document
+  pdfa3 := BuildPdf(SansFont, 'Hello', false, false, false, pdfa3U);
+  whole := BuildPdf(SansFont, 'Hello', true, false, false);
+  if not PdfCanSubsetRetainingGids then
+  begin
+    Check(FirstFontFile(pdfa3) = FirstFontFile(whole),
+      'without a retain-GID subsetter PDF/A-3 embeds the whole face');
+    exit;
+  end;
+  Check(FirstSubsetTag(pdfa3) <> '', 'PDF/A-3 output is subset');
+  Check(length(FirstFontFile(pdfa3)) * 10 < length(FirstFontFile(whole)),
+    'and much smaller');
 end;
 
 end.

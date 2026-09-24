@@ -210,6 +210,8 @@ type
   PPdfBox = ^TPdfBox;
 
   /// the PDF/A level
+  // - pdfa3U (ISO 19005-3 level U: every text maps to Unicode) comes last so
+  // that the ordinal values of the older members stay what they were
   TPdfALevel = (
     pdfaNone,
     pdfa1A,
@@ -217,7 +219,8 @@ type
     pdfa2A,
     pdfa2B,
     pdfa3A,
-    pdfa3B);
+    pdfa3B,
+    pdfa3U);
 
   /// PDF exception, raised when an invalid value is given to a constructor
   EPdfInvalidValue = class(ESynException);
@@ -1683,8 +1686,10 @@ type
     /// create an attached file from its name
     // - Description is a human readable description of the file content
     // - MimeType could be '' so it would be guessed from Title and Buffer
+    // - Relationship is the /AFRelationship of the associated file (PDF/A-3)
     function CreateFileAttachment(const AttachFile: TFileName;
-      const Description: string = ''; const MimeType: string = ''): TPdfDictionary;
+      const Description: string = ''; const MimeType: string = '';
+      Relationship: TPdfAFRelationship = afrAlternative): TPdfDictionary;
     /// create an attached file from a buffer and/or a TStream
     // - Title is typically the file name (without any path)
     // - Description is a human readable description of the file content
@@ -3195,6 +3200,18 @@ const
     '</rdf:Bag>' +
     '</pdfaExtension:schemas>' +
     '</rdf:Description>';
+
+/// the XMP metadata of a ZUGFeRD 2.x / Factur-X 1.x invoice, to be set to
+// TPdfDocument.PdfAMetadaExtension
+// - returns the fx: properties with their PDF/A extension schema description
+// - ConformanceLevel is the profile: 'MINIMUM', 'BASIC WL', 'BASIC',
+// 'EN 16931', 'EXTENDED' (or 'XRECHNUNG' for ZUGFeRD only)
+// - DocumentFileName is the name of the attached XML, i.e. 'factur-x.xml'
+// ('xrechnung.xml' for the XRECHNUNG profile)
+// - the values are XML-escaped here
+function PdfMetadataFacturX(const ConformanceLevel: RawUtf8;
+  const DocumentFileName: RawUtf8 = 'factur-x.xml';
+  const Version: RawUtf8 = '1.0'; const DocumentType: RawUtf8 = 'INVOICE'): RawUtf8;
 
 
 {************ TPdfFontMeasurer Document-Independent Text Metrics }
@@ -8510,9 +8527,9 @@ const
   PDF_HEADER: array[TPdfFileFormat] of AnsiChar = (
     '3', '4', '5', '6', '7');
   PDFA_APART: array[TPdfALevel] of AnsiChar = (
-    ' ', '1', '1', '2', '2', '3', '3');
+    ' ', '1', '1', '2', '2', '3', '3', '3');
   PDFA_CONFORMANCE: array[TPdfALevel] of AnsiChar = (
-    ' ', 'A', 'B', 'A', 'B', 'A', 'B');
+    ' ', 'A', 'B', 'A', 'B', 'A', 'B', 'U');
   // PDF/A conformation requires at least four binary (>#128) characters
   PDFA_MARKER: array[0..5] of byte = (ord('%'), 237, 238, 239, 240, 10);
 
@@ -8525,7 +8542,79 @@ begin
     ['&', '&amp;', '<', '&lt;', '>', '&gt;']);
 end;
 
+const
+  // the namespaces of a PDF/A extension schema description (ISO 19005-1 6.7.8)
+  XMP_PDFA_EXTENSION_NS =
+    'xmlns:pdfaExtension="http://www.aiim.org/pdfa/ns/extension/" ' +
+    'xmlns:pdfaSchema="http://www.aiim.org/pdfa/ns/schema#" ' +
+    'xmlns:pdfaProperty="http://www.aiim.org/pdfa/ns/property#"';
+  XMP_PDFA_EXTENSION_BAG = '<pdfaExtension:schemas><rdf:Bag>';
+  // pdfuaid is none of the schemas PDF/A predefines, so a document claiming
+  // both PDF/A and PDF/UA has to describe it (ISO 19005-3 6.6.2.3.1)
+  XMP_PDFUAID_SCHEMA =
+    '<rdf:li rdf:parseType="Resource">' +
+    '<pdfaSchema:schema>PDF/UA Universal Accessibility Schema</pdfaSchema:schema>' +
+    '<pdfaSchema:namespaceURI>http://www.aiim.org/pdfua/ns/id/</pdfaSchema:namespaceURI>' +
+    '<pdfaSchema:prefix>pdfuaid</pdfaSchema:prefix>' +
+    '<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType="Resource">' +
+    '<pdfaProperty:name>part</pdfaProperty:name>' +
+    '<pdfaProperty:valueType>Integer</pdfaProperty:valueType>' +
+    '<pdfaProperty:category>internal</pdfaProperty:category>' +
+    '<pdfaProperty:description>Indicates, which part of ISO 14289 standard ' +
+    'is followed</pdfaProperty:description>' +
+    '</rdf:li></rdf:Seq></pdfaSchema:property></rdf:li>';
+  XMP_FACTURX_NS = 'urn:factur-x:pdfa:CrossIndustryDocument:invoice:1p0#';
+
+function XmpTextUtf8(const Value: RawUtf8): RawUtf8;
+begin
+  result := StringReplaceAll(Value, ['&', '&amp;', '<', '&lt;', '>', '&gt;']);
+end;
+
+function XmpFacturXProperty(const Name, Description: RawUtf8): RawUtf8;
+begin
+  result := '<rdf:li rdf:parseType="Resource">' +
+    '<pdfaProperty:name>' + Name + '</pdfaProperty:name>' +
+    '<pdfaProperty:valueType>Text</pdfaProperty:valueType>' +
+    '<pdfaProperty:category>external</pdfaProperty:category>' +
+    '<pdfaProperty:description>' + Description + '</pdfaProperty:description>' +
+    '</rdf:li>';
+end;
+
+function PdfMetadataFacturX(const ConformanceLevel, DocumentFileName,
+  Version, DocumentType: RawUtf8): RawUtf8;
+begin
+  result :=
+    '<rdf:Description rdf:about="" xmlns:fx="' + XMP_FACTURX_NS + '">' +
+    '<fx:DocumentType>' + XmpTextUtf8(DocumentType) + '</fx:DocumentType>' +
+    '<fx:DocumentFileName>' + XmpTextUtf8(DocumentFileName) +
+    '</fx:DocumentFileName>' +
+    '<fx:Version>' + XmpTextUtf8(Version) + '</fx:Version>' +
+    '<fx:ConformanceLevel>' + XmpTextUtf8(ConformanceLevel) +
+    '</fx:ConformanceLevel>' +
+    '</rdf:Description>' +
+    '<rdf:Description rdf:about="" ' + XMP_PDFA_EXTENSION_NS + '>' +
+    XMP_PDFA_EXTENSION_BAG +
+    '<rdf:li rdf:parseType="Resource">' +
+    '<pdfaSchema:schema>Factur-X PDFA Extension Schema</pdfaSchema:schema>' +
+    '<pdfaSchema:namespaceURI>' + XMP_FACTURX_NS + '</pdfaSchema:namespaceURI>' +
+    '<pdfaSchema:prefix>fx</pdfaSchema:prefix>' +
+    '<pdfaSchema:property><rdf:Seq>' +
+    XmpFacturXProperty('DocumentFileName',
+      'The name of the embedded XML document') +
+    XmpFacturXProperty('DocumentType',
+      'The type of the hybrid document in capital letters, e.g. INVOICE') +
+    XmpFacturXProperty('Version',
+      'The actual version of the standard applying to the embedded XML document') +
+    XmpFacturXProperty('ConformanceLevel',
+      'The conformance level of the embedded XML document') +
+    '</rdf:Seq></pdfaSchema:property></rdf:li>' +
+    '</rdf:Bag></pdfaExtension:schemas></rdf:Description>';
+end;
+
 procedure TPdfDocument.SaveToStreamDirectBegin(AStream: TStream; ForceModDate: TDateTime);
+var
+  ext: RawUtf8;
+  i: PtrInt;
 begin
   if fSaveToStreamWriter <> nil then
     raise EPdfInvalidOperation.Create('SaveToStreamDirectBegin called twice');
@@ -8573,12 +8662,25 @@ begin
       Add('</pdfaid:part><pdfaid:conformance>').
       Add(PDFA_CONFORMANCE[fPdfA]).
       Add('</pdfaid:conformance></rdf:Description>');
+    ext := fPdfAMetadaExtension;
     if fTagged then
+    begin
       fMetaData.Writer.Add(
         '<rdf:Description rdf:about="" xmlns:pdfuaid="http://www.aiim.org/pdfua/ns/id/">' +
         '<pdfuaid:part>1</pdfuaid:part></rdf:Description>');
+      // describe pdfuaid in the caller's list of extension schemas, if there
+      // is one (as PdfMetadataFacturX writes): a second pdfaExtension:schemas
+      // property on the same resource would not be valid XMP
+      i := PosEx(XMP_PDFA_EXTENSION_BAG, ext);
+      if i > 0 then
+        Insert(XMP_PDFUAID_SCHEMA, ext, i + length(XMP_PDFA_EXTENSION_BAG))
+      else
+        ext := ext + '<rdf:Description rdf:about="" ' + XMP_PDFA_EXTENSION_NS +
+          '>' + XMP_PDFA_EXTENSION_BAG + XMP_PDFUAID_SCHEMA +
+          '</rdf:Bag></pdfaExtension:schemas></rdf:Description>';
+    end;
     fMetaData.Writer.
-      Add(fPdfAMetadaExtension).
+      Add(ext).
       Add('</rdf:RDF></x:xmpmeta><?xpacket end="w"?>');
   end;
   // write beginning of the content
@@ -9623,7 +9725,8 @@ begin
 end;
 
 function TPdfDocument.CreateFileAttachment(const AttachFile: TFileName;
-  const Description, MimeType: string): TPdfDictionary;
+  const Description, MimeType: string;
+  Relationship: TPdfAFRelationship): TPdfDictionary;
 var
   lw, fc: TUnixMSTime;
   fs: TStream;
@@ -9636,7 +9739,7 @@ begin
     try
       result := CreateFileAttachmentFrom(
         '', ExtractFileName(AttachFile), Description, MimeType,
-        UnixMSTimeToDateTimeZ(fc), UnixMSTimeToDateTimeZ(lw), fs);
+        UnixMSTimeToDateTimeZ(fc), UnixMSTimeToDateTimeZ(lw), fs, Relationship);
     finally
       fs.Free;
     end;
@@ -9672,7 +9775,9 @@ begin
   str.Attributes.AddItem('Subtype', mime);
   // file Params attribute
   parms := TPdfDictionary.Create(fXref);
-  parms.AddItem('Size', length(Buffer));
+  // the bytes written, from Buffer and Stream - not length(Buffer) alone,
+  // which is 0 when the content comes through the stream
+  parms.AddItem('Size', str.Writer.Position);
   if CreationDate <> 0 then
     parms.AddItemText('CreationDate', DateTimeToPdfDate(CreationDate));
   if ModDate <> 0 then
