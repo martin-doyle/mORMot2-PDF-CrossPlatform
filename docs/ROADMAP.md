@@ -382,16 +382,66 @@ against the old engine, passes now. Assertions 239 → 245.
   `pdfaExtension` description of it whenever PDF/A and Tagged meet. This is an
   engine fix in `SaveToStreamDirectBegin`, not demo work.
 
-**Found while reading, not yet fixed:**
+**Found while reading** — the first two fixed in steps 2 and 4 below:
 
-- `CreateFileAttachment(FileName, …)` takes no `/AFRelationship` (always
-  `Alternative`) and writes `/Params /Size 0`, because the size is taken from
-  the empty `Buffer` while the content comes through the stream. Use
-  `CreateFileAttachmentFrom` with the buffer until then.
-- `PdfMetadataZugferd` already exists: the `fx:` extension schema, but with
-  XRechnung values (`xrechnung.xml`, Version 3). The `fx:` part of R-17 is
-  therefore a parameterised variant of it, not new code.
+- ~~`CreateFileAttachment(FileName, …)` takes no `/AFRelationship` and writes
+  `/Params /Size 0`~~ — **fixed**: it takes a `Relationship` (default
+  `afrAlternative`, as before), and `/Size` counts the bytes written, from the
+  buffer and the stream alike.
+- ~~`PdfMetadataZugferd` holds XRechnung values only~~ — **`PdfMetadataFacturX`**
+  added beside it: profile, file name, version and document type as
+  parameters, escaped. The constant stays, as public API.
 - Setting `PdfA` as a property calls `NewDoc`; pass it to the constructor.
+- PDF/A-1 forbids embedded files and PDF/A-2 allows only PDF/A ones, but
+  `CreateFileAttachment` accepts any file at any level. Not in the goal, so
+  left as it is; a caller asking for A-1 has to know.
+
+#### Steps 2–5 — 2026-09-24, macOS
+
+**The demo is green in all three checkers**, profile EN 16931 with
+`factur-x.xml` (the KoSIT test case with its specification identifier changed):
+
+| Variant | veraPDF `3u` | veraPDF `ua1` | Mustang 2.26.0 |
+|---|---|---|---|
+| tagged + `factur-x.xml` | **148/148** | **106/106** | **valid** — PDF, XML and overall |
+| tagged, no attachment | **148/148** | **106/106** | — |
+| untagged + `factur-x.xml` | **148/148** | — | — |
+
+Mustang keeps one warning and two notices, all from the invoice data itself
+(see `examples/zugferd_demo/THIRD_PARTY.md`). `/AFRelationship /Alternative`
+is accepted for profile EN 16931.
+
+- **Step 2, XMP.** The engine describes `pdfuaid` whenever PDF/A and Tagged
+  meet — the one `3b` failure left after the crash fix. When the caller's
+  `PdfAMetadaExtension` already holds a `<pdfaExtension:schemas><rdf:Bag>`,
+  the description goes into that list rather than a second one, which would
+  not be valid XMP. `PdfMetadataFacturX` writes the `fx:` properties and their
+  schema; `fx:Version` `1.0` and `fx:ConformanceLevel` `EN 16931` pass Mustang.
+- **Step 3, `pdfa3U`.** Appended to `TPdfALevel`, so the older members keep
+  their ordinal values and every `fPdfA >= pdfa2A` covers it; `PDFA_APART` /
+  `PDFA_CONFORMANCE` extended, re-exported in `mormot.ui.pdfcanvas`.
+- **Step 4, the `fPdfA` branches.** All 13 read with A-3/U in mind; none is too
+  strict for A-3, and no A-1 rule leaks into it. The attachment fixes above
+  are the only changes.
+- **Step 5, tests.** New suite `TPdfATests` (`tests/test_pdf_pdfa.pas`, 30
+  assertions): the 3U identification, the associated file (`/AF`,
+  `/AFRelationship`, MIME name, `/Params /Size`), the file overload, the
+  extension schemas in all three cases, `PdfMetadataFacturX` and its
+  escaping, one `/ToUnicode` per font under U, encryption raising. Plus
+  `TestPdfA3Subsets` beside `TestPdfA1StillWholeFace`. 245 → 277 assertions
+  on macOS. Disabling the schema insertion and the `/Size` fix fails 4 of
+  them.
+
+**Still open for R-17:**
+
+- **The unused WinAnsi peer beside a CJK font** (own entry below) — the U test
+  covers Latin text only, and says so. With CJK text the peer still carries
+  no `/ToUnicode`; whether veraPDF `3u` rejects it is not measured yet.
+- **Linux and Windows** — everything above is macOS only.
+- **A-3A** with PAC 2024 on Windows.
+- **Documentation**: `docs/DEMOS.md`, the demo's README, `CLAUDE.md`, the
+  skills, and the scope statement (B2B hybrid invoices, not B2G) in the
+  READMEs once the platforms are verified.
 
 #### Clarify first — both before any estimate is believed
 

@@ -18,7 +18,8 @@ FPImage adapter: `src/core/mormot.pdf.fpimage.pas`
 
 ```pascal
 // PDF/A conformance level
-TPdfALevel = (pdfaNone, pdfa1A, pdfa1B, pdfa2A, pdfa2B, pdfa3A, pdfa3B);
+// pdfa3U is appended last, so the older members keep their ordinal values
+TPdfALevel = (pdfaNone, pdfa1A, pdfa1B, pdfa2A, pdfa2B, pdfa3A, pdfa3B, pdfa3U);
 
 // PDF file format version (defined in mormot.pdf.types — available to all units)
 TPdfFileFormat = (pdf13, pdf14, pdf15, pdf16, pdf17);
@@ -96,7 +97,8 @@ Doc := TPdfDocument.Create;
 Doc.DefaultPaperSize := psA4;     // psA4, psLetter, psA3, psA5, ...
 Doc.EmbeddedTtf := False;          // True = embed full TTF
 Doc.StandardFontsReplace := True;  // True = Helvetica/Times/Courier as Type1
-Doc.PdfA := pdfA1B;               // pdfNone, pdfA1A, pdfA1B, pdfA2A, pdfA2B, pdfA3A, pdfA3B
+Doc.PdfA := pdfA1B;               // pdfNone, pdfA1A, pdfA1B, pdfA2A, pdfA2B, pdfA3A, pdfA3B, pdfa3U
+                                   // setting PdfA calls NewDoc: prefer the constructor's APdfA
 Doc.NewDoc;
 Page := Doc.AddPage;               // returns TPdfPage
 C := Doc.Canvas;                   // TPdfCanvas (same per page)
@@ -159,9 +161,16 @@ Doc.AddTrueTypeFont('Calibri')             // pre-register font explicitly; retu
 Doc.CreateOptionalContentGroup(Parent, Name)
 Doc.CreateOptionalContentRadioGroup(Groups)
 
-// File attachments
-Doc.CreateFileAttachment(FileName, Name, Description, Relationship)
-Doc.CreateFileAttachmentFrom(Buffer, Name, MimeType, Description, Relationship)
+// File attachments (associated files, /AF in the catalog from PDF/A-2 up)
+Doc.CreateFileAttachment(FileName, Description, MimeType, Relationship)
+Doc.CreateFileAttachmentFrom(Buffer, Title, Description, MimeType,
+  CreationDate, ModDate, Stream, Relationship)
+// Relationship: afrUnspecified, afrSource, afrData, afrAlternative (default), afrSupplement
+
+// XMP extension for PDF/A (raw XML, appended to the packet)
+Doc.PdfAMetadaExtension := PdfMetadataFacturX('EN 16931');  // ZUGFeRD/Factur-X fx: + schema
+// Tagged + PdfA: the engine adds the pdfuaid schema description itself, into
+// the caller's <pdfaExtension:schemas><rdf:Bag> when there is one
 
 // Streaming — page-by-page output to large streams without full buffering
 Doc.SaveToStreamDirectBegin(Stream, ForceModDate)
