@@ -166,9 +166,41 @@ a `CIDFontType0`. That matters on macOS, whose CJK system faces are CFF —
 `chinese_demo` there went from 10 MB to 23 KB once this was handled correctly
 (see R-15c in [docs/ROADMAP.md](docs/ROADMAP.md)).
 
+## PDF/A and e-invoices (ZUGFeRD / Factur-X)
+
+PDF/A-3 and PDF/UA-1 combine in one file: pass the level to the constructor,
+switch `Tagged` on, and the engine writes one XMP packet with both
+identifications and the extension schema PDF/A needs for `pdfuaid`.
+
+| Level | Status |
+|---|---|
+| **PDF/A-3U** + PDF/UA-1 | verified on all three platforms — veraPDF `3u` and `ua1`, PAC 2024 |
+| **PDF/A-3A** | verified with `Tagged := True` (veraPDF `3a`); the A level needs the structure tree |
+| PDF/A-3B | verified, with and without tagging |
+| PDF/A-1A/B, -2A/B | implemented, not verified. PDF/A-1 embeds whole faces (no `/CIDSet`) |
+
+**Hybrid e-invoices.** A ZUGFeRD 2.x / Factur-X 1.x invoice is PDF/A-3 with
+its CII XML embedded as an associated file. The engine provides the container
+— `CreateFileAttachmentFrom` with an `/AFRelationship`, and
+`PdfMetadataFacturX` for the `fx:` XMP properties — and stays neutral towards
+the invoice itself: it neither generates nor validates the XML.
+[zugferd_demo](examples/zugferd_demo/) builds a profile EN 16931 invoice that
+Mustang validates, the form exchanged between businesses in Germany and
+France. Invoices to German public authorities take pure XML (XRechnung), not
+a PDF, and are not in scope.
+
+```pascal
+Doc := TPdfDocumentVcl.Create(true, 0, pdfa3U);   // not the PdfA property: it resets the document
+Doc.Tagged := True;
+// ... draw the invoice ...
+Doc.CreateFileAttachmentFrom(Xml, 'factur-x.xml', 'Factur-X invoice data',
+  'text/xml', Now, Now, nil, afrAlternative);
+Doc.PdfAMetadaExtension := PdfMetadataFacturX('EN 16931');
+```
+
 ---
 
-## The 6 demos (learning path)
+## The 7 demos (learning path)
 
 | Demo | API | What it shows |
 |---|---|---|
@@ -178,6 +210,7 @@ a `CIDFontType0`. That matters on macOS, whose CJK system faces are CFF —
 | [mormot_demo](examples/mormot_demo/) | `TGDIPages` + ORM | SQLite database, service layer, TTableLayout, tagged export, `--export` batch mode |
 | [chinese_demo](examples/chinese_demo/) | `TPdfDocumentVcl` | CJK text, subset embedding |
 | [rtl_demo](examples/rtl_demo/) | `TPdfDocumentVcl` | Arabic RTL, HarfBuzz / Uniscribe shaping |
+| [zugferd_demo](examples/zugferd_demo/) | `TPdfDocumentVcl` | PDF/A-3U + PDF/UA-1, ZUGFeRD / Factur-X invoice with embedded XML |
 
 Full guide: [docs/DEMOS.md](docs/DEMOS.md)
 
@@ -193,6 +226,7 @@ Full guide: [docs/DEMOS.md](docs/DEMOS.md)
 "C:\lazarus\lazbuild.exe" examples/mormot_demo/mormot_demo.lpi -B
 "C:\lazarus\lazbuild.exe" examples/chinese_demo/chinese_demo.lpi -B
 "C:\lazarus\lazbuild.exe" examples/rtl_demo/rtl_demo.lpi -B
+"C:\lazarus\lazbuild.exe" examples/zugferd_demo/zugferd_demo.lpi -B
 
 # Linux/macOS
 lazbuild examples/pdf_demo/pdf_demo_crossplat.lpi -B
@@ -201,6 +235,7 @@ lazbuild examples/chinese_demo/chinese_demo.lpi -B
 lazbuild examples/rtl_demo/rtl_demo.lpi -B
 lazbuild examples/report_demo/mormot_report_demo.lpi -B
 lazbuild examples/mormot_demo/mormot_demo.lpi -B
+lazbuild examples/zugferd_demo/zugferd_demo.lpi -B
 
 # Test suite
 lazbuild tests/test_runner.lpi -B && tests/bin/test_runner
@@ -247,6 +282,7 @@ Fonts from `/Library/Fonts`, `/System/Library/Fonts`, `~/Library/Fonts`.
 - **EMF/MetaFile:** Windows-only (`TPdfDocumentGdi`), not portable
 - **GDI+/Gradient fills:** available only via EMF on Windows
 - **Table pagination:** no row wrap within a cell
+- **Links in tagged output:** `CreateHyperLink` in a tagged document fails PDF/UA — there is no `Link` structure element for annotations. `TGDIPages.DrawLink` stays conformant by drawing styled text only; its URL is not clickable (roadmap R-18)
 
 Details and the current verification status: [docs/ROADMAP.md](docs/ROADMAP.md)
 

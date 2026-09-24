@@ -1,5 +1,63 @@
 # Changelog
 
+## Unreleased
+
+PDF/A-3 verified for the first time, combined with PDF/UA-1 in one file, and a
+demo that uses it for a hybrid e-invoice (roadmap R-17).
+
+### Verification
+
+`zugferd_demo`, built on Windows, Linux and macOS, passes **veraPDF 1.30.2**
+`3u` (148/148) and `ua1` (106/106), **Mustang-CLI 2.26.0** (valid as
+ZUGFeRD / Factur-X profile EN 16931, PDF/A-3U) and **PAC 2024**. The three files
+agree in structure, embedded XML and metadata. PAC keeps one quality hint, e-mail
+addresses without a link element, accepted as roadmap W-2. As `pdfa3A` the same
+file passes veraPDF `3a` 155/155. PDF/A-1 and PDF/A-2 remain implemented but
+unverified.
+
+Test suite: 277 assertions on macOS, against 239 at v0.9.0.
+
+### Added
+
+- **`pdfa3U`** in `TPdfALevel`, appended last so the older members keep their
+  ordinal values.
+- **`PdfMetadataFacturX(ConformanceLevel, DocumentFileName, Version,
+  DocumentType)`** writes the `fx:` XMP properties of a ZUGFeRD / Factur-X
+  invoice with their PDF/A extension schema. `PdfMetadataZugferd` stays.
+- **`CreateFileAttachment(FileName, …, Relationship)`**: the file overload
+  takes an `/AFRelationship` too (default `afrAlternative`, as before).
+- **`zugferd_demo`** (demo 7): a tagged PDF/A-3U invoice with `factur-x.xml`
+  embedded. The XML is third-party test data (KoSIT, Apache-2.0), with its
+  source, one marked change and checksums in `THIRD_PARTY.md`.
+- **`tests/test_pdf_pdfa.pas`**: associated files, XMP identification and
+  extension schemas, `PdfMetadataFacturX`, `/ToUnicode` for every font under U,
+  encryption rejected; plus `TestPdfA3Subsets`.
+
+### Fixed
+
+- **Tagged PDF/A crashed on `Free`.** At every level, PDF/A with `Tagged := True`
+  freed its `StructTreeRoot` twice: `NewDoc` made it a direct object, which the
+  structure tree then added to a second dictionary. The same early object made
+  the Tagged setup skip `/Lang` and `DisplayDocTitle`. Untagged PDF/A no longer
+  claims `/MarkInfo /Marked true` over an empty tree.
+- **`pdfuaid` without an extension schema.** PDF/A does not predefine it, so
+  every tagged PDF/A failed ISO 19005 6.6.2.3.1. The engine now describes it,
+  inside the caller's list of extension schemas when there is one.
+- **`/Params /Size 0` for attachments read from a file.** The size came from
+  the empty buffer while the content arrived through a stream.
+
+### Known limitations
+
+- **Links in tagged output** (R-18): `CreateHyperLink` in a tagged document
+  fails PDF/UA (veraPDF `ua1`, four rules of 7.18), because the engine has no
+  `Link` structure element for annotations. `TGDIPages.DrawLink` stays
+  conformant by drawing styled text only — its URL is dropped, nothing is
+  clickable.
+- **Invoices to German authorities** take pure XML (XRechnung) and are out of
+  scope; the engine never generates or validates invoice XML.
+- **PDF/A-1 accepts attachments** although it forbids them; the engine does not
+  check.
+
 ## v0.9.0 — 2026-09-23
 
 First tagged release. Cross-platform PDF and report generation for Windows,

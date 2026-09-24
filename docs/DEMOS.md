@@ -1,8 +1,9 @@
-# Learning Path — The 6 Demos
+# Learning Path — The 7 Demos
 
-The six demos show the framework from bottom to top: from the direct PDF API up to database-driven report generation, and then into specialised scripts. Each of the first four demos builds on the previous one.
+The seven demos show the framework from bottom to top: from the direct PDF API up to database-driven report generation, and then into specialised scripts. Each of the first four demos builds on the previous one.
 
 ```
+Demo 7 — zugferd_demo     PDF/A-3U + PDF/UA-1 hybrid e-invoice (ZUGFeRD / Factur-X)
 Demo 6 — rtl_demo         Arabic RTL text + HarfBuzz / Uniscribe shaping
 Demo 5 — chinese_demo     CJK (Chinese) text with font subsetting
 Demo 4 — mormot_demo      ORM + database
@@ -569,6 +570,85 @@ examples/rtl_demo/bin/x86_64-linux/rtl_demo
 
 ---
 
+## Demo 7 — zugferd_demo
+
+**Specialised: PDF/A-3U and PDF/UA-1 in one file, as a hybrid e-invoice**
+
+Draws a one-page invoice and embeds its machine-readable data as an associated
+file — a ZUGFeRD 2.x / Factur-X 1.x invoice of the profile **EN 16931**, the
+form exchanged between businesses in Germany and France. The same file
+conforms to PDF/A-3U (archiving, every text maps to Unicode) and to PDF/UA-1
+(accessibility).
+
+**What you learn:**
+- Pass the PDF/A level to the constructor. Setting `PdfA` later calls
+  `NewDoc` and erases everything drawn so far
+- `Tagged := True` and PDF/A combine: the engine writes one XMP packet with
+  both identifications, and describes the `pdfuaid` schema PDF/A does not
+  predefine
+- `CreateFileAttachmentFrom(..., afrAlternative)` embeds a file with its
+  `/AFRelationship`; from PDF/A-2 up the catalog lists it in `/AF`
+- `PdfMetadataFacturX('EN 16931')` writes the `fx:` XMP properties a ZUGFeRD
+  reader looks for, with their PDF/A extension schema
+- Stages A and U: `pdfa3U` needs no more than a `/ToUnicode` for every font,
+  which the engine writes; `pdfa3A` additionally needs the structure tree, so
+  it requires `Tagged := True`
+- What the engine does **not** do: generate or validate invoice XML. That is
+  the caller's, and here it is third-party test data
+
+**Scope.** Invoices to German public authorities take pure XML (XRechnung),
+not a PDF, so they are not what this demo — or this project — produces.
+
+**The invoice data** is test case `01.01a` of the KoSIT xrechnung-testsuite
+(Apache-2.0), with its specification identifier changed to EN 16931 and
+renamed `factur-x.xml`; `examples/zugferd_demo/THIRD_PARTY.md` records the
+source, the change and the checksums. The page shows the same content.
+
+**Core pattern:**
+
+```pascal
+uses
+  mormot.pdf.types, mormot.ui.pdf, mormot.ui.pdfcanvas;
+
+var Doc: TPdfDocumentVcl; Xml: RawByteString;
+begin
+  Xml := StringFromFile('factur-x.xml');
+  Doc := TPdfDocumentVcl.Create(true, 0, pdfa3U);  // level in the constructor
+  Doc.Tagged := True;                              // PDF/UA-1 as well
+  Doc.DefaultLanguage := 'de';
+  Doc.Info.Title := 'Rechnung 123456XX';
+  Doc.AddPage;
+  Doc.BeginStructContent(psrH1);
+  Doc.VclCanvas.TextOut(60, 60, 'Rechnung 123456XX');
+  Doc.EndStructContent;
+  // ... the invoice as P and one Table with THead / TBody / TFoot
+  Doc.CreateFileAttachmentFrom(Xml, 'factur-x.xml', 'Factur-X invoice data',
+    'text/xml', Now, Now, nil, afrAlternative);
+  Doc.PdfAMetadaExtension := PdfMetadataFacturX('EN 16931');
+  Doc.SaveToFile('zugferd_invoice.pdf');
+  Doc.Free;
+end;
+```
+
+**Switches:** `--no-attachment` leaves the XML and the `fx:` metadata out,
+`--untagged` the structure tree — to tell the sources of a checker failure
+apart.
+
+**Output:** `zugferd_invoice.pdf` (1 page). Verified on Windows, Linux and
+macOS with veraPDF (`3u` 148/148, `ua1` 106/106), Mustang-CLI and PAC 2024.
+PAC keeps one accepted quality hint, e-mail addresses without a link element
+(ROADMAP W-2).
+
+**Build & run** — `factur-x.xml` is looked up in the current folder, then two
+levels above the executable (the demo folder); the PDF goes to the current folder:
+```bash
+lazbuild examples/zugferd_demo/zugferd_demo.lpi -B
+examples/zugferd_demo/bin/<target>/zugferd_demo
+# -> produces zugferd_invoice.pdf
+```
+
+---
+
 ## Summary: API Layers
 
 | Demo | Class | Coordinates | Dependency |
@@ -579,3 +659,4 @@ examples/rtl_demo/bin/x86_64-linux/rtl_demo
 | 4 mormot_demo | `TGDIPages` + ORM | 1/100mm, Y=0 top | mORMot2 + LCL + SQLite |
 | 5 chinese_demo | `TPdfDocumentVcl` | pixels, Y=0 top | mORMot2 + LCL + CJK font |
 | 6 rtl_demo | `TPdfDocumentVcl` | pixels, Y=0 top | mORMot2 + LCL + Arabic font + HarfBuzz (Linux/macOS) |
+| 7 zugferd_demo | `TPdfDocumentVcl` | pixels, Y=0 top | mORMot2 + LCL |

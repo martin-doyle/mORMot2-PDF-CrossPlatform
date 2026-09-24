@@ -171,6 +171,8 @@ Doc.CreateFileAttachmentFrom(Buffer, Title, Description, MimeType,
 Doc.PdfAMetadaExtension := PdfMetadataFacturX('EN 16931');  // ZUGFeRD/Factur-X fx: + schema
 // Tagged + PdfA: the engine adds the pdfuaid schema description itself, into
 // the caller's <pdfaExtension:schemas><rdf:Bag> when there is one
+// Verified (R-17): A-3U + PDF/UA-1, A-3A, A-3B; A levels need Tagged := True
+// (the structure tree); A-1/A-2 implemented, unverified
 
 // Streaming — page-by-page output to large streams without full buffering
 Doc.SaveToStreamDirectBegin(Stream, ForceModDate)

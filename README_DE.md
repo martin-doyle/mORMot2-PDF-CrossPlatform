@@ -172,9 +172,42 @@ CJK-Systemschriften CFF sind: `chinese_demo` schrumpfte dort von 10 MB auf
 23 KB, nachdem dies korrekt behandelt wurde (siehe R-15c in
 [docs/ROADMAP.md](docs/ROADMAP.md)).
 
+## PDF/A und E-Rechnungen (ZUGFeRD / Factur-X)
+
+PDF/A-3 und PDF/UA-1 lassen sich in einer Datei kombinieren: die Stufe dem
+Konstruktor übergeben, `Tagged` einschalten — die Engine schreibt ein
+XMP-Paket mit beiden Kennungen und dem Erweiterungsschema, das PDF/A für
+`pdfuaid` verlangt.
+
+| Stufe | Stand |
+|---|---|
+| **PDF/A-3U** + PDF/UA-1 | auf allen drei Plattformen geprüft — veraPDF `3u` und `ua1`, PAC 2024 |
+| **PDF/A-3A** | geprüft mit `Tagged := True` (veraPDF `3a`); die Stufe A braucht den Strukturbaum |
+| PDF/A-3B | geprüft, mit und ohne Tagging |
+| PDF/A-1A/B, -2A/B | implementiert, nicht geprüft. PDF/A-1 bettet ganze Schriften ein (kein `/CIDSet`) |
+
+**Hybride E-Rechnungen.** Eine ZUGFeRD-2.x-/Factur-X-1.x-Rechnung ist ein
+PDF/A-3 mit eingebetteter CII-XML als verknüpfter Datei. Die Engine liefert
+den Container — `CreateFileAttachmentFrom` mit `/AFRelationship` und
+`PdfMetadataFacturX` für die `fx:`-XMP-Eigenschaften — und bleibt gegenüber
+der Rechnung selbst neutral: Sie erzeugt und prüft keine XML.
+[zugferd_demo](examples/zugferd_demo/) baut eine Rechnung im Profil EN 16931,
+die Mustang als valide bestätigt — die Form für den Austausch zwischen
+Unternehmen in Deutschland und Frankreich. Rechnungen an deutsche Behörden
+erwarten reine XML (XRechnung), kein PDF, und gehören nicht zum Umfang.
+
+```pascal
+Doc := TPdfDocumentVcl.Create(true, 0, pdfa3U);   // nicht die Property PdfA: sie setzt das Dokument zurück
+Doc.Tagged := True;
+// ... Rechnung zeichnen ...
+Doc.CreateFileAttachmentFrom(Xml, 'factur-x.xml', 'Factur-X invoice data',
+  'text/xml', Now, Now, nil, afrAlternative);
+Doc.PdfAMetadaExtension := PdfMetadataFacturX('EN 16931');
+```
+
 ---
 
-## Die 6 Demos (Lernpfad)
+## Die 7 Demos (Lernpfad)
 
 | Demo | API | Was wird gezeigt |
 |---|---|---|
@@ -184,6 +217,7 @@ CJK-Systemschriften CFF sind: `chinese_demo` schrumpfte dort von 10 MB auf
 | [mormot_demo](examples/mormot_demo/) | `TGDIPages` + ORM | SQLite-Datenbank, Service-Layer, TTableLayout, getaggter Export, `--export`-Stapelbetrieb |
 | [chinese_demo](examples/chinese_demo/) | `TPdfDocumentVcl` | CJK-Text, Subset-Embedding |
 | [rtl_demo](examples/rtl_demo/) | `TPdfDocumentVcl` | Arabisch RTL, HarfBuzz / Uniscribe Shaping |
+| [zugferd_demo](examples/zugferd_demo/) | `TPdfDocumentVcl` | PDF/A-3U + PDF/UA-1, ZUGFeRD-/Factur-X-Rechnung mit eingebetteter XML |
 
 Vollständige Anleitung: [docs/DEMOS.md](docs/DEMOS.md)
 
@@ -199,6 +233,7 @@ Vollständige Anleitung: [docs/DEMOS.md](docs/DEMOS.md)
 "C:\lazarus\lazbuild.exe" examples/mormot_demo/mormot_demo.lpi -B
 "C:\lazarus\lazbuild.exe" examples/chinese_demo/chinese_demo.lpi -B
 "C:\lazarus\lazbuild.exe" examples/rtl_demo/rtl_demo.lpi -B
+"C:\lazarus\lazbuild.exe" examples/zugferd_demo/zugferd_demo.lpi -B
 
 # Linux/macOS
 lazbuild examples/pdf_demo/pdf_demo_crossplat.lpi -B
@@ -207,6 +242,7 @@ lazbuild examples/chinese_demo/chinese_demo.lpi -B
 lazbuild examples/rtl_demo/rtl_demo.lpi -B
 lazbuild examples/report_demo/mormot_report_demo.lpi -B
 lazbuild examples/mormot_demo/mormot_demo.lpi -B
+lazbuild examples/zugferd_demo/zugferd_demo.lpi -B
 
 # Testsuite
 lazbuild tests/test_runner.lpi -B && tests/bin/test_runner
@@ -253,6 +289,7 @@ Fonts aus `/Library/Fonts`, `/System/Library/Fonts`, `~/Library/Fonts`.
 - **EMF/MetaFile:** Windows-only (`TPdfDocumentGdi`), nicht portierbar
 - **GDI+/Gradient Fills:** nur via EMF auf Windows verfügbar
 - **Tabellen-Pagination:** kein Zeilenumbruch innerhalb einer Zelle
+- **Links in getaggter Ausgabe:** `CreateHyperLink` in einem getaggten Dokument verletzt PDF/UA — es gibt kein `Link`-Strukturelement für Annotationen. `TGDIPages.DrawLink` bleibt konform, weil es nur formatierten Text zeichnet; seine URL ist nicht anklickbar (Roadmap R-18)
 
 Details und aktueller Prüfstand: [docs/ROADMAP.md](docs/ROADMAP.md)
 

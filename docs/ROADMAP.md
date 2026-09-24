@@ -312,7 +312,12 @@ CMAP (Step 2) and the Step 3 width path never ran. The U-2 fix is therefore
 *not* covered by the Linux pass — as `fonts.md` §10 predicts, and the reason
 the test skips itself there rather than reporting a false green.
 
-### R-17 — Verify PDF/A-3A, and Add the U Conformance Level
+### R-17 — Verify PDF/A-3A, and Add the U Conformance Level — goal reached 2026-09-24
+
+**Reached:** PDF/A-3U with PDF/UA-1 in one file, verified on all three
+platforms; A-3A and A-3B verified along with it. Left over: A-1B, which the
+scope table below pulls along, and the CJK peer check with a `glyf` face on
+Linux or Windows. Neither is needed for the goal. The history follows.
 
 **Asked for by the community.** Nothing is promised; this entry records what
 would have to happen for the claim to be defensible.
@@ -340,10 +345,10 @@ whole face is `fPdfA in [pdfa1A, pdfa1B]`, so A-2 and A-3 subset.
 So this item is **verification plus one missing enum value**, not an
 implementation.
 
-**Verification status today — no level is verified.** There is one test,
-`TestPdfA1StillWholeFace`, and it asserts one property (A-1 embeds the whole
-face, no subset tag). No demo sets `PdfA` — all six run `pdfaNone`, so no PDF/A
-output has ever been looked at. No conformance checker has ever run.
+**Verification status before 2026-09-24 — no level was verified.** There was
+one test, `TestPdfA1StillWholeFace`, asserting one property (A-1 embeds the
+whole face, no subset tag). No demo set `PdfA`, so no PDF/A output had ever
+been looked at, and no conformance checker had run.
 
 #### Progress — 2026-09-24, macOS
 
@@ -458,10 +463,16 @@ is accepted for profile EN 16931.
   Liberation Sans, Calibri, each subset; Windows is 94 KB against about 20 KB
   because its `CreateFontPackage` subsets are larger, as in the other demos.
   Not repeated there: the CJK peer check with a `glyf` face.
-- **A-3A** with PAC 2024 on Windows.
-- **Documentation**: `docs/DEMOS.md`, the demo's README, `CLAUDE.md`, the
-  skills, and the scope statement (B2B hybrid invoices, not B2G) in the
-  READMEs once the platforms are verified.
+- ~~**A-3A**~~ — **verified** (macOS, 2026-09-24): the demo built as `pdfa3A`
+  passes veraPDF `3a` 155/155 and `ua1` 106/106 with and without the
+  attachment, and Mustang as flavour 3a. The A level costs nothing beyond U
+  once the document is tagged: the structure it needs is the PAC-green one.
+  **Untagged**, `3a` fails 6.7.2.2 (`/MarkInfo`) and 6.7.3.3 (structure
+  tree) — correct, A requires the logical structure, so the documentation
+  says A levels need `Tagged := True`. The engine does not enforce it.
+- ~~**Documentation**~~ — **done**: the demo's README, demo 7 in
+  `docs/DEMOS.md`, a PDF/A and e-invoice section in both READMEs (verified
+  levels, B2B scope), `CLAUDE.md`, the pdf-engine skill, `CHANGELOG.md`.
 
 #### Clarify first — both before any estimate is believed
 
@@ -633,16 +644,25 @@ so the hint is accepted, like W-1.
 `CreateHyperLink` writes a link annotation, but the engine has no `Link`
 structure role: `TPdfStructRole` has no `psrLink`, and nothing writes the
 object reference (`OBJR`) to the annotation, its `/StructParent` or the
-parent-tree entry behind it. ISO 14289-1 7.18.5 requires all three for a
-link in tagged output, so **`CreateHyperLink` in a tagged document is
-expected to fail PDF/UA** — derived from the standard, not yet measured.
-The demos are green only because none of them sets a link.
+parent-tree entry behind it.
+
+**Measured 2026-09-24 (macOS):** a tagged document with one
+`CreateHyperLink(…, 'mailto:…')` fails veraPDF `ua1` on four rules, 102/106 —
+7.18.1-2 (annotation without `/Contents`), 7.18.3-1 (page without
+`/Tabs /S`), 7.18.5-1 (link not tagged as a `Link` element), 7.18.5-2 (link
+without an alternate description). **So `CreateHyperLink` does not belong in
+tagged output today.**
+
+**`TGDIPages.DrawLink` is safe but not a link.** Measured with a URL
+(`DrawLink('example.com', 'https://example.com')`, tagged export): the text is
+drawn link-styled and tagged as a `Span` inside the line's `P`, the URL is
+dropped — no annotation, no `/URI` — and `ua1` passes 106/106. Conformant,
+not clickable. `markdown_demo` calls it without a URL at all.
 
 Work: the role, `OBJR` and `/StructParent` for annotations, the parent-tree
-entries, and `mailto:` links for addresses; first step, a tagged document
-with one `CreateHyperLink` through veraPDF `ua1`, to measure the failure.
-`TGDIPages` would follow, for URLs in reports. Done, it would also clear W-2.
-Not planned: build it only when someone asks for it.
+entries, `/Contents` and `/Tabs /S`; then `mailto:` links for addresses, and
+`DrawLink` writing a real annotation for its URL. Done, it would also clear
+W-2. Not planned: build it only when someone asks for it.
 
 ### The Unused WinAnsi Peer Beside a CJK Font — unprioritised
 

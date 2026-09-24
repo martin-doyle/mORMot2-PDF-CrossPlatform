@@ -14,8 +14,8 @@
 // - Tagged := True comes after it and before the first AddPage, as always
 // - the attachment goes through CreateFileAttachmentFrom, the only overload
 //   that takes an /AFRelationship
-// - this is roadmap R-17 work in progress: the output is not yet claimed to be
-//   conformant to PDF/A-3, PDF/UA-1 or ZUGFeRD
+// - verified on all three platforms: veraPDF 3u and ua1, Mustang, PAC 2024
+//   (one accepted quality hint, roadmap W-2)
 //
 // Switches, to tell the sources of a checker failure apart:
 //   --no-attachment   leave factur-x.xml out

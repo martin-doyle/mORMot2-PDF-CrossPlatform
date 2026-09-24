@@ -79,20 +79,22 @@ examples/
   mormot_demo/        Demo 4 — TGDIPages + mORMot ORM + TTableLayout, GUI, tagged PDF
   chinese_demo/       Demo 5 — CJK text, subset embedding (console)
   rtl_demo/           Demo 6 — Arabic RTL, HarfBuzz/Uniscribe shaping (console)
+  zugferd_demo/       Demo 7 — PDF/A-3U + PDF/UA-1, ZUGFeRD/Factur-X invoice with embedded XML (console)
   (each demo folder carries a short README.md; the source header of its .lpr
    says the same thing in two sentences)
 tests/
-  test_runner.lpr              runs every suite below (222 assertions, green on Linux, Windows and macOS)
+  test_runner.lpr              runs every suite below (277 assertions on macOS since R-17; 222 on Linux at v0.9.0)
   test_pdf_crossplatform.pas   platform backend, text shaper, TTC extraction
   test_pdf_smoke.pas           PDF basics, tagged output, struct tree
   test_report_crossplatform.pas report engine, tables, tagged export
   test_pdf_subset.pas          font subsetting: IPdfFontSubsetter and TPdfDocument
+  test_pdf_pdfa.pas            PDF/A-3: associated files, XMP schemas, PdfMetadataFacturX, level U
   test_coordinates.pas         page geometry
   test_report_coordinates.pas  report geometry
 reference/
   mormot.ui.pdf.pas   Original Windows/GDI file (12,514 lines, reference only)
 docs/
-  DEMOS.md            Learning path: the 6 demos step by step
+  DEMOS.md            Learning path: the 7 demos step by step
   API_REFERENCE.md    TCanvas methods, TReportFormat, TTableLayout
   ROADMAP.md          Open work in detail, completed work as one line each
 .claude/skills/
@@ -123,7 +125,7 @@ GDI (Windows)  /  FreeType2 (Linux/macOS)
 For all execution paths through this architecture: `.claude/skills/call-graph.md`
 For interface and backend details: `.claude/skills/platform-backends.md`
 
-## The 6 Demos
+## The 7 Demos
 
 | Demo | API | Type | Highlights |
 |---|---|---|---|
@@ -133,6 +135,7 @@ For interface and backend details: `.claude/skills/platform-backends.md`
 | mormot_demo | `TGDIPages` + ORM | GUI | SQLite via TRestClientDB, TTableLayout, tagged PDF, `--export` batch mode |
 | chinese_demo | `TPdfDocumentVcl` | Console | CJK text, subset embedding |
 | rtl_demo | `TPdfDocumentVcl` | Console | Arabic RTL, HarfBuzz/Uniscribe shaping |
+| zugferd_demo | `TPdfDocumentVcl` | Console | PDF/A-3U + PDF/UA-1, `/AF` attachment, `PdfMetadataFacturX`, third-party invoice XML (KoSIT, Apache-2.0) |
 
 Detailed description with code examples: `docs/DEMOS.md`
 
@@ -212,6 +215,7 @@ Details on interfaces and registration: `.claude/skills/platform-backends.md`
 "C:\lazarus\lazbuild.exe" examples/mormot_demo/mormot_demo.lpi -B
 "C:\lazarus\lazbuild.exe" examples/chinese_demo/chinese_demo.lpi -B
 "C:\lazarus\lazbuild.exe" examples/rtl_demo/rtl_demo.lpi -B
+"C:\lazarus\lazbuild.exe" examples/zugferd_demo/zugferd_demo.lpi -B
 "C:\lazarus\lazbuild.exe" tests/test_runner.lpi -B
 
 # Linux/macOS:
@@ -221,6 +225,7 @@ lazbuild examples/chinese_demo/chinese_demo.lpi -B
 lazbuild examples/rtl_demo/rtl_demo.lpi -B
 lazbuild examples/report_demo/mormot_report_demo.lpi -B
 lazbuild examples/mormot_demo/mormot_demo.lpi -B
+lazbuild examples/zugferd_demo/zugferd_demo.lpi -B
 lazbuild tests/test_runner.lpi -B && tests/bin/test_runner
 ```
 
@@ -251,6 +256,9 @@ display (`xvfb-run` otherwise); on macOS Cocoa runs it headless.
 - **GDI+/gradient fills**: Windows-only via EMF
 - **Table pagination**: no row break within a cell (roadmap R-10)
 - **Symbol fonts on POSIX**: excluded from subsetting, the whole face is embedded (roadmap R-15b); neither side is covered by a demo or test
+- **PDF/A** (R-17): A-3U + PDF/UA-1, A-3A (tagged) and A-3B verified on all three platforms with veraPDF, Mustang and PAC; A-1 and A-2 implemented, unverified. Pass the level to the constructor — the `PdfA` setter calls `NewDoc`. A levels need `Tagged := True`. With PDF/A + Tagged the engine describes `pdfuaid` in the XMP extension schemas, inside the caller's `<pdfaExtension:schemas><rdf:Bag>` if `PdfAMetadaExtension` has one — keep that single list
+- **E-invoices**: the engine writes the PDF/A-3 container (`CreateFileAttachmentFrom` + `PdfMetadataFacturX`) and never generates or validates invoice XML. Scope is B2B (ZUGFeRD/Factur-X profile EN 16931); invoices to German authorities are pure XML and out of scope. Third-party material only with a verified license, recorded in the demo's `THIRD_PARTY.md`
+- **Links in tagged output**: no `Link` role, `OBJR` or `/StructParent` for annotations — `CreateHyperLink` in tagged output fails veraPDF `ua1` on four 7.18 rules (measured). `TGDIPages.DrawLink` draws link-styled text as a `Span` and drops the URL: conformant, not clickable (roadmap R-18, priority 2, only on request)
 
 Current verification status per platform, and the open items in detail:
 `docs/ROADMAP.md`
