@@ -83,7 +83,7 @@ examples/
   (each demo folder carries a short README.md; the source header of its .lpr
    says the same thing in two sentences)
 tests/
-  test_runner.lpr              runs every suite below (277 assertions on macOS since R-17; 222 on Linux at v0.9.0)
+  test_runner.lpr              runs every suite below (green on all three: 277 assertions on macOS, 260 on Linux, 221 on Windows — the rest are skips)
   test_pdf_crossplatform.pas   platform backend, text shaper, TTC extraction
   test_pdf_smoke.pas           PDF basics, tagged output, struct tree
   test_report_crossplatform.pas report engine, tables, tagged export

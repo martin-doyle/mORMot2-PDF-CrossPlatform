@@ -15,7 +15,9 @@ addresses without a link element, accepted as roadmap W-2. As `pdfa3A` the same
 file passes veraPDF `3a` 155/155. PDF/A-1 and PDF/A-2 remain implemented but
 unverified.
 
-Test suite: 277 assertions on macOS, against 239 at v0.9.0.
+Test suite green on all three platforms: 277 assertions on macOS (239 at
+v0.9.0), 260 on Linux, 221 on Windows. As before, the differences are tests
+standing down where a platform lacks what they need, not failures.
 
 ### Added
 

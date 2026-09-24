@@ -317,7 +317,9 @@ the test skips itself there rather than reporting a false green.
 **Reached:** PDF/A-3U with PDF/UA-1 in one file, verified on all three
 platforms; A-3A and A-3B verified along with it. Left over: A-1B, which the
 scope table below pulls along, and the CJK peer check with a `glyf` face on
-Linux or Windows. Neither is needed for the goal. The history follows.
+Linux or Windows. Neither is needed for the goal. `test_runner`, with the new
+`TPdfATests`, is green on all three: 277 assertions on macOS, 260 on Linux,
+221 on Windows. The history follows.
 
 **Asked for by the community.** Nothing is promised; this entry records what
 would have to happen for the claim to be defensible.
