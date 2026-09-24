@@ -1,18 +1,22 @@
-/// ZUGFeRD / Factur-X Demo — mORMot2 PDF Cross-Platform
+/// ZUGFeRD / XRechnung Demo — mORMot2 PDF Cross-Platform
 // Produces a one-page tagged invoice as PDF/A-3 with the machine-readable
-// invoice data (factur-x.xml, MINIMUM profile) embedded as associated file.
+// invoice data (xrechnung.xml, XRechnung 3.0 in CII syntax) embedded as
+// associated file.
 //
 // Worth noting:
+// - xrechnung.xml is third-party test data, embedded unchanged: test case
+//   01.01a of the KoSIT xrechnung-testsuite, Apache-2.0 (see THIRD_PARTY.md);
+//   the page draws its content, so both have to be changed together
 // - PdfA is passed to the constructor: setting the property later calls
 //   NewDoc and erases everything drawn so far
 // - Tagged := True comes after it and before the first AddPage, as always
 // - the attachment goes through CreateFileAttachmentFrom, the only overload
-//   that takes an /AFRelationship; ZUGFeRD prescribes /Data for MINIMUM
+//   that takes an /AFRelationship
 // - this is roadmap R-17 work in progress: the output is not yet claimed to be
 //   conformant to PDF/A-3, PDF/UA-1 or ZUGFeRD
 //
 // Switches, to tell the sources of a checker failure apart:
-//   --no-attachment   leave factur-x.xml out
+//   --no-attachment   leave xrechnung.xml out
 //   --untagged        no structure tree (PDF/A without PDF/UA)
 program zugferd_demo;
 
@@ -34,13 +38,27 @@ uses
   mormot.ui.report;   // GetReportFonts
 
 const
-  XML_NAME = 'factur-x.xml';
+  XML_NAME = 'xrechnung.xml';
   PDF_NAME = 'zugferd_invoice.pdf';
-  // table geometry, in pixels at 96 dpi
-  TABLE_LEFT  = 60;
-  TABLE_RIGHT = 734;
+  // page and table geometry, in pixels at 96 dpi
+  LEFT_X      = 60;
+  RIGHT_X     = 734;
+  LINE_HEIGHT = 15;
   ROW_HEIGHT  = 24;
-  COL_X: array[0..3] of integer = (66, 380, 500, 620);
+  // left edge of the description, right edges of the four number columns
+  COL_TEXT = 66;
+  COL_QTY  = 440;
+  COL_UNIT = 540;
+  COL_VAT  = 610;
+  COL_SUM  = RIGHT_X - 6;
+  // the content of xrechnung.xml, as the page shows it
+  ITEMS: array[0..1, 0..4] of string = (
+    ('Zeitschrift [...], Art.-Nr. 246', '1', '288,79', '7 %', '288,79'),
+    ('Porto + Versandkosten',           '1', '26,07',  '7 %', '26,07'));
+  TOTALS: array[0..2, 0..1] of string = (
+    ('Summe netto',            '314,86'),
+    ('Umsatzsteuer 7 % auf 314,86', '22,04'),
+    ('Gesamtbetrag (EUR)',     '336,90'));
 
 var
   Doc: TPdfDocumentVcl;
@@ -48,9 +66,7 @@ var
   WithAttachment, WithTags: boolean;
   SansFont, SerifFont, MonoFont: string;
   Xml: RawByteString;
-  Items: array[0..4, 0..3] of string;
-  Totals: array[0..2, 0..1] of string;
-  Row, Col, Y, i: integer;
+  Row, Y, i: integer;
 
 // the structure calls, skipped for --untagged
 procedure Open(Role: TPdfStructRole);
@@ -65,7 +81,7 @@ begin
     Doc.EndStructContent;
 end;
 
-// factur-x.xml sits beside the .lpr; the executable is two levels below it
+// xrechnung.xml sits beside the .lpr; the executable is two levels below it
 function LoadXml: RawByteString;
 begin
   result := StringFromFile(XML_NAME);
@@ -78,6 +94,41 @@ end;
 procedure TextRight(Right, Top: integer; const s: string);
 begin
   C.TextOut(Right - C.TextWidth(s), Top, s);
+end;
+
+// one paragraph of pre-broken lines, advancing Y past it
+procedure Paragraph(const Lines: array of string);
+var
+  l: integer;
+begin
+  Open(psrP);
+  for l := 0 to high(Lines) do
+  begin
+    C.TextOut(LEFT_X, Y, Lines[l]);
+    Inc(Y, LINE_HEIGHT);
+  end;
+  Close;
+  Inc(Y, LINE_HEIGHT div 2);
+end;
+
+// one table row: the description left-aligned, the other cells right-aligned
+procedure TableRow(Cell: TPdfStructRole; const Values: array of string);
+const
+  RIGHT_EDGE: array[1..4] of integer = (COL_QTY, COL_UNIT, COL_VAT, COL_SUM);
+var
+  n: integer;
+begin
+  Open(psrTR);
+  for n := 0 to high(Values) do
+  begin
+    Open(Cell);
+    if n = 0 then
+      C.TextOut(COL_TEXT, Y + 5, Values[0])
+    else if Values[n] <> '' then
+      TextRight(RIGHT_EDGE[n], Y + 5, Values[n]);
+    Close;
+  end;
+  Close; // TR
 end;
 
 begin
@@ -102,13 +153,13 @@ begin
   Doc := TPdfDocumentVcl.Create(true, 0, pdfa3B);
   try
     Doc.Tagged := WithTags;
-    Doc.DefaultLanguage := 'en';
+    Doc.DefaultLanguage := 'de';
     // PDF/A embeds every font, so ask for the names of the embedded mode
     Doc.EmbeddedTTF := true;
     GetReportFonts(Doc.EmbeddedTTF, SansFont, SerifFont, MonoFont);
-    Doc.Info.Title   := 'Invoice RE-2026-0042';
-    Doc.Info.Author  := 'Example Hardware Ltd.';
-    Doc.Info.Subject := 'Invoice with embedded Factur-X data (MINIMUM)';
+    Doc.Info.Title   := 'Rechnung 123456XX';
+    Doc.Info.Author  := '[Seller name]';
+    Doc.Info.Subject := 'Rechnung mit eingebetteter XRechnung (CII)';
     Doc.DefaultPaperSize := mormot.ui.pdf.psA4;
     Doc.AddPage;
     C := Doc.VclCanvas;
@@ -118,53 +169,35 @@ begin
     Open(psrH1);
     C.Font.Size := 22;
     C.Font.Style := [fsBold];
-    C.TextOut(TABLE_LEFT, 60, 'Invoice RE-2026-0042');
+    C.TextOut(LEFT_X, 60, 'Rechnung 123456XX');
     Close;
-    Doc.CreateOutline('Invoice RE-2026-0042', 1,
+    Doc.CreateOutline('Rechnung 123456XX', 1,
       Doc.DefaultPageHeight - 60 * 72 / 96);
-    // parties and date
+    // parties, dates and references
     C.Font.Size := 10;
     C.Font.Style := [];
-    Open(psrP);
-    C.TextOut(TABLE_LEFT, 110, 'Example Hardware Ltd., VAT ID DE123456789');
-    Close;
-    Open(psrP);
-    C.TextOut(TABLE_LEFT, 128, 'Bill to: Sample Workshop Inc.');
-    Close;
-    Open(psrP);
-    C.TextOut(TABLE_LEFT, 146, 'Invoice date: 2026-09-24');
-    Close;
+    Y := 110;
+    Paragraph([
+      '[Seller name] ([Seller trading name]), [Seller address line 1], ' +
+        '12345 [Seller city], DE',
+      'USt-IdNr. DE 123456789, 123/456/7890, HRA-Eintrag in […]',
+      'Kontakt: nicht vorhanden, Tel. +49 1234-5678, seller@email.de']);
+    Paragraph([
+      'An: [Buyer name] ([Buyer identifier]), [Buyer address line 1], ' +
+        '12345 [Buyer city], DE, buyer@info.de']);
+    Paragraph([
+      'Rechnungsdatum: 04.04.2016',
+      'Käuferreferenz: 04011000-12345-03']);
     // the items, as a table with header, body and totals
-    Items[0, 0] := 'Bolt M4x10';  Items[0, 1] := '100'; Items[0, 2] := '0.05'; Items[0, 3] := '5.00';
-    Items[1, 0] := 'Nut M4';      Items[1, 1] := '100'; Items[1, 2] := '0.03'; Items[1, 3] := '3.00';
-    Items[2, 0] := 'Washer 4mm';  Items[2, 1] := '200'; Items[2, 2] := '0.02'; Items[2, 3] := '4.00';
-    Items[3, 0] := 'Dowel 8mm';   Items[3, 1] := '50';  Items[3, 2] := '0.12'; Items[3, 3] := '6.00';
-    Items[4, 0] := 'Tape 25mm';   Items[4, 1] := '5';   Items[4, 2] := '2.50'; Items[4, 3] := '12.50';
-    Totals[0, 0] := 'Net amount';  Totals[0, 1] := '30.50';
-    Totals[1, 0] := 'VAT 19 %';    Totals[1, 1] := '5.80';
-    Totals[2, 0] := 'Total (EUR)'; Totals[2, 1] := '36.30';
+    Inc(Y, LINE_HEIGHT div 2);
     Open(psrTable);
-    Y := 190;
     Open(psrTHead);
     C.Pen.Style := psClear;
     C.Brush.Color := $963232;
-    C.Rectangle(TABLE_LEFT, Y, TABLE_RIGHT, Y + ROW_HEIGHT);
+    C.Rectangle(LEFT_X, Y, RIGHT_X, Y + ROW_HEIGHT);
     C.Font.Style := [fsBold];
     C.Font.Color := clWhite;
-    Open(psrTR);
-    Open(psrTH);
-    C.TextOut(COL_X[0], Y + 5, 'Article');
-    Close;
-    Open(psrTH);
-    TextRight(COL_X[1] + 60, Y + 5, 'Qty');
-    Close;
-    Open(psrTH);
-    TextRight(COL_X[2] + 90, Y + 5, 'Unit price');
-    Close;
-    Open(psrTH);
-    TextRight(TABLE_RIGHT - 6, Y + 5, 'Amount');
-    Close;
-    Close; // TR
+    TableRow(psrTH, ['Bezeichnung', 'Menge', 'Einzelpreis', 'USt', 'Betrag']);
     Close; // THead
     C.Font.Style := [];
     C.Font.Color := clBlack;
@@ -172,70 +205,65 @@ begin
     C.Pen.Color := clSilver;
     C.Pen.Width := 1;
     Open(psrTBody);
-    for Row := 0 to high(Items) do
+    for Row := 0 to high(ITEMS) do
     begin
       Inc(Y, ROW_HEIGHT);
       if Odd(Row) then
         C.Brush.Color := $FFF0F0
       else
         C.Brush.Color := clWhite;
-      C.Rectangle(TABLE_LEFT, Y, TABLE_RIGHT, Y + ROW_HEIGHT);
-      Open(psrTR);
-      for Col := 0 to 3 do
-      begin
-        Open(psrTD);
-        case Col of
-          0: C.TextOut(COL_X[0], Y + 5, Items[Row, 0]);
-          1: TextRight(COL_X[1] + 60, Y + 5, Items[Row, 1]);
-          2: TextRight(COL_X[2] + 90, Y + 5, Items[Row, 2]);
-          3: TextRight(TABLE_RIGHT - 6, Y + 5, Items[Row, 3]);
-        end;
-        Close;
-      end;
-      Close; // TR
+      C.Rectangle(LEFT_X, Y, RIGHT_X, Y + ROW_HEIGHT);
+      TableRow(psrTD, [ITEMS[Row, 0], ITEMS[Row, 1], ITEMS[Row, 2],
+        ITEMS[Row, 3], ITEMS[Row, 4]]);
     end;
     Close; // TBody
-    // totals: label in the first column, amount in the last, the two columns
+    // totals: label in the first column, amount in the last, the columns
     // between them left empty
     Open(psrTFoot);
-    C.Brush.Color := clWhite;
-    for Row := 0 to high(Totals) do
+    for Row := 0 to high(TOTALS) do
     begin
       Inc(Y, ROW_HEIGHT);
-      if Row = high(Totals) then
+      if Row = high(TOTALS) then
         C.Font.Style := [fsBold];
-      Open(psrTR);
-      Open(psrTD);
-      C.TextOut(COL_X[0], Y + 5, Totals[Row, 0]);
-      Close;
-      Open(psrTD);
-      Close;
-      Open(psrTD);
-      Close;
-      Open(psrTD);
-      TextRight(TABLE_RIGHT - 6, Y + 5, Totals[Row, 1]);
-      Close;
-      Close; // TR
+      TableRow(psrTD, [TOTALS[Row, 0], '', '', '', TOTALS[Row, 1]]);
     end;
     Close; // TFoot
     Close; // Table
-    // closing note
     C.Font.Style := [];
-    C.Font.Size := 9;
-    Inc(Y, 2 * ROW_HEIGHT);
-    Open(psrP);
+    Inc(Y, ROW_HEIGHT + LINE_HEIGHT);
+    // the notes of the first item, then payment and terms
+    Paragraph([
+      'Zeitschrift [...]: Zeitschrift Inland, ISSN 0721-880X, ' +
+        'Abrechnungszeitraum 01.01.2016 bis 31.12.2016,',
+      'Bestellposition 6171175.1. Die letzte Lieferung im Rahmen des ' +
+        'abgerechneten Abonnements erfolgt in 12/2016',
+      'Lieferung erfolgt / erfolgte direkt vom Verlag']);
+    Paragraph([
+      'Zahlbar sofort ohne Abzug. SEPA-Überweisung auf ' +
+        'IBAN DE79 0000 0000 1234 5678 90.']);
+    Paragraph([
+      'Es gelten unsere Allgem. Geschäftsbedingungen, die Sie unter […] ' +
+        'finden.']);
+    // where the data comes from - also required by its license
+    C.Font.Size := 8;
+    C.Font.Color := $505050;
+    Y := 1040;
     if WithAttachment then
-      C.TextOut(TABLE_LEFT, Y,
-        'The machine-readable invoice data is embedded in this file as ' +
-        XML_NAME + ' (Factur-X, MINIMUM profile).')
+      Paragraph([
+        'Die Rechnungsdaten sind als ' + XML_NAME + ' (XRechnung 3.0, CII) ' +
+          'in dieses PDF eingebettet.',
+        'Testdatensatz 01.01a der KoSIT xrechnung-testsuite, ' +
+          'Apache License 2.0 - siehe THIRD_PARTY.md der Demo.'])
     else
-      C.TextOut(TABLE_LEFT, Y, 'Built without the embedded invoice data.');
-    Close;
-    // the invoice data: ZUGFeRD 2.x / Factur-X prescribe the name factur-x.xml
-    // and /AFRelationship /Data for the MINIMUM profile
+      Paragraph([
+        'Ohne eingebettete Rechnungsdaten erzeugt (--no-attachment).',
+        'Inhalt: Testdatensatz 01.01a der KoSIT xrechnung-testsuite, ' +
+          'Apache License 2.0.']);
+    // the invoice data, under the file name ZUGFeRD prescribes for the
+    // XRECHNUNG profile; the relationship is checked in R-17 step 2
     if WithAttachment then
       Doc.CreateFileAttachmentFrom(Xml, XML_NAME,
-        'Factur-X invoice data', 'text/xml', Now, Now, nil, afrData);
+        'XRechnung invoice data', 'text/xml', Now, Now, nil, afrAlternative);
     Doc.SaveToFile(PDF_NAME);
     writeln('PDF saved to ', PDF_NAME);
   finally

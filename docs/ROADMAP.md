@@ -411,8 +411,9 @@ against the old engine, passes now. Assertions 239 → 245.
 
 #### The one real gap: `pdfa3U`
 
-`TPdfALevel` has only A and B. **ZUGFeRD/Factur-X from version 2 requires
-PDF/A-3U**, and does not accept A in its place. Adding it is an enum member
+`TPdfALevel` has only A and B. **The project goal requires PDF/A-3U** (see
+the goal above); whether ZUGFeRD itself insists on U was never confirmed and no
+longer matters. Adding it is an enum member
 plus one character in each of `PDFA_APART` and `PDFA_CONFORMANCE` — but the
 substance is proving that `/ToUnicode` is written for *every* font, without
 exception, which is what U means.
@@ -456,21 +457,64 @@ veraPDF for conformance anywhere, PAC 2024 for the tag tree on Windows only.
 
 #### ZUGFeRD demo — `examples/zugferd_demo/`
 
-Buildable here without outside material, and a pure integration proof of the
-existing API. Three parts, one of which is new work:
+**Terms and scope — decided 2026-09-24.**
 
-- **The XML** — a static `factur-x.xml` (MINIMUM or BASIC-WL profile) in the
-  demo folder, embedded as it is. Generating UN/CEFACT invoice XML is invoice
-  semantics, not PDF, and is **not** in scope. Test material, not a feature.
-- **The embedding** — `CreateFileAttachmentFrom(..., afrData)` (the overload
-  taking a file name has no relationship parameter); the file name
-  `factur-x.xml` and `/AFRelationship /Data` are both prescribed by ZUGFeRD 2.1.
-  Existing API, nothing to write.
+| Term | What it is | Form |
+|---|---|---|
+| EN 16931 | European standard for the *content* of an e-invoice | data model; XML in UBL or UN/CEFACT CII syntax |
+| XRechnung | Germany's national specification of EN 16931, maintained by KoSIT, for invoices to public authorities | pure XML, no PDF |
+| ZUGFeRD 2.x (DE) = Factur-X 1.x (FR) | one joint Franco-German standard for **hybrid** invoices: PDF/A-3 with embedded CII XML | profiles MINIMUM, BASIC WL, BASIC, EN 16931, EXTENDED |
+| ZUGFeRD profile XRECHNUNG | ZUGFeRD only, unknown to Factur-X: an XRechnung inside a ZUGFeRD PDF as `xrechnung.xml` | hybrid |
+
+**The demo targets profile EN 16931 with `factur-x.xml`**: the common
+European case, a ZUGFeRD invoice in Germany and a Factur-X invoice in France.
+MINIMUM and BASIC WL do not count as e-invoices in Germany since 2025. The
+XRECHNUNG profile was considered and dropped, because the one reason for it
+— invoices to German authorities — does not involve a PDF at all: the federal
+platforms (ZRE, OZG-RE) take XRechnung, or ZUGFeRD profile XRECHNUNG "als
+rein strukturierte XML-Datei" (e-rechnung-bund.de FAQ, checked 2026-09-24).
+**Invoices to authorities (B2G) are therefore out of scope**, and the
+documentation should say so: this project produces hybrid invoices for the
+exchange between businesses (B2B).
+
+**The engine stays neutral towards these standards**: it writes PDF/A-3,
+embeds any file as an associated file (`/AF`) and takes any XMP extension. It
+neither generates nor validates invoice XML.
+
+An integration proof of the existing API. **The invoice has to be genuinely
+valid**: someone in the community will run the PDF through a ZUGFeRD checker
+or read it into accounting software. Three parts, one of which is new work:
+
+- **The XML** — third-party test data, not written here: test case `01.01a` of
+  the [KoSIT xrechnung-testsuite](https://github.com/itplr-kosit/xrechnung-testsuite)
+  (release `v2026-08-31`, Apache-2.0), embedded byte-identical as
+  `xrechnung.xml` for now. XRechnung 3.0 in CII syntax, so EN 16931 level.
+  **Next:** one change, the specification identifier to
+  `urn:cen.eu:en16931:2017` and the name to `factur-x.xml` for profile
+  EN 16931 — allowed by Apache-2.0 when marked, so recorded in
+  `THIRD_PARTY.md`, and revalidated with Mustang. Provenance, checksum and license text are in the
+  demo folder (`THIRD_PARTY.md`, `xrechnung.LICENSE.txt`), `.gitattributes`
+  keeps the line endings. The page draws the same content.
+  Generating invoice XML is invoice semantics, not PDF, and is **not** in scope.
+- **The embedding** — `CreateFileAttachmentFrom(..., afrAlternative)` (the
+  overload taking a file name has no relationship parameter). Which
+  relationship profile EN 16931 prescribes is to be confirmed with Mustang in
+  step 2.
 - **The XMP extension schema** — the `fx:` namespace through
-  `fPdfAMetadaExtension`, which takes raw XML. This is the error-prone part and
-  the only new code: veraPDF checks the `pdfaExtension` description strictly.
-  Either a helper in the library or at least one correct specimen in the demo,
-  so callers do not each invent it.
+  `PdfAMetadaExtension`, which takes raw XML. `PdfMetadataZugferd` already
+  holds a specimen, but for profile XRECHNUNG; profile EN 16931 needs other
+  values, so a parameterised helper beside it rather than a second constant.
+
+**Sources ruled out, 2026-09-24:** the official FeRD samples — only the schemas
+and Schematron are Apache-2.0, copying the rest needs the AWV's prior consent;
+the copies of them in Mustang's and LandrixSoftware's repositories, which
+those projects' licenses do not cover; the CEN examples (EUPL-1.2, and
+`CII_example1` fails its own arithmetic); XRechnung-for-Delphi (GPL-3.0).
+
+**Checker:** Mustang-CLI 2.26.0 (Apache-2.0) validates the whole file — PDF/A
+through its bundled veraPDF, the `fx:` XMP, and the XML against XSD and
+Schematron. First run: the XML is valid, the PDF fails on the missing `fx:`
+properties and the missing `pdfuaid` schema only.
 
 #### Tests
 
