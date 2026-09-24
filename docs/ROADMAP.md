@@ -4,8 +4,8 @@ Open work only. Finished work is in the git history, and the technical knowledge
 it produced in `.claude/skills/` — this file repeats neither.
 
 **State on 2026-09-22.** The engine is cross-platform, writes PDF 1.7, and its
-tagged output passes PAC 2024 with one accepted warning (W-1, a Figure in
-`pdf_demo`). Fonts are embedded and subset on all three platforms; tables carry
+tagged output passes PAC 2024 with accepted warnings only (W-1, a Figure in
+`pdf_demo`; W-2, e-mail addresses without links in `zugferd_demo`). Fonts are embedded and subset on all three platforms; tables carry
 `THead`/`TBody`/`TFoot` row groups. All three platforms build, and `test_runner`
 is green on each (222 assertions).
 
@@ -434,9 +434,20 @@ is accepted for profile EN 16931.
 
 **Still open for R-17:**
 
-- **The unused WinAnsi peer beside a CJK font** (own entry below) — the U test
-  covers Latin text only, and says so. With CJK text the peer still carries
-  no `/ToUnicode`; whether veraPDF `3u` rejects it is not measured yet.
+- ~~**The unused WinAnsi peer beside a CJK font**~~ — **measured, not
+  blocking** (macOS, 2026-09-24): a PDF/A-3U page with a Latin line and a
+  Chinese line in Hiragino Sans GB passes veraPDF `3u` 148/148 tagged and
+  untagged, and `ua1` 106/106, although the peer is there, selected with `Tf`
+  and carries no `/ToUnicode`. U requires the mapping for text actually shown,
+  and the peer shows none. See its own entry below. Hiragino is a CFF face
+  (the peer is a `/Type1`); a `glyf` CJK face on Linux or Windows gives a
+  `/TrueType` peer and is worth the same check there.
+- ~~**PAC 2024 on the demo**~~ — **green** (2026-09-24, macOS-built file):
+  structure in order, one `Table` with `THead`, `TBody` and `TFoot`, the
+  paragraphs where they belong. Checked by eye as well: the page shows the
+  same text as `factur-x.xml`, legibly arranged; the placeholders
+  (`[Seller name]` …) are the KoSIT original's. One quality hint remains,
+  accepted as **W-2** below.
 - **Linux and Windows** — everything above is macOS only.
 - **A-3A** with PAC 2024 on Windows.
 - **Documentation**: `docs/DEMOS.md`, the demo's README, `CLAUDE.md`, the
@@ -599,6 +610,31 @@ obsolete — an archive demanding A-1 rejects A-3 precisely because A-3 permits
 arbitrary attachments. Say in the documentation which levels are verified
 instead.
 
+### W-2 — E-Mail Addresses Without a Link Element (`zugferd_demo`) — accepted
+
+PAC 2024 passes the demo but keeps one quality hint: "Link in text does not
+have a Link element". It points at `seller@email.de` and `buyer@info.de`,
+which the invoice data carries and the page draws as plain text. Not a
+PDF/UA failure — veraPDF `ua1` passes 106/106 and PAC is green. A real link
+would need a tagged link annotation, which the engine cannot write (R-18),
+so the hint is accepted, like W-1.
+
+### R-18 — Tagged Link Annotations — priority 2, only on explicit request
+
+`CreateHyperLink` writes a link annotation, but the engine has no `Link`
+structure role: `TPdfStructRole` has no `psrLink`, and nothing writes the
+object reference (`OBJR`) to the annotation, its `/StructParent` or the
+parent-tree entry behind it. ISO 14289-1 7.18.5 requires all three for a
+link in tagged output, so **`CreateHyperLink` in a tagged document is
+expected to fail PDF/UA** — derived from the standard, not yet measured.
+The demos are green only because none of them sets a link.
+
+Work: the role, `OBJR` and `/StructParent` for annotations, the parent-tree
+entries, and `mailto:` links for addresses; first step, a tagged document
+with one `CreateHyperLink` through veraPDF `ua1`, to measure the failure.
+`TGDIPages` would follow, for URLs in reports. Done, it would also clear W-2.
+Not planned: build it only when someone asks for it.
+
 ### The Unused WinAnsi Peer Beside a CJK Font — unprioritised
 
 The engine creates a WinAnsi peer beside every Identity-H font and emits a `Tf`
@@ -609,9 +645,12 @@ files from before R-15c). The fix is to stop emitting the peer when it has no
 used characters, which touches the font lifecycle on every platform — see
 `fonts.md` §4 on the dual-instance model.
 
-**R-17 may promote this from cosmetic to blocking.** `/ToUnicode` is guarded by
-`fFirstChar <> 0`, so the peer carries none — and PDF/A-3U and -3A require one
-for every font.
+**R-17 does not promote it to blocking** — measured 2026-09-24 on macOS.
+`/ToUnicode` is guarded by `fFirstChar <> 0`, so the peer carries none, yet
+veraPDF passes PDF/A-3U (148/148) and PDF/UA-1 (106/106) with it: the U level
+wants a Unicode mapping for text that is shown, and the peer shows nothing. It
+stays cosmetic — poppler's `Unknown font tag` — until a `glyf` CJK face on
+Linux or Windows says otherwise.
 
 ### R-15b — Symbolic Fonts Are Not Subset on POSIX — unprioritised
 
