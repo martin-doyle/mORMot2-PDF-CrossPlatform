@@ -317,6 +317,12 @@ the test skips itself there rather than reporting a false green.
 **Asked for by the community.** Nothing is promised; this entry records what
 would have to happen for the claim to be defensible.
 
+**Goal (set 2026-09-24): PDF/A-3U and PDF/UA-1 in one file.** The community
+asks explicitly for PDF/A **combined with** PDF/UA, so A-3U is mandatory for
+this project, not an option. That does not depend on what ZUGFeRD itself
+accepts. The ZUGFeRD demo is therefore tagged from the start and checked
+against `3u` **and** `ua1`. A-3A stays the next level up.
+
 **Effort:** 1 day of clarification, then 2–4 days | **Files:**
 `src/core/mormot.ui.pdf.pas`, `tests/`, `examples/zugferd_demo/`
 
@@ -338,6 +344,54 @@ implementation.
 `TestPdfA1StillWholeFace`, and it asserts one property (A-1 embeds the whole
 face, no subset tag). No demo sets `PdfA` — all six run `pdfaNone`, so no PDF/A
 output has ever been looked at. No conformance checker has ever run.
+
+#### Progress — 2026-09-24, macOS
+
+**First PDF/A output, first defect: tagged PDF/A crashed on `Free`.** Any
+level (1B, 2B and 3B were each tried) combined with `Tagged := True` freed one
+object twice in `FreeDoc`. `NewDoc` gave PDF/A its own **direct**
+`StructTreeRoot` plus `MarkInfo` in the catalog. Two consequences:
+
+- The Tagged setup in `AddPage` runs only while `fStructTree = nil`, so it was
+  skipped: no `/Lang`, no `DisplayDocTitle`. veraPDF `ua1` failed 7.1-10 and
+  7.2 (the language rules, for metadata, outline and every piece of text).
+- `SerializeStructTree` adds the tree root as `/P` of the document element. An
+  indirect object is referenced there, but a direct one is **owned** by every
+  dictionary it is added to, so it was released twice.
+
+Fix: the PDF/A block in `NewDoc` no longer creates either entry; the Tagged
+setup does, as it does without PDF/A. Untagged PDF/A now carries no
+`StructTreeRoot` and no `/MarkInfo`, which is correct for the B levels (it used
+to claim `/Marked true` with an empty tree). Regression test
+`TestTaggedPdfA` in `test_pdf_smoke.pas`: fails with `EAccessViolation`
+against the old engine, passes now. Assertions 239 → 245.
+
+**Measured on the ZUGFeRD demo** (`examples/zugferd_demo/`, PDF/A-3B, veraPDF
+1.30.2):
+
+| Variant | `3b` | `ua1` |
+|---|---|---|
+| tagged + `factur-x.xml` | 144/146 — 6.6.2.3.1 ×2 | **106/106** |
+| tagged, no attachment | 144/146 — the same | **106/106** |
+| untagged + `factur-x.xml` | **146/146** | — |
+
+- **PDF/A-3B itself holds**, the attachment included: `/AF`,
+  `/AFRelationship /Data`, `/Subtype /text#2Fxml` and `/Params` pass.
+- **The one remaining failure is `pdfuaid:part`** with no extension schema.
+  PDF/A-2/3 do not predefine the `pdfuaid` namespace, so the packet needs a
+  `pdfaExtension` description of it whenever PDF/A and Tagged meet. This is an
+  engine fix in `SaveToStreamDirectBegin`, not demo work.
+
+**Found while reading, not yet fixed:**
+
+- `CreateFileAttachment(FileName, …)` takes no `/AFRelationship` (always
+  `Alternative`) and writes `/Params /Size 0`, because the size is taken from
+  the empty `Buffer` while the content comes through the stream. Use
+  `CreateFileAttachmentFrom` with the buffer until then.
+- `PdfMetadataZugferd` already exists: the `fx:` extension schema, but with
+  XRechnung values (`xrechnung.xml`, Version 3). The `fx:` part of R-17 is
+  therefore a parameterised variant of it, not new code.
+- Setting `PdfA` as a property calls `NewDoc`; pass it to the constructor.
 
 #### Clarify first — both before any estimate is believed
 
@@ -408,7 +462,8 @@ existing API. Three parts, one of which is new work:
 - **The XML** — a static `factur-x.xml` (MINIMUM or BASIC-WL profile) in the
   demo folder, embedded as it is. Generating UN/CEFACT invoice XML is invoice
   semantics, not PDF, and is **not** in scope. Test material, not a feature.
-- **The embedding** — `CreateFileAttachment(..., afrData)`; the file name
+- **The embedding** — `CreateFileAttachmentFrom(..., afrData)` (the overload
+  taking a file name has no relationship parameter); the file name
   `factur-x.xml` and `/AFRelationship /Data` are both prescribed by ZUGFeRD 2.1.
   Existing API, nothing to write.
 - **The XMP extension schema** — the `fx:` namespace through
@@ -429,8 +484,8 @@ searching — a plain text search silently finds nothing.
 
 | Level | Spread | Plan |
 |---|---|---|
-| **A-3A** | what was asked | **target** |
-| **A-3U** | ZUGFeRD/Factur-X v2 — by far the commonest A-3 case | included; A implies U |
+| **A-3U + UA-1** | what the community asked for; also the commonest A-3 case (ZUGFeRD/Factur-X) | **target, mandatory** |
+| **A-3A** | the next level up | target; A implies U |
 | **A-1B** | archives, public authorities; the commonest level overall | pull along — partly covered already |
 | A-3B, A-2B | staging posts | fall out of the above |
 | A-1A, A-2A | rare, own PAC run each | leave as implemented, unverified |
@@ -439,8 +494,9 @@ searching — a plain text search silently finds nothing.
 R-7) are forbidden under A-1 and allowed under A-3, so A-3 is the first PDF/A
 context they run in at all. Most likely place for surprises.
 
-**Order**, one step at a time: clarification and veraPDF → A-3B on the ZUGFeRD
-demo → U → A with PAC → A-1B pulled along. Each step is checkable on its own.
+**Order**, one step at a time: clarification and veraPDF → tagged A-3B on the
+ZUGFeRD demo (`3b` + `ua1`) → `fx:` XMP → U (`3u` + `ua1`) → A with PAC → A-1B
+pulled along. Each step is checkable on its own.
 
 **Do not remove the unverified levels.** `PdfA` is public API and the
 constructor takes `APdfA`; dropping enum members breaks callers of a library

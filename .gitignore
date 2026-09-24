@@ -47,3 +47,6 @@ examples/mormot_demo/data/mormot_demo.db
 # machine-specific toolchain notes (see CLAUDE.local.md.example)
 CLAUDE.local.md
 tests/temp
+examples/zugferd_demo/bin/
+examples/zugferd_demo/lib/
+
