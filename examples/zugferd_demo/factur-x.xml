@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- Modified from test case 01.01a-INVOICE_uncefact.xml of the KoSIT
+     xrechnung-testsuite (release v2026-08-31, Apache License 2.0) for
+     mORMot2 PDF Cross-Platform: this comment added, and the specification
+     identifier (BT-24) changed from the XRechnung 3.0 CIUS to plain
+     EN 16931, for the ZUGFeRD / Factur-X profile EN 16931.
+     Nothing else changed - see THIRD_PARTY.md. -->
 <rsm:CrossIndustryInvoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100"
                           xmlns:ram="urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100"
                           xmlns:qdt="urn:un:unece:uncefact:data:standard:QualifiedDataType:100"
@@ -8,7 +14,7 @@
             <ram:ID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</ram:ID>
         </ram:BusinessProcessSpecifiedDocumentContextParameter>
         <ram:GuidelineSpecifiedDocumentContextParameter>
-            <ram:ID>urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0</ram:ID>
+            <ram:ID>urn:cen.eu:en16931:2017</ram:ID>
         </ram:GuidelineSpecifiedDocumentContextParameter>
     </rsm:ExchangedDocumentContext>
     <rsm:ExchangedDocument>

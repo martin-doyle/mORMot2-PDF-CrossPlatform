@@ -1,12 +1,14 @@
-/// ZUGFeRD / XRechnung Demo — mORMot2 PDF Cross-Platform
+/// ZUGFeRD / Factur-X Demo — mORMot2 PDF Cross-Platform
 // Produces a one-page tagged invoice as PDF/A-3 with the machine-readable
-// invoice data (xrechnung.xml, XRechnung 3.0 in CII syntax) embedded as
-// associated file.
+// invoice data (factur-x.xml, profile EN 16931 in CII syntax) embedded as
+// associated file - a hybrid invoice for Germany (ZUGFeRD) and France
+// (Factur-X). Invoices to German authorities take pure XML, not a PDF.
 //
 // Worth noting:
-// - xrechnung.xml is third-party test data, embedded unchanged: test case
-//   01.01a of the KoSIT xrechnung-testsuite, Apache-2.0 (see THIRD_PARTY.md);
-//   the page draws its content, so both have to be changed together
+// - factur-x.xml is third-party test data: test case 01.01a of the KoSIT
+//   xrechnung-testsuite, Apache-2.0, with its specification identifier changed
+//   to EN 16931 (see THIRD_PARTY.md); the page draws its content, so both
+//   have to be changed together
 // - PdfA is passed to the constructor: setting the property later calls
 //   NewDoc and erases everything drawn so far
 // - Tagged := True comes after it and before the first AddPage, as always
@@ -16,7 +18,7 @@
 //   conformant to PDF/A-3, PDF/UA-1 or ZUGFeRD
 //
 // Switches, to tell the sources of a checker failure apart:
-//   --no-attachment   leave xrechnung.xml out
+//   --no-attachment   leave factur-x.xml out
 //   --untagged        no structure tree (PDF/A without PDF/UA)
 program zugferd_demo;
 
@@ -38,7 +40,7 @@ uses
   mormot.ui.report;   // GetReportFonts
 
 const
-  XML_NAME = 'xrechnung.xml';
+  XML_NAME = 'factur-x.xml';
   PDF_NAME = 'zugferd_invoice.pdf';
   // page and table geometry, in pixels at 96 dpi
   LEFT_X      = 60;
@@ -51,7 +53,7 @@ const
   COL_UNIT = 540;
   COL_VAT  = 610;
   COL_SUM  = RIGHT_X - 6;
-  // the content of xrechnung.xml, as the page shows it
+  // the content of factur-x.xml, as the page shows it
   ITEMS: array[0..1, 0..4] of string = (
     ('Zeitschrift [...], Art.-Nr. 246', '1', '288,79', '7 %', '288,79'),
     ('Porto + Versandkosten',           '1', '26,07',  '7 %', '26,07'));
@@ -81,7 +83,7 @@ begin
     Doc.EndStructContent;
 end;
 
-// xrechnung.xml sits beside the .lpr; the executable is two levels below it
+// factur-x.xml sits beside the .lpr; the executable is two levels below it
 function LoadXml: RawByteString;
 begin
   result := StringFromFile(XML_NAME);
@@ -150,7 +152,7 @@ begin
     end;
   end;
   // AUseOutlines = true: PDF/UA wants a bookmark per heading
-  Doc := TPdfDocumentVcl.Create(true, 0, pdfa3B);
+  Doc := TPdfDocumentVcl.Create(true, 0, pdfa3U);
   try
     Doc.Tagged := WithTags;
     Doc.DefaultLanguage := 'de';
@@ -159,7 +161,7 @@ begin
     GetReportFonts(Doc.EmbeddedTTF, SansFont, SerifFont, MonoFont);
     Doc.Info.Title   := 'Rechnung 123456XX';
     Doc.Info.Author  := '[Seller name]';
-    Doc.Info.Subject := 'Rechnung mit eingebetteter XRechnung (CII)';
+    Doc.Info.Subject := 'Rechnung mit eingebetteten ZUGFeRD / Factur-X-Daten (EN 16931)';
     Doc.DefaultPaperSize := mormot.ui.pdf.psA4;
     Doc.AddPage;
     C := Doc.VclCanvas;
@@ -250,20 +252,23 @@ begin
     Y := 1040;
     if WithAttachment then
       Paragraph([
-        'Die Rechnungsdaten sind als ' + XML_NAME + ' (XRechnung 3.0, CII) ' +
-          'in dieses PDF eingebettet.',
-        'Testdatensatz 01.01a der KoSIT xrechnung-testsuite, ' +
-          'Apache License 2.0 - siehe THIRD_PARTY.md der Demo.'])
+        'Die Rechnungsdaten sind als ' + XML_NAME + ' (ZUGFeRD / Factur-X, ' +
+          'Profil EN 16931) in dieses PDF eingebettet.',
+        'Nach Testdatensatz 01.01a der KoSIT xrechnung-testsuite, ' +
+          'Apache License 2.0, angepasst - siehe THIRD_PARTY.md der Demo.'])
     else
       Paragraph([
         'Ohne eingebettete Rechnungsdaten erzeugt (--no-attachment).',
-        'Inhalt: Testdatensatz 01.01a der KoSIT xrechnung-testsuite, ' +
+        'Inhalt nach Testdatensatz 01.01a der KoSIT xrechnung-testsuite, ' +
           'Apache License 2.0.']);
-    // the invoice data, under the file name ZUGFeRD prescribes for the
-    // XRECHNUNG profile; the relationship is checked in R-17 step 2
+    // the invoice data, under the file name ZUGFeRD and Factur-X prescribe
+    // and the XMP properties which point a reader at it (fx:)
     if WithAttachment then
+    begin
       Doc.CreateFileAttachmentFrom(Xml, XML_NAME,
-        'XRechnung invoice data', 'text/xml', Now, Now, nil, afrAlternative);
+        'Factur-X invoice data', 'text/xml', Now, Now, nil, afrAlternative);
+      Doc.PdfAMetadaExtension := PdfMetadataFacturX('EN 16931', XML_NAME);
+    end;
     Doc.SaveToFile(PDF_NAME);
     writeln('PDF saved to ', PDF_NAME);
   finally
