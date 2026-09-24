@@ -29,6 +29,7 @@ type
     procedure TestTaggedImpliesEmbeddedFonts;
     procedure TestTaggedAfterAddPageRaises;
     procedure TestTaggedStreamedMetadata;
+    procedure TestTaggedPdfA;
     procedure TestTaggedDecorationIsArtifact;
     procedure TestTaggedArtifactMisuseRaises;
     procedure TestLineToWritesCompletePath;
@@ -98,6 +99,19 @@ begin
     end;
   finally
     lines.Free;
+  end;
+end;
+
+function CountOf(const Sub, s: RawByteString): integer;
+var
+  p: integer;
+begin
+  result := 0;
+  p := Pos(Sub, s);
+  while p > 0 do
+  begin
+    inc(result);
+    p := Pos(Sub, s, p + 1);
   end;
 end;
 
@@ -195,6 +209,49 @@ begin
       'XMP carries the title as escaped dc:title (B-10)');
     Check(Pos(RawByteString('/DisplayDocTitle true'), s) > 0,
       'viewer shows the title, not the file name (B-7)');
+  finally
+    Stream.Free;
+  end;
+end;
+
+procedure TPdfSmokeTests.TestTaggedPdfA;
+var
+  PDF: TPdfDocumentVcl;
+  Stream: TMemoryStream;
+  s: RawByteString;
+begin
+  Stream := TMemoryStream.Create;
+  try
+    { PDF/A used to set up its own direct StructTreeRoot and MarkInfo in
+      NewDoc: the Tagged setup then skipped /Lang and DisplayDocTitle, and
+      SerializeStructTree referenced the direct object from a second
+      dictionary, so Free released it twice (R-17) }
+    PDF := TPdfDocumentVcl.Create(false, 0, pdfa3B);
+    try
+      PDF.CompressionMethod := cmNone;
+      PDF.Tagged := true;
+      PDF.DefaultLanguage := 'en';
+      PDF.Info.Title := 'Tagged PDF/A';
+      PDF.AddPage;
+      PDF.BeginStructContent(psrP);
+      PDF.VclCanvas.TextOut(20, 20, 'Hello');
+      PDF.EndStructContent;
+      PDF.SaveToStream(Stream);
+    finally
+      PDF.Free;
+    end;
+    s := StreamToRaw(Stream);
+    CheckEqual(CountOf('/MarkInfo', s), 1, 'one MarkInfo in the catalog');
+    CheckEqual(CountOf('/Type/StructTreeRoot', s) +
+      CountOf('/Type /StructTreeRoot', s), 1, 'one StructTreeRoot');
+    Check(Pos(RawByteString('/Lang'), s) > 0,
+      'catalog carries the document language (PDF/UA-1 7.2)');
+    Check(Pos(RawByteString('/DisplayDocTitle true'), s) > 0,
+      'viewer shows the title (PDF/UA-1 7.1)');
+    Check(Pos(RawByteString('<pdfaid:part>3</pdfaid:part>'), s) > 0,
+      'XMP carries the PDF/A identifier');
+    Check(Pos(RawByteString('<pdfuaid:part>1</pdfuaid:part>'), s) > 0,
+      'XMP carries the PDF/UA identifier');
   finally
     Stream.Free;
   end;

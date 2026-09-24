@@ -8330,11 +8330,11 @@ begin
     fMetaData.Attributes.AddItem('Subtype', 'XML');
     fMetaData.Attributes.AddItem('Type', 'Metadata');
     fMetaData.fFilter := '';
-    cat.AddItem('MarkInfo', TPdfRawText.Create('<</Marked true>>'));
     cat.AddItem('Metadata', fMetaData);
-    fStructTree := TPdfDictionary.Create(fXRef);
-    fStructTree.AddItem('Type', 'StructTreeRoot');
-    fRoot.Data.AddItem('StructTreeRoot', fStructTree);
+    // no MarkInfo or StructTreeRoot here: the Tagged setup in AddPage writes
+    // both, with /Lang and DisplayDocTitle - an empty direct StructTreeRoot
+    // here made it skip that setup, and SerializeStructTree then referenced
+    // the direct object from a second dictionary, which freed it twice (R-17)
     needFileID := true;
   end;
   if needFileID then
