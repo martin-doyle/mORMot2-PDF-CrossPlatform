@@ -199,6 +199,20 @@ Details on interfaces and registration: `.claude/skills/platform-backends.md`
 - **Language: English only** — all code, comments, and identifiers must be in English
 - **Prefer mORMot2 functions** over FPC/LCL alternatives (e.g. `FormatUtf8` over `Format`, `RawUtf8` over `string` for internal strings, `DateToIso8601(Now, false)` over `FormatDateTime('yyyymmdd', …)` for file names)
 - **Check that a mORMot2 function exists in this tree** before using it: the version here has no `DateToString8`, though older notes suggested it
+- **Compiler differences: mORMot2 first, `{$ifdef}` last** — Delphi 7 is a
+  target (R-19), so FPC-only RTL and language features break the build:
+  - a missing or different RTL function: the mORMot2 function that matches the
+    **string type of the data** — `PosEx` for `RawUtf8`/`RawByteString`,
+    `PosExString` for `string`, `MinPtrInt` for `Min`. They are implemented per
+    compiler and convert nothing; a `RawUtf8` function fed a `string` makes
+    the compiler convert on Unicode Delphi
+  - a missing language feature with no library counterpart (`Default()`,
+    `for..in`, records with methods, `Exit(Value)`): write it the old way,
+    for every compiler
+  - `{$ifdef}` only for a genuine difference, named after the **feature**, not
+    the compiler: `PDF_HASVCLCANVAS` (tests/test_defines.inc), not `FPC`.
+    Compiler switches come from `{$I mormot.defines.inc}`, never from a bare
+    `{$mode delphi}` (roadmap R-21)
 - `RawUtf8` instead of `string` for internal strings
 - No blank lines between `begin`/`end` blocks
 - Interfaces with reference counting (`TInterfacedObject`)
@@ -259,7 +273,7 @@ display (`xvfb-run` otherwise); on macOS Cocoa runs it headless.
 - **PDF/A** (R-17): A-3U + PDF/UA-1, A-3A (tagged) and A-3B verified on all three platforms with veraPDF, Mustang and PAC; A-1 and A-2 implemented, unverified. Pass the level to the constructor — the `PdfA` setter calls `NewDoc`. A levels need `Tagged := True`. With PDF/A + Tagged the engine describes `pdfuaid` in the XMP extension schemas, inside the caller's `<pdfaExtension:schemas><rdf:Bag>` if `PdfAMetadaExtension` has one — keep that single list
 - **E-invoices**: the engine writes the PDF/A-3 container (`CreateFileAttachmentFrom` + `PdfMetadataFacturX`) and never generates or validates invoice XML. Scope is B2B (ZUGFeRD/Factur-X profile EN 16931); invoices to German authorities are pure XML and out of scope. Third-party material only with a verified license, recorded in the demo's `THIRD_PARTY.md`
 - **Links in tagged output**: no `Link` role, `OBJR` or `/StructParent` for annotations — `CreateHyperLink` in tagged output fails veraPDF `ua1` on four 7.18 rules (measured). `TGDIPages.DrawLink` draws link-styled text as a `Span` and drops the URL: conformant, not clickable (roadmap R-18, only on request)
-- **Delphi** (R-19, R-20): never built so far. R-19, priority 1: the core
+- **Delphi** (R-19, R-20, R-21): the core builds and tests green on Delphi 7 (R-19 steps 1–3). R-19, priority 1: the core
   (`mormot.pdf.types`, `mormot.ui.pdf`, GDI backend, Uniscribe) on Delphi 7,
   Win32. R-20, priority 2: the TCanvas bridge — `TPdfVclCanvas` relies on
   `override`, but Delphi 7's `TCanvas` drawing methods are static, so a call

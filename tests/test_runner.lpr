@@ -1,20 +1,20 @@
 /// Unified test runner for all PDF and Report tests
 program test_runner;
 
-{$ifdef FPC}
-  {$mode delphi}{$H+}
-{$else}
-  {$APPTYPE CONSOLE}
-{$endif FPC}
+{$I mormot.defines.inc}
+{$I test_defines.inc}
 
-// Delphi (R-19): layer 1 only - the TCanvas bridge and the report engine
-// are FPC-only until R-20, and so are their suites
+{$ifdef OSWINDOWS}
+  {$apptype console}
+{$endif OSWINDOWS}
+
+// without PDF_HASVCLCANVAS (Delphi until R-20): layer 1 suites only
 uses
   {$IFDEF UNIX}
   cthreads,
   {$ENDIF}
   {$ifdef FPC}
-  Interfaces,
+  Interfaces, // registers the LCL widgetset - Delphi has no counterpart
   {$endif FPC}
   SysUtils,
   Graphics,
@@ -26,20 +26,20 @@ uses
   test_pdf_smoke,
   test_pdf_subset,
   test_pdf_pdfa
-  {$ifdef FPC},
+  {$ifdef PDF_HASVCLCANVAS},
   test_report_crossplatform,
   test_coordinates,
   test_report_coordinates
-  {$endif FPC};
+  {$endif PDF_HASVCLCANVAS};
 
 type
   TIntegrationTests = class(TSynTestsLogged)
   published
     procedure TestPDF;
-    {$ifdef FPC}
+    {$ifdef PDF_HASVCLCANVAS}
     procedure TestReport;
     procedure TestStructuredReport;
-    {$endif FPC}
+    {$endif PDF_HASVCLCANVAS}
   end;
 
 procedure TIntegrationTests.TestPDF;
@@ -48,7 +48,7 @@ begin
     TPdfSubsetEngineTests, TPdfATests]);
 end;
 
-{$ifdef FPC}
+{$ifdef PDF_HASVCLCANVAS}
 procedure TIntegrationTests.TestReport;
 begin
   AddCase([TReportTests]);
@@ -58,7 +58,7 @@ procedure TIntegrationTests.TestStructuredReport;
 begin
   AddCase([TPageCoordinateTests, TCoordinateTests]);
 end;
-{$endif FPC}
+{$endif PDF_HASVCLCANVAS}
 
 begin
   SetExecutableVersion(SYNOPSE_FRAMEWORK_VERSION);

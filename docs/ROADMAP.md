@@ -173,6 +173,39 @@ through `TextOutW`. The encoding question sits only where a public method takes
 pass on Win32, and the tagged Unicode PDF from Delphi 7 matches the FPC/Win64
 one and passes veraPDF `ua1` and PAC.
 
+### R-21 — Compiler Switches From `mormot.defines.inc` — before R-20
+
+**Why.** mORMot2 never writes `{$mode}` itself: every unit starts with
+`{$I mormot.defines.inc}`, which sets `{$MODE DELPHI}` and `{$H+}` under FPC
+and the feature conditionals (`HASINLINE`, `UNICODE`, `CPUX86`, `OSWINDOWS` …)
+for every compiler. This project does it three ways:
+
+| Form | Units |
+|---|---|
+| `{$I mormot.defines.inc}` | `mormot.ui.pdf`, `tests/test_runner.lpr` |
+| `{$I ..\mormot.defines.inc}` | `mormot.lib.uniscribe`, `mormot.ui.core`, `mormot.ui.gdiplus` — Delphi finds it only through the extra include path in `tests/build_delphi7.bat` |
+| `{$ifdef FPC}{$mode delphi}{$endif}` | `mormot.pdf.types`, `mormot.pdf.gdi`, `mormot.ui.pdfcanvas`, `mormot.ui.report`, `mormot.pdf.fpimage`, `mormot.pdf.freetype`, `mormot.pdf.harfbuzz`, `mormot.pdf.hbsubset`, the test units |
+
+The third form is where it went wrong: in `mormot.pdf.types` and
+`mormot.pdf.gdi` the switch sits after `uses` and does not take effect, so
+`string` was `ShortString` there (found in R-19 step 3, patched with `{$H+}`).
+
+**Work:** `{$I mormot.defines.inc}` before `interface` in every unit, drop the
+`..\`, then drop the include path trick from the build script. One unit at a
+time, `test_runner` on all three platforms after each.
+
+**The risk — enum size.** `mormot.defines.inc` also sets `{$MINENUMSIZE 1}`
+under FPC. A record handed to a C library needs 4-byte enums, as in C. Before
+switching `mormot.pdf.freetype`, `mormot.pdf.harfbuzz` and `mormot.pdf.hbsubset`,
+check every record of their bindings for enum fields (or set
+`{$MINENUMSIZE 4}` locally around the bindings). The Windows API units are
+Delphi's and FPC's own and not affected.
+
+**With it:** a pass over the older `{$ifdef FPC}` in `src/` — e.g.
+`CreateFontIndirectW(@lf)` against `(lf)` in `mormot.pdf.gdi` — for a mORMot2
+function that makes the branch unnecessary. The rule is in `CLAUDE.md`
+(Coding Conventions): mORMot2 first, `{$ifdef}` last, named after the feature.
+
 ### R-20 — Delphi: the TCanvas Bridge and `TGDIPages` — priority 2, after R-19
 
 **The obstacle, checked against the source 2026-09-25.** `TPdfVclCanvas =

@@ -1,13 +1,14 @@
 /// PDF smoke tests: document basics and tagged output
 // - migrated to TSynTestCase framework for mORMot2 compatibility
 // - drawn through TPdfDocument/TPdfCanvas (layer 1), so the suite runs on
-// Delphi too (R-19); the two tests of the TCanvas bridge itself are FPC-only
-// until the bridge exists on Delphi (R-20)
+// Delphi too (R-19); the two tests of the TCanvas bridge itself need
+// PDF_HASVCLCANVAS (test_defines.inc), which Delphi lacks until R-20
 unit test_pdf_smoke;
 
 {$ifdef FPC}
   {$mode delphi}{$H+}
 {$endif FPC}
+{$I test_defines.inc}
 
 interface
 
@@ -15,10 +16,10 @@ uses
   Classes,
   SysUtils,
   mormot.core.base,
-  {$ifdef FPC}
+  {$ifdef PDF_HASVCLCANVAS}
   Graphics,             // TCanvas.Font
   mormot.ui.pdfcanvas,  // TPdfDocumentVcl, TPdfVclCanvas
-  {$endif FPC}
+  {$endif PDF_HASVCLCANVAS}
   mormot.core.test,
   mormot.core.unicode,  // StringToUtf8
   mormot.pdf.types,     // TPdfStructRole, GetPdfFonts
@@ -33,9 +34,9 @@ type
     procedure TestPdfMetadata;
     procedure TestPdfMultiplePages;
     procedure TestPdfDifferentSizes;
-    {$ifdef FPC}
+    {$ifdef PDF_HASVCLCANVAS}
     procedure TestVclCanvasTextMetrics;
-    {$endif FPC}
+    {$endif PDF_HASVCLCANVAS}
     procedure TestTaggedAltTextIsPdfString;
     procedure TestTaggedImpliesEmbeddedFonts;
     procedure TestTaggedAfterAddPageRaises;
@@ -43,9 +44,9 @@ type
     procedure TestTaggedPdfA;
     procedure TestTaggedDecorationIsArtifact;
     procedure TestTaggedArtifactMisuseRaises;
-    {$ifdef FPC}
+    {$ifdef PDF_HASVCLCANVAS}
     procedure TestLineToWritesCompletePath;
-    {$endif FPC}
+    {$endif PDF_HASVCLCANVAS}
     procedure TestTaggedTableRowGroups;
   end;
 
@@ -165,7 +166,7 @@ begin
   end;
 end;
 
-{$ifdef FPC} // SyncPen of the TCanvas bridge (R-20)
+{$ifdef PDF_HASVCLCANVAS} // SyncPen of the TCanvas bridge (R-20)
 procedure TPdfSmokeTests.TestLineToWritesCompletePath;
 var
   PDF: TPdfDocumentVcl;
@@ -213,7 +214,7 @@ begin
     end;
   end;
 end;
-{$endif FPC}
+{$endif PDF_HASVCLCANVAS}
 
 procedure TPdfSmokeTests.TestTaggedStreamedMetadata;
 var
@@ -494,7 +495,7 @@ begin
   end;
 end;
 
-{$ifdef FPC} // measuring through TPdfVclCanvas (R-20)
+{$ifdef PDF_HASVCLCANVAS} // measuring through TPdfVclCanvas (R-20)
 procedure TPdfSmokeTests.TestVclCanvasTextMetrics;
 const
   // Adobe AFM advance widths of Helvetica, in 1000-per-em units
@@ -536,7 +537,7 @@ begin
     PDF.Free;
   end;
 end;
-{$endif FPC}
+{$endif PDF_HASVCLCANVAS}
 
 procedure TPdfSmokeTests.TestPdfCreation;
 var
