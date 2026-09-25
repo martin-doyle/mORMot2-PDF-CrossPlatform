@@ -19,14 +19,14 @@ veraPDF (106/106) and PAC 2024 on all three platforms.
 ```
 TGDIPages           mormot.ui.report     Document layout, tables, H1-H6
 TPdfDocumentVcl     mormot.ui.pdfcanvas  TCanvas-compatible wrapper
-TPdfDocument        mormot.ui.pdf        Direct PDF API (no LCL required)
+TPdfDocument        mormot.ui.pdf        Direct PDF API, no TCanvas (links the LCL/VCL Graphics unit)
 ```
 
 ---
 
 ## Quick start
 
-### Layer 1 — Direct PDF API (no LCL)
+### Layer 1 — Direct PDF API (no TCanvas)
 
 ```pascal
 uses mormot.ui.pdf;
@@ -44,7 +44,7 @@ Doc.Free;
 
 Coordinates are in PDF points (72 DPI), Y = 0 at the lower-left corner.
 
-### Layer 2 — TCanvas API (with LCL)
+### Layer 2 — TCanvas API
 
 ```pascal
 uses mormot.ui.pdf, mormot.ui.pdfcanvas;

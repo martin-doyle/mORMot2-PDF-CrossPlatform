@@ -19,14 +19,14 @@ Cross-platform PDF-Generierung für Windows, Linux und macOS, basierend auf der 
 ```
 TGDIPages           mormot.ui.report     Dokument-Layout, Tabellen, H1-H6
 TPdfDocumentVcl     mormot.ui.pdfcanvas  TCanvas-kompatibler Wrapper
-TPdfDocument        mormot.ui.pdf        Direkte PDF-API (kein LCL nötig)
+TPdfDocument        mormot.ui.pdf        Direkte PDF-API, ohne TCanvas (bindet die Unit Graphics von LCL/VCL ein)
 ```
 
 ---
 
 ## Schnellstart
 
-### Ebene 1 — Direkte PDF-API (kein LCL)
+### Ebene 1 — Direkte PDF-API (ohne TCanvas)
 
 ```pascal
 uses mormot.ui.pdf;
@@ -44,7 +44,7 @@ Doc.Free;
 
 Koordinaten in PDF-Points (72 DPI), Y=0 unten-links.
 
-### Ebene 2 — TCanvas-API (mit LCL)
+### Ebene 2 — TCanvas-API
 
 ```pascal
 uses mormot.ui.pdf, mormot.ui.pdfcanvas;
