@@ -7517,6 +7517,17 @@ begin
           else
             WR.Add('0 ');
         fData.AddItem('Widths', TPdfRawText.Create(WR.Add(']').ToPdfString));
+      end
+      else
+      begin
+        // the WinAnsi peer of a face drawing CJK or Arabic only: selected with
+        // Tf, but no character shown. FirstChar, LastChar and Widths are still
+        // required for a simple TrueType font (ISO 32000-1 table 111) - PAC
+        // stops without them. The peer itself should go (roadmap)
+        Data.AddItem('FirstChar', 32);
+        Data.AddItem('LastChar', 32);
+        WR.Add('[').AddWithSpace(fWinAnsiWidth[' ']);
+        fData.AddItem('Widths', TPdfRawText.Create(WR.Add(']').ToPdfString));
       end;
       // embedd true Type font into the PDF file (allow subset of used glyph)
       if IsEmbedded then

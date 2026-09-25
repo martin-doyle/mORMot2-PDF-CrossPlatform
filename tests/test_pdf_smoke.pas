@@ -895,6 +895,27 @@ const
   /// the file PAC 2024 and veraPDF are run on (R-19 step 4)
   UNICODE_PDF = 'tagged_unicode_lowlevel.pdf';
 
+{ simple TrueType font dictionaries lacking /FirstChar - they also lack
+  /LastChar and /Widths then, which ISO 32000-1 table 111 requires }
+function TrueTypeFontsWithoutFirstChar(const s: RawByteString): integer;
+var
+  p, b, e: PtrInt;
+begin
+  result := 0;
+  p := PosEx(RawByteString('/Subtype/TrueType'), s);
+  while p > 0 do
+  begin
+    b := p;
+    while (b > 1) and
+          not ((s[b] = '<') and (s[b - 1] = '<')) do
+      dec(b);
+    e := PosEx(RawByteString('>>'), s, p);
+    if PosEx(RawByteString('/FirstChar'), copy(s, b, e - b)) = 0 then
+      inc(result);
+    p := PosEx(RawByteString('/Subtype/TrueType'), s, p + 1);
+  end;
+end;
+
 procedure TPdfSmokeTests.TestTaggedUnicode;
 var
   PDF: TPdfDocument;
@@ -940,6 +961,11 @@ begin
     CheckEqual(CountOf('/S/P', s), 3, 'three P');
     Check(CountOf('/FontFile', s) >= 3, 'Latin, CJK and Arabic faces embedded');
     Check(Pos(RawByteString('5B57'), s) > 0, 'ToUnicode maps the CJK text (U+5B57)');
+    { the WinAnsi peers of the CJK and Arabic faces show no character, and
+      were written without /FirstChar, /LastChar and /Widths - PAC 2024
+      stopped on them ("'FirstChar' not defined in TrueType font") }
+    CheckEqual(TrueTypeFontsWithoutFirstChar(s), 0,
+      'every simple TrueType font has FirstChar, LastChar and Widths');
   finally
     Stream.Free;
   end;

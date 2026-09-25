@@ -178,7 +178,10 @@ through `TextOutW`. The encoding question sits only where a public method takes
    32-bit `fontsub.dll` itself — the `cmap` checksum it writes differs by
    exactly that value, and zeroed memory from `lpfnAllocate` does not change
    it. Stable from run to run. The spec wants 0 there outside the Mac
-   platform; viewers ignore it. Open: veraPDF and PAC on both files.
+   platform; viewers ignore it. **PAC 2024, first run:** stopped on both
+   files at the WinAnsi peer of YaHei — an engine defect independent of the
+   compiler, stopgap in place (see "The Unused WinAnsi Peer" below). Open:
+   PAC and veraPDF on the files written after it.
    The helpers now pass `DEFAULT_CHARSET` to `SetFont`, as the bridge does
    (`fonts.md` §10) — without it Windows exposes only the ANSI part of the
    cmap.
@@ -352,22 +355,35 @@ entries, `/Contents` and `/Tabs /S`; then `mailto:` links for addresses, and
 `DrawLink` writing a real annotation for its URL. Done, it would also clear
 W-2. Not planned: build it only when someone asks for it.
 
-### The Unused WinAnsi Peer Beside a CJK Font — unprioritised
+### The Unused WinAnsi Peer Beside a CJK or Arabic Font — unprioritised
 
 The engine creates a WinAnsi peer beside every Identity-H font and emits a `Tf`
-for it, but for a CJK face that instance draws nothing — the content stream
-selects `F1`/`F3` and immediately switches to `F2`/`F4`. poppler reports
-`Unknown font tag` for it. Pre-existing and unrelated to CFF (it appears on
-files from before R-15c). The fix is to stop emitting the peer when it has no
-used characters, which touches the font lifecycle on every platform — see
-`fonts.md` §4 on the dual-instance model.
+for it, but for a face that draws only CJK or Arabic that instance shows
+nothing — `SetFont` selects the WinAnsi instance and writes `Tf` at once, and
+the text output switches to the CID font right after (`/F1 18 Tf /F2 18 Tf`).
+poppler reports `Unknown font tag` for it. Pre-existing and unrelated to CFF
+(it appears on files from before R-15c).
 
-**Not blocking for PDF/A** — measured 2026-09-24 on macOS. `/ToUnicode` is
-guarded by `fFirstChar <> 0`, so the peer carries none, yet veraPDF passes
-PDF/A-3U (148/148) and PDF/UA-1 (106/106) with it: the U level wants a Unicode
-mapping for text that is shown, and the peer shows nothing. Hiragino is a CFF
-face, so the peer was a `/Type1`; a `glyf` CJK face on Linux or Windows gives a
-`/TrueType` peer, and it stays cosmetic only until that is measured too.
+**Measured with a `glyf` face on Windows, 2026-09-26 — not cosmetic.** The
+peer was a `/TrueType` font without `/FirstChar`, `/LastChar` and `/Widths`,
+which ISO 32000-1 table 111 requires for a simple TrueType font, because they
+were written only when a character was used. PAC 2024 stopped on it ("'FirstChar'
+not defined in TrueType font"), on the R-19 test file (Microsoft YaHei and
+Tahoma) from both compilers. `chinese_demo` and `rtl_demo` carry the same
+peer, but are untagged, so PAC had never run on them. On macOS the Hiragino
+peer is a `/Type1` (a CFF face), and veraPDF passed PDF/A-3U and PDF/UA-1 with
+it on 2026-09-24.
+
+**Stopgap, done 2026-09-26:** a peer with no used character gets
+`/FirstChar 32 /LastChar 32` and the width of the space, so the dictionary is
+valid; `TestTaggedUnicode` asserts that no simple TrueType font lacks
+`/FirstChar` (fails 1/5 without the change).
+
+**The fix still open:** stop emitting the peer — write `Tf` only when text is
+shown, and leave an unused peer out of the page resources and the file. That
+touches the font lifecycle on every platform — see `fonts.md` §4 on the
+dual-instance model. Whether the `/Type1` peer of a CFF face needs the same
+stopgap (it too lacks `/Widths`) is to be checked with it.
 
 ### R-15b — Symbolic Fonts Are Not Subset on POSIX — unprioritised
 
