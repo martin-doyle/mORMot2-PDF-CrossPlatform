@@ -14,10 +14,9 @@ uses
   mormot.core.os,
   mormot.core.test,
   mormot.pdf.types,     // TPdfStructRole
+  mormot.core.unicode,  // StringToUtf8
   mormot.ui.pdf,
-  mormot.ui.pdfcanvas,  // TPdfDocumentVcl
-  mormot.ui.report,     // GetReportFonts
-  test_pdf_subset;      // CountOf
+  test_pdf_subset;      // CountOf, DrawUtf8Text
 
 type
   /// PDF/A test cases
@@ -47,29 +46,29 @@ function TPdfATests.BuildPdf(aLevel: TPdfALevel; aTagged: boolean;
   const aText: string; const aAttachment: RawByteString;
   const aExtension: RawUtf8): RawByteString;
 var
-  PDF: TPdfDocumentVcl;
+  PDF: TPdfDocument;
   Stream: TMemoryStream;
   sans, serif, mono: string;
 begin
   Stream := TMemoryStream.Create;
   try
-    PDF := TPdfDocumentVcl.Create(false, 0, aLevel);
+    PDF := TPdfDocument.Create(false, 0, aLevel);
     try
       PDF.CompressionMethod := cmNone;
       PDF.Tagged := aTagged;
       PDF.EmbeddedTTF := true;
       PDF.DefaultLanguage := 'en';
       PDF.Info.Title := 'PDF/A test';
-      GetReportFonts(true, sans, serif, mono);
+      GetPdfFonts(true, sans, serif, mono);
       PDF.AddPage;
       if aTagged then
-        PDF.BeginStructContent(psrP);
-      PDF.VclCanvas.Font.Name := sans;
-      PDF.VclCanvas.TextOut(20, 20, aText);
-      PDF.VclCanvas.Font.Name := serif;
-      PDF.VclCanvas.TextOut(20, 60, aText);
+        PDF.Canvas.BeginStructContent(psrP);
+      PDF.Canvas.SetFont(StringToUtf8(sans), 12, []);
+      DrawUtf8Text(PDF, 15, 800, aText);
+      PDF.Canvas.SetFont(StringToUtf8(serif), 12, []);
+      DrawUtf8Text(PDF, 15, 770, aText);
       if aTagged then
-        PDF.EndStructContent;
+        PDF.Canvas.EndStructContent;
       if aAttachment <> '' then
         PDF.CreateFileAttachmentFrom(aAttachment, 'factur-x.xml', 'data',
           'text/xml', Now, Now, nil, afrData);
@@ -127,7 +126,7 @@ const
   XML = '<?xml version="1.0"?><from-file/>';
 var
   fn: TFileName;
-  PDF: TPdfDocumentVcl;
+  PDF: TPdfDocument;
   Stream: TMemoryStream;
   s: RawByteString;
 begin
@@ -137,7 +136,7 @@ begin
   FileFromString(XML, fn);
   Stream := TMemoryStream.Create;
   try
-    PDF := TPdfDocumentVcl.Create(false, 0, pdfa3U);
+    PDF := TPdfDocument.Create(false, 0, pdfa3U);
     try
       PDF.CompressionMethod := cmNone;
       PDF.AddPage;

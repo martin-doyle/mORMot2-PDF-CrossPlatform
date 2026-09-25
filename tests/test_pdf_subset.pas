@@ -13,18 +13,16 @@ interface
 uses
   Classes,
   SysUtils,
-  Graphics,
   mormot.core.base,
   mormot.core.os,
   mormot.core.text,
+  mormot.core.unicode,
   mormot.core.test,
   mormot.pdf.types,
   {$ifndef MSWINDOWS}
   mormot.pdf.hbsubset,
   {$endif MSWINDOWS}
-  mormot.ui.pdf,
-  mormot.ui.pdfcanvas,
-  mormot.ui.report;     // GetReportFonts
+  mormot.ui.pdf;
 
 type
   /// IPdfFontSubsetter test cases
@@ -54,8 +52,10 @@ type
   protected
     // render aText with aFont (regular, and bold if aBold) into an
     // uncompressed PDF; aWhole = EmbeddedWholeTtf
-    // - aText holds UTF-8 bytes in a string, as TPdfVclCanvas.TextOut expects:
-    // a RawUtf8 parameter would be converted to the system code page first
+    // - drawn through TPdfCanvas, not the TCanvas bridge, so that the suite
+    // runs on Delphi too (R-19): what it checks is the output, not the bridge
+    // - aText holds UTF-8 bytes in a string, decoded like TPdfVclCanvas.TextOut
+    // does: a RawUtf8 parameter would be converted to the system code page first
     function BuildPdf(const aFont: string; const aText: string;
       aWhole, aTagged, aBold: boolean;
       aPdfA: TPdfALevel = pdfaNone): RawByteString;
@@ -71,6 +71,9 @@ type
     procedure TestPdfA3Subsets;
   end;
 
+/// draw UTF-8 bytes held in a string, decoded as TPdfVclCanvas.TextOut does
+// - X, Y in PDF points from the bottom-left corner
+procedure DrawUtf8Text(PDF: TPdfDocument; X, Y: single; const aText: string);
 /// number of non-overlapping occurrences of Sub in s
 function CountOf(const Sub, s: RawByteString): integer;
 /// the bytes of the first /FontFile2 stream of an uncompressed PDF
@@ -509,19 +512,27 @@ function TPdfSubsetEngineTests.SansFont: string;
 var
   serif, mono: string;
 begin
-  GetReportFonts(true, result, serif, mono);
+  GetPdfFonts(true, result, serif, mono);
+end;
+
+procedure DrawUtf8Text(PDF: TPdfDocument; X, Y: single; const aText: string);
+var
+  W: WideString;
+begin
+  W := UTF8Decode(aText); // as TPdfVclCanvas.TextOut does
+  PDF.Canvas.TextOutW(X, Y, pointer(W));
 end;
 
 function TPdfSubsetEngineTests.BuildPdf(const aFont: string;
   const aText: string; aWhole, aTagged, aBold: boolean;
   aPdfA: TPdfALevel): RawByteString;
 var
-  PDF: TPdfDocumentVcl;
+  PDF: TPdfDocument;
   Stream: TMemoryStream;
 begin
   Stream := TMemoryStream.Create;
   try
-    PDF := TPdfDocumentVcl.Create(false, 0, aPdfA);
+    PDF := TPdfDocument.Create(false, 0, aPdfA);
     try
       PDF.CompressionMethod := cmNone; // keep the font file readable
       if aTagged then
@@ -533,17 +544,16 @@ begin
       end;
       PDF.AddPage;
       if aTagged then
-        PDF.BeginStructContent(psrP);
-      PDF.VclCanvas.Font.Name := aFont;
-      PDF.VclCanvas.Font.Size := 12;
-      PDF.VclCanvas.TextOut(20, 20, aText);
+        PDF.Canvas.BeginStructContent(psrP);
+      PDF.Canvas.SetFont(StringToUtf8(aFont), 12, []);
+      DrawUtf8Text(PDF, 15, 800, aText);
       if aBold then
       begin
-        PDF.VclCanvas.Font.Style := [fsBold];
-        PDF.VclCanvas.TextOut(20, 60, aText + '!');
+        PDF.Canvas.SetFont(StringToUtf8(aFont), 12, [pfsBold]);
+        DrawUtf8Text(PDF, 15, 770, aText + '!');
       end;
       if aTagged then
-        PDF.EndStructContent;
+        PDF.Canvas.EndStructContent;
       PDF.SaveToStream(Stream);
     finally
       PDF.Free;

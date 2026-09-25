@@ -29,6 +29,7 @@ uses
 
 {$ifdef FPC}
   {$mode delphi}
+  {$H+} // the mode switch after uses does not take effect: string would be ShortString
 {$endif FPC}
 
 const
@@ -37,6 +38,19 @@ const
   PDF_FONT_STD_SANS  = 'Helvetica';
   PDF_FONT_STD_SERIF = 'Times';
   PDF_FONT_STD_MONO  = 'Courier';
+
+  /// platform TrueType font names — for embedding, and for tagged output
+  // - Calibri/Cambria/Consolas on Windows, Trebuchet MS/Georgia/Andale Mono
+  // on macOS, Liberation Sans/Serif/Mono on Linux
+  PDF_FONT_TTF_SANS  = {$ifdef MSWINDOWS}'Calibri'{$else}{$ifdef DARWIN}'Trebuchet MS'{$else}'Liberation Sans'{$endif}{$endif};
+  PDF_FONT_TTF_SERIF = {$ifdef MSWINDOWS}'Cambria'{$else}{$ifdef DARWIN}'Georgia'{$else}'Liberation Serif'{$endif}{$endif};
+  PDF_FONT_TTF_MONO  = {$ifdef MSWINDOWS}'Consolas'{$else}{$ifdef DARWIN}'Andale Mono'{$else}'Liberation Mono'{$endif}{$endif};
+
+/// font names matching the embedding mode
+// - Embedded=true: the platform TrueType fonts (PDF_FONT_TTF_*)
+// - Embedded=false: the PDF standard Type1 fonts (PDF_FONT_STD_*)
+procedure GetPdfFonts(Embedded: boolean;
+  out SansFont, SerifFont, MonoFont: string);
 
 type
   /// PDF file format version written to the %PDF-1.x header
@@ -276,6 +290,23 @@ procedure RegisterPdfPlatform(const AFont: IPdfPlatformFont;
 function PdfPlatformRegistered: boolean;
 
 implementation
+
+procedure GetPdfFonts(Embedded: boolean;
+  out SansFont, SerifFont, MonoFont: string);
+begin
+  if Embedded then
+  begin
+    SansFont  := PDF_FONT_TTF_SANS;
+    SerifFont := PDF_FONT_TTF_SERIF;
+    MonoFont  := PDF_FONT_TTF_MONO;
+  end
+  else
+  begin
+    SansFont  := PDF_FONT_STD_SANS;
+    SerifFont := PDF_FONT_STD_SERIF;
+    MonoFont  := PDF_FONT_STD_MONO;
+  end;
+end;
 
 procedure RegisterPdfPlatform(const AFont: IPdfPlatformFont;
   const AFonts: IPdfSystemFonts; const ADC: IPdfPlatformDC);

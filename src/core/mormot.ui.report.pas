@@ -41,17 +41,18 @@ const
   PAGENUMBER = '<<pagenumber>>';
 
   { §5.4 Font-Fallback: platform-appropriate font names for TrueType embedding
-    For standard PDF Type1 fonts (no embedding): use PDF_FONT_STD_SANS/SERIF/MONO
-    from mormot.pdf.types.pas when StandardFontsReplace := true }
+    - the names live in mormot.pdf.types (PDF_FONT_TTF_*), because they are
+      a platform question, not a report one; kept here for existing callers
+    - for standard PDF Type1 fonts (no embedding): PDF_FONT_STD_SANS/SERIF/MONO }
 
-  /// default sans-serif font: Arial on Windows, Liberation Sans on Unix/macOS
-  REPORT_FONT_SANS  = {$IFDEF MSWINDOWS}'Calibri'{$ELSE}{$IFDEF DARWIN}'Trebuchet MS'{$ELSE}'Liberation Sans'{$ENDIF}{$ENDIF};
-  /// default serif font: Times New Roman on Windows, Times on macOS, Liberation Serif on Linux
-  REPORT_FONT_SERIF = {$IFDEF MSWINDOWS}'Cambria'{$ELSE}{$IFDEF DARWIN}'Georgia'{$ELSE}'Liberation Serif'{$ENDIF}{$ENDIF};
-  /// default monospace font: Courier New on Windows, Courier on macOS, Liberation Mono on Linux
-  REPORT_FONT_MONO  = {$IFDEF MSWINDOWS}'Consolas'{$ELSE}{$IFDEF DARWIN}'Andale Mono'{$ELSE}'Liberation Mono'{$ENDIF}{$ENDIF};
+  /// default sans-serif font - same as PDF_FONT_TTF_SANS
+  REPORT_FONT_SANS  = PDF_FONT_TTF_SANS;
+  /// default serif font - same as PDF_FONT_TTF_SERIF
+  REPORT_FONT_SERIF = PDF_FONT_TTF_SERIF;
+  /// default monospace font - same as PDF_FONT_TTF_MONO
+  REPORT_FONT_MONO  = PDF_FONT_TTF_MONO;
 
-/// Helper function for font selection based on embedding mode
+/// font names matching the embedding mode - same as GetPdfFonts()
 // - When Embedded=true: returns platform-specific TTF fonts (REPORT_FONT_*)
 // - When Embedded=false: returns PDF standard Type1 fonts (Helvetica/Times/Courier)
 procedure GetReportFonts(Embedded: boolean;
@@ -699,18 +700,7 @@ end;
 procedure GetReportFonts(Embedded: boolean;
   out SansFont, SerifFont, MonoFont: string);
 begin
-  if Embedded then
-  begin
-    SansFont  := REPORT_FONT_SANS;
-    SerifFont := REPORT_FONT_SERIF;
-    MonoFont  := REPORT_FONT_MONO;
-  end
-  else
-  begin
-    SansFont  := PDF_FONT_STD_SANS;
-    SerifFont := PDF_FONT_STD_SERIF;
-    MonoFont  := PDF_FONT_STD_MONO;
-  end;
+  GetPdfFonts(Embedded, SansFont, SerifFont, MonoFont);
 end;
 
 { =========================================================================
