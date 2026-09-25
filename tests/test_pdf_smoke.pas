@@ -20,6 +20,7 @@ uses
   Graphics,             // TCanvas.Font
   mormot.ui.pdfcanvas,  // TPdfDocumentVcl, TPdfVclCanvas
   {$endif PDF_HASVCLCANVAS}
+  mormot.core.os,       // FileFromString
   mormot.core.test,
   mormot.core.unicode,  // StringToUtf8
   mormot.pdf.types,     // TPdfStructRole, GetPdfFonts
@@ -48,6 +49,7 @@ type
     procedure TestLineToWritesCompletePath;
     {$endif PDF_HASVCLCANVAS}
     procedure TestTaggedTableRowGroups;
+    procedure TestTaggedUnicode;
   end;
 
 implementation
@@ -64,7 +66,7 @@ var
   sans, serif, mono: string;
 begin
   GetPdfFonts(true, sans, serif, mono);
-  PDF.Canvas.SetFont(StringToUtf8(sans), ASize, []);
+  PDF.Canvas.SetFont(StringToUtf8(sans), ASize, [], PDF_DEFAULT_CHARSET);
 end;
 
 { a stroked rectangle given in bridge pixels (Y from the top), with the
@@ -867,6 +869,77 @@ begin
     tbl := ObjectTextOfRole(s, 'Table');
     Check(tbl <> '', 'the Table element is in the struct tree');
     CheckEqual(KidRoles(s, tbl), 'THead TBody TFoot ', 'row groups of the table');
+  finally
+    Stream.Free;
+  end;
+end;
+
+const
+  // the faces the chinese_demo and rtl_demo use on each platform
+  {$ifdef MSWINDOWS}
+  CJK_FONT    = 'Microsoft YaHei';
+  ARABIC_FONT = 'Tahoma';
+  {$else}
+  {$ifdef DARWIN}
+  CJK_FONT    = 'Hiragino Sans GB';
+  ARABIC_FONT = 'Geeza Pro';
+  {$else}
+  CJK_FONT    = 'Droid Sans Fallback';
+  ARABIC_FONT = 'Noto Naskh Arabic';
+  {$endif DARWIN}
+  {$endif MSWINDOWS}
+  /// 字体嵌入测试 - "font embedding test"
+  CJK_TEXT = #$E5#$AD#$97#$E4#$BD#$93#$E5#$B5#$8C#$E5#$85#$A5#$E6#$B5#$8B#$E8#$AF#$95;
+  /// مرحبا - "hello", joining letters: needs the shaper
+  ARABIC_TEXT = #$D9#$85#$D8#$B1#$D8#$AD#$D8#$A8#$D8#$A7;
+  /// the file PAC 2024 and veraPDF are run on (R-19 step 4)
+  UNICODE_PDF = 'tagged_unicode_lowlevel.pdf';
+
+procedure TPdfSmokeTests.TestTaggedUnicode;
+var
+  PDF: TPdfDocument;
+  Stream: TMemoryStream;
+  s: RawByteString;
+begin
+  { tagged Latin, CJK and shaped Arabic through layer 1 alone - the output
+    Delphi and FPC have to agree on (R-19); the file is kept in WorkDir }
+  Stream := TMemoryStream.Create;
+  try
+    PDF := TPdfDocument.Create(false, 0, pdfaNone);
+    try
+      PDF.CompressionMethod := cmNone; // so the objects stay readable
+      PDF.Tagged := true;
+      PDF.DefaultLanguage := 'en';
+      PDF.Info.Title := 'Tagged Unicode through TPdfCanvas';
+      PDF.AddPage;
+      PDF.Canvas.BeginStructContent(psrH1);
+      UseSansFont(PDF, 18);
+      DrawUtf8Text(PDF, 40, 780, 'Tagged Unicode through TPdfCanvas');
+      PDF.Canvas.EndStructContent;
+      PDF.Canvas.BeginStructContent(psrP);
+      UseSansFont(PDF, 12);
+      DrawUtf8Text(PDF, 40, 740, 'Latin, CJK and Arabic on one page.');
+      PDF.Canvas.EndStructContent;
+      PDF.Canvas.BeginStructContent(psrP);
+      PDF.Canvas.SetFont(CJK_FONT, 18, [], PDF_DEFAULT_CHARSET);
+      DrawUtf8Text(PDF, 40, 700, CJK_TEXT);
+      PDF.Canvas.EndStructContent;
+      PDF.Canvas.BeginStructContent(psrP);
+      PDF.UseUniscribe := true; // the shaper: Uniscribe or HarfBuzz
+      PDF.Canvas.SetFont(ARABIC_FONT, 24, [], PDF_DEFAULT_CHARSET);
+      DrawUtf8Text(PDF, 40, 650, ARABIC_TEXT);
+      PDF.UseUniscribe := false;
+      PDF.Canvas.EndStructContent;
+      PDF.SaveToStream(Stream);
+    finally
+      PDF.Free;
+    end;
+    s := StreamToRaw(Stream);
+    FileFromString(s, WorkDir + UNICODE_PDF);
+    CheckEqual(CountOf('/S/H1', s), 1, 'one H1');
+    CheckEqual(CountOf('/S/P', s), 3, 'three P');
+    Check(CountOf('/FontFile', s) >= 3, 'Latin, CJK and Arabic faces embedded');
+    Check(Pos(RawByteString('5B57'), s) > 0, 'ToUnicode maps the CJK text (U+5B57)');
   finally
     Stream.Free;
   end;

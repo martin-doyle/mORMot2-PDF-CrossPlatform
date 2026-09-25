@@ -65,9 +65,9 @@ begin
       PDF.AddPage;
       if aTagged then
         PDF.Canvas.BeginStructContent(psrP);
-      PDF.Canvas.SetFont(StringToUtf8(sans), 12, []);
+      PDF.Canvas.SetFont(StringToUtf8(sans), 12, [], PDF_DEFAULT_CHARSET);
       DrawUtf8Text(PDF, 15, 800, aText);
-      PDF.Canvas.SetFont(StringToUtf8(serif), 12, []);
+      PDF.Canvas.SetFont(StringToUtf8(serif), 12, [], PDF_DEFAULT_CHARSET);
       DrawUtf8Text(PDF, 15, 770, aText);
       if aTagged then
         PDF.Canvas.EndStructContent;

@@ -166,6 +166,22 @@ through `TextOutW`. The encoding question sits only where a public method takes
    same file from FPC/Win64, in what has to match (see V). Then veraPDF `ua1`
    and PAC 2024. 32-bit is new ground: `CreateFontPackage` and Uniscribe are
    called with records whose layout depends on pointer size.
+   **Compared 2026-09-25**, `TestTaggedUnicode` in `test_pdf_smoke` (H1 and
+   a P in Calibri, a P in Microsoft YaHei, a P of shaped Arabic in Tahoma;
+   the file stays in the runner's `data/` folder): Delphi 7/Win32 and
+   FPC/Win64 write files of the same size, the same text (`pdftotext`, the
+   Arabic in presentation forms, so Uniscribe shaped it from Win32 too), the
+   same roles and the same `/ToUnicode` entries. Apart from date and `/ID`
+   they differ in **one field**: the `language` of the format 12 `cmap`
+   subtable of the YaHei subset, `0x0008DFF0` from Win32 and `0` from Win64,
+   and with it the subset tag (`KFTFAP` against `HNCHGJ`). It comes from the
+   32-bit `fontsub.dll` itself — the `cmap` checksum it writes differs by
+   exactly that value, and zeroed memory from `lpfnAllocate` does not change
+   it. Stable from run to run. The spec wants 0 there outside the Mac
+   platform; viewers ignore it. Open: veraPDF and PAC on both files.
+   The helpers now pass `DEFAULT_CHARSET` to `SetFont`, as the bridge does
+   (`fonts.md` §10) — without it Windows exposes only the ANSI part of the
+   cmap.
 5. Document: build commands in `CLAUDE.md`, the language limits in the skills,
    and the rule that every change compiles with FPC **and** Delphi 7.
 

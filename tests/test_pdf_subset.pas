@@ -71,6 +71,13 @@ type
     procedure TestPdfA3Subsets;
   end;
 
+const
+  /// the charset TPdfVclCanvas passes to TPdfCanvas.SetFont (LCL default)
+  // - DEFAULT_CHARSET: without it, Windows falls back to the document charset
+  // (ANSI_CHARSET on a Western system) and exposes only the ANSI part of the
+  // cmap - see fonts.md §10
+  PDF_DEFAULT_CHARSET = 1;
+
 /// draw UTF-8 bytes held in a string, decoded as TPdfVclCanvas.TextOut does
 // - X, Y in PDF points from the bottom-left corner
 procedure DrawUtf8Text(PDF: TPdfDocument; X, Y: single; const aText: string);
@@ -552,11 +559,11 @@ begin
       PDF.AddPage;
       if aTagged then
         PDF.Canvas.BeginStructContent(psrP);
-      PDF.Canvas.SetFont(StringToUtf8(aFont), 12, []);
+      PDF.Canvas.SetFont(StringToUtf8(aFont), 12, [], PDF_DEFAULT_CHARSET);
       DrawUtf8Text(PDF, 15, 800, aText);
       if aBold then
       begin
-        PDF.Canvas.SetFont(StringToUtf8(aFont), 12, [pfsBold]);
+        PDF.Canvas.SetFont(StringToUtf8(aFont), 12, [pfsBold], PDF_DEFAULT_CHARSET);
         DrawUtf8Text(PDF, 15, 770, aText + '!');
       end;
       if aTagged then
