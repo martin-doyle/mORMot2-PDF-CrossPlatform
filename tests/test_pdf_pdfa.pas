@@ -3,7 +3,9 @@
 // - the output is uncompressed, so the objects stay searchable as text
 unit test_pdf_pdfa;
 
-{$mode delphi}{$H+}
+{$ifdef FPC}
+  {$mode delphi}{$H+}
+{$endif FPC}
 
 interface
 

@@ -258,6 +258,13 @@ begin
 end;
 
 
+{ an empty request - Default() does not exist in Delphi 7 }
+procedure ClearRequest(out req: TPdfFontSubsetRequest);
+begin
+  req.Unicodes := nil;
+  req.Glyphs := nil;
+end;
+
 { TPdfSubsetTests }
 
 function TPdfSubsetTests.PrepareFace: boolean;
@@ -462,7 +469,7 @@ begin
     exit;
   end;
   // a malformed OTTO header is still refused, like any other garbage
-  req := Default(TPdfFontSubsetRequest);
+  ClearRequest(req);
   Check(not PdfFontSubsetter.Subset('OTTO' + StringOfChar(#0, 60), req, sub),
     'a truncated CFF face must not be subset');
   CheckEqual(sub, '', 'no output expected');
@@ -470,7 +477,7 @@ begin
   // /Subtype /OpenType, which the engine picks through PdfFontFileKey()
   if not LoadCffFace(face) then
     exit;
-  req := Default(TPdfFontSubsetRequest);
+  ClearRequest(req);
   SetLength(req.Glyphs, 2);
   req.Glyphs[0] := 1;
   req.Glyphs[1] := 2;
@@ -495,7 +502,7 @@ begin
   for i := 1 to length(junk) do
     junk[i] := AnsiChar(Random32 and 255);
   PCardinal(junk)^ := $00000100; // looks like a TrueType sfnt header
-  req := Default(TPdfFontSubsetRequest);
+  ClearRequest(req);
   SetLength(req.Unicodes, 1);
   req.Unicodes[0] := ord('A');
   // must not crash; whatever comes back, it must not claim to hold glyph A

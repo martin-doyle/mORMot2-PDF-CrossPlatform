@@ -146,9 +146,22 @@ through `TextOutW`. The encoding question sits only where a public method takes
    `stdcall`** — harmless on Win64, a wrong calling convention on any Win32
    build, FPC included. `mormot.ui.pdf` needed nothing else: it descends from
    the Delphi 7 original. FPC/Win64 still green, 221.
-3. `test_runner` under Delphi 7: suites that need the bridge or FPImage stand
-   down under Delphi instead of failing. Record the assertion count beside
-   FPC/Win64 and account for every difference.
+3. ~~`test_runner` under Delphi 7~~ — **done 2026-09-25: green, 117
+   assertions on Win32.** The PDF suites tested layer 1 through layer 2 — the
+   `BuildPdf` helpers and every smoke test drew through `TPdfDocumentVcl`.
+   They now draw through `TPdfDocument`/`TPdfCanvas` (pixel coordinates
+   converted, so the expected values stay), and the platform font names moved
+   to `mormot.pdf.types` (`PDF_FONT_TTF_*`, `GetPdfFonts`; `mormot.ui.report`
+   keeps its names as aliases). FPC/Win64 is unchanged at 221, suite by suite.
+   The difference is exact: 221 − 94 (report and coordinate suites, layer 3)
+   − 10 (`TestLineToWritesCompletePath` and `TestVclCanvasTextMetrics`, which
+   test the bridge itself) = 117. Those are FPC-only until R-20.
+   Delphi 7 language gaps met in the tests: `Default()`, three-argument
+   `Pos`, an unguarded `{$mode}`.
+   **Found on the way:** `mormot.pdf.types` and `mormot.pdf.gdi` put
+   `{$mode delphi}` after `uses`, where it does not take effect — `string`
+   was `ShortString` there under FPC. Harmless until now, since neither used
+   `string`; `mormot.pdf.types` got `{$H+}` for the new `GetPdfFonts`.
 4. Output: the low-level test PDF — tagged, with CJK and Arabic — against the
    same file from FPC/Win64, in what has to match (see V). Then veraPDF `ua1`
    and PAC 2024. 32-bit is new ground: `CreateFontPackage` and Uniscribe are

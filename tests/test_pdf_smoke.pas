@@ -1,8 +1,13 @@
-/// Smoke test für PDF-Export-Funktionalität (ohne LCL-Abhängigkeiten)
+/// PDF smoke tests: document basics and tagged output
 // - migrated to TSynTestCase framework for mORMot2 compatibility
+// - drawn through TPdfDocument/TPdfCanvas (layer 1), so the suite runs on
+// Delphi too (R-19); the two tests of the TCanvas bridge itself are FPC-only
+// until the bridge exists on Delphi (R-20)
 unit test_pdf_smoke;
 
-{$mode delphi}{$H+}
+{$ifdef FPC}
+  {$mode delphi}{$H+}
+{$endif FPC}
 
 interface
 
@@ -10,11 +15,15 @@ uses
   Classes,
   SysUtils,
   mormot.core.base,
+  {$ifdef FPC}
   Graphics,             // TCanvas.Font
+  mormot.ui.pdfcanvas,  // TPdfDocumentVcl, TPdfVclCanvas
+  {$endif FPC}
   mormot.core.test,
-  mormot.pdf.types,     // TPdfStructRole
-  mormot.ui.pdf,        // TPdfCompressionMethod
-  mormot.ui.pdfcanvas;  // TPdfDocumentVcl, TPdfVclCanvas
+  mormot.core.unicode,  // StringToUtf8
+  mormot.pdf.types,     // TPdfStructRole, GetPdfFonts
+  mormot.ui.pdf,        // TPdfDocument, TPdfCanvas
+  test_pdf_subset;      // DrawUtf8Text
 
 type
   /// PDF smoke test cases
@@ -24,7 +33,9 @@ type
     procedure TestPdfMetadata;
     procedure TestPdfMultiplePages;
     procedure TestPdfDifferentSizes;
+    {$ifdef FPC}
     procedure TestVclCanvasTextMetrics;
+    {$endif FPC}
     procedure TestTaggedAltTextIsPdfString;
     procedure TestTaggedImpliesEmbeddedFonts;
     procedure TestTaggedAfterAddPageRaises;
@@ -32,11 +43,37 @@ type
     procedure TestTaggedPdfA;
     procedure TestTaggedDecorationIsArtifact;
     procedure TestTaggedArtifactMisuseRaises;
+    {$ifdef FPC}
     procedure TestLineToWritesCompletePath;
+    {$endif FPC}
     procedure TestTaggedTableRowGroups;
   end;
 
 implementation
+
+const
+  /// the TCanvas bridge maps 96 DPI pixels to PDF points
+  PX = 72 / 96;
+  /// default page height (A4) - PDF points count from the bottom
+  PAGE_H = 842;
+
+{ select the platform sans font, as the tagged font mode embeds it }
+procedure UseSansFont(PDF: TPdfDocument; ASize: single = 12);
+var
+  sans, serif, mono: string;
+begin
+  GetPdfFonts(true, sans, serif, mono);
+  PDF.Canvas.SetFont(StringToUtf8(sans), ASize, []);
+end;
+
+{ a stroked rectangle given in bridge pixels (Y from the top), with the
+  0.75 pt pen of a 1 px TCanvas pen }
+procedure StrokeRectPx(PDF: TPdfDocument; X1, Y1, X2, Y2: integer);
+begin
+  PDF.Canvas.SetLineWidth(PX);
+  PDF.Canvas.Rectangle(X1 * PX, PAGE_H - Y2 * PX, (X2 - X1) * PX, (Y2 - Y1) * PX);
+  PDF.Canvas.Stroke;
+end;
 
 function StreamToRaw(Stream: TMemoryStream): RawByteString;
 begin
@@ -111,7 +148,7 @@ begin
   while p > 0 do
   begin
     inc(result);
-    p := Pos(Sub, s, p + 1);
+    p := PosEx(Sub, s, p + 1);
   end;
 end;
 
@@ -124,10 +161,11 @@ begin
   while p > 0 do
   begin
     inc(result);
-    p := Pos(RawByteString(' m'#10), s, p + 1);
+    p := PosEx(RawByteString(' m'#10), s, p + 1);
   end;
 end;
 
+{$ifdef FPC} // SyncPen of the TCanvas bridge (R-20)
 procedure TPdfSmokeTests.TestLineToWritesCompletePath;
 var
   PDF: TPdfDocumentVcl;
@@ -175,16 +213,17 @@ begin
     end;
   end;
 end;
+{$endif FPC}
 
 procedure TPdfSmokeTests.TestTaggedStreamedMetadata;
 var
-  PDF: TPdfDocumentVcl;
+  PDF: TPdfDocument;
   Stream: TMemoryStream;
   s: RawByteString;
 begin
   Stream := TMemoryStream.Create;
   try
-    PDF := TPdfDocumentVcl.Create(false, 0, pdfaNone);
+    PDF := TPdfDocument.Create(false, 0, pdfaNone);
     try
       PDF.CompressionMethod := cmNone;
       PDF.Tagged := true;
@@ -194,9 +233,10 @@ begin
         which used to fill it - PAC: "PDF/UA identifier missing" (B-8) }
       PDF.SaveToStreamDirectBegin(Stream);
       PDF.AddPage;
-      PDF.BeginStructContent(psrP);
-      PDF.VclCanvas.TextOut(20, 20, 'Hello');
-      PDF.EndStructContent;
+      PDF.Canvas.BeginStructContent(psrP);
+      UseSansFont(PDF);
+      DrawUtf8Text(PDF, 20 * PX, PAGE_H - 20 * PX, 'Hello');
+      PDF.Canvas.EndStructContent;
       PDF.SaveToStreamDirectPageFlush;
       PDF.SaveToStreamDirectEnd;
     finally
@@ -216,7 +256,7 @@ end;
 
 procedure TPdfSmokeTests.TestTaggedPdfA;
 var
-  PDF: TPdfDocumentVcl;
+  PDF: TPdfDocument;
   Stream: TMemoryStream;
   s: RawByteString;
 begin
@@ -226,16 +266,17 @@ begin
       NewDoc: the Tagged setup then skipped /Lang and DisplayDocTitle, and
       SerializeStructTree referenced the direct object from a second
       dictionary, so Free released it twice (R-17) }
-    PDF := TPdfDocumentVcl.Create(false, 0, pdfa3B);
+    PDF := TPdfDocument.Create(false, 0, pdfa3B);
     try
       PDF.CompressionMethod := cmNone;
       PDF.Tagged := true;
       PDF.DefaultLanguage := 'en';
       PDF.Info.Title := 'Tagged PDF/A';
       PDF.AddPage;
-      PDF.BeginStructContent(psrP);
-      PDF.VclCanvas.TextOut(20, 20, 'Hello');
-      PDF.EndStructContent;
+      PDF.Canvas.BeginStructContent(psrP);
+      UseSansFont(PDF);
+      DrawUtf8Text(PDF, 20 * PX, PAGE_H - 20 * PX, 'Hello');
+      PDF.Canvas.EndStructContent;
       PDF.SaveToStream(Stream);
     finally
       PDF.Free;
@@ -259,7 +300,7 @@ end;
 
 procedure TPdfSmokeTests.TestTaggedDecorationIsArtifact;
 var
-  PDF: TPdfDocumentVcl;
+  PDF: TPdfDocument;
   Stream: TMemoryStream;
   s: RawByteString;
   fig, emc, art, bb, code: integer;
@@ -267,24 +308,25 @@ var
 begin
   Stream := TMemoryStream.Create;
   try
-    PDF := TPdfDocumentVcl.Create(false, 0, pdfaNone);
+    PDF := TPdfDocument.Create(false, 0, pdfaNone);
     try
       PDF.CompressionMethod := cmNone;
       PDF.Tagged := true;
       PDF.AddPage;
       { a cell border drawn between two struct regions (B-9) }
-      PDF.VclCanvas.Rectangle(10, 10, 100, 30);
-      PDF.BeginStructContent(psrTable);
-      PDF.BeginStructContent(psrTR);
-      PDF.BeginStructContent(psrTH);
-      PDF.VclCanvas.TextOut(12, 12, 'Date');
-      PDF.EndStructContent;
-      PDF.EndStructContent;
-      PDF.EndStructContent;
+      StrokeRectPx(PDF, 10, 10, 100, 30);
+      PDF.Canvas.BeginStructContent(psrTable);
+      PDF.Canvas.BeginStructContent(psrTR);
+      PDF.Canvas.BeginStructContent(psrTH);
+      UseSansFont(PDF);
+      DrawUtf8Text(PDF, 12 * PX, PAGE_H - 12 * PX, 'Date');
+      PDF.Canvas.EndStructContent;
+      PDF.Canvas.EndStructContent;
+      PDF.Canvas.EndStructContent;
       { a drawing inside a Figure is real content, not decoration }
-      PDF.BeginStructContent(psrFigure, 'Chart');
-      PDF.VclCanvas.Rectangle(10, 50, 100, 100);
-      PDF.EndStructContent;
+      PDF.Canvas.BeginStructContent(psrFigure, 'Chart');
+      StrokeRectPx(PDF, 10, 50, 100, 100);
+      PDF.Canvas.EndStructContent;
       PDF.SaveToStream(Stream);
     finally
       PDF.Free;
@@ -293,8 +335,8 @@ begin
     Check(Pos(RawByteString('/Artifact BMC'), s) > 0,
       'a path outside any struct region is an artifact');
     fig := Pos(RawByteString('/Figure <<'), s);
-    emc := Pos(RawByteString('EMC'), s, fig);
-    art := Pos(RawByteString('/Artifact'), s, fig);
+    emc := PosEx(RawByteString('EMC'), s, fig);
+    art := PosEx(RawByteString('/Artifact'), s, fig);
     Check((fig > 0) and (emc > fig) and
       ((art = 0) or (art > emc)),
       'a path inside a Figure region stays real content');
@@ -305,7 +347,7 @@ begin
     Check(Pos(RawByteString('/O/Layout/BBox['), s) > 0,
       'the Figure carries its /BBox layout attribute');
     bb := Pos(RawByteString('/BBox['), s);
-    Val(string(copy(s, bb + 6, Pos(RawByteString(' '), s, bb) - bb - 6)),
+    Val(string(copy(s, bb + 6, PosEx(RawByteString(' '), s, bb) - bb - 6)),
       left, code);
     Check((bb > 0) and (code = 0) and (abs(left - 7.125) < 0.01),
       'the /BBox starts at the left edge of the drawing minus half the pen');
@@ -316,31 +358,31 @@ end;
 
 procedure TPdfSmokeTests.TestTaggedArtifactMisuseRaises;
 var
-  PDF: TPdfDocumentVcl;
+  PDF: TPdfDocument;
   Raised: boolean;
 begin
-  PDF := TPdfDocumentVcl.Create(false, 0, pdfaNone);
+  PDF := TPdfDocument.Create(false, 0, pdfaNone);
   try
     PDF.Tagged := true;
     PDF.AddPage;
     Raised := false;
     try
-      PDF.EndArtifact;
+      PDF.Canvas.EndArtifact;
     except
       on EPdfInvalidOperation do
         Raised := true;
     end;
     Check(Raised, 'EndArtifact without BeginArtifact');
-    PDF.BeginStructContent(psrP);
+    PDF.Canvas.BeginStructContent(psrP);
     Raised := false;
     try
-      PDF.BeginArtifact;
+      PDF.Canvas.BeginArtifact;
     except
       on EPdfInvalidOperation do
         Raised := true;
     end;
     Check(Raised, 'an artifact cannot open inside a struct region');
-    PDF.EndStructContent;
+    PDF.Canvas.EndStructContent;
   finally
     PDF.Free;
   end;
@@ -348,13 +390,13 @@ end;
 
 procedure TPdfSmokeTests.TestTaggedImpliesEmbeddedFonts;
 var
-  PDF: TPdfDocumentVcl;
+  PDF: TPdfDocument;
   Stream: TMemoryStream;
   s: RawByteString;
 begin
   Stream := TMemoryStream.Create;
   try
-    PDF := TPdfDocumentVcl.Create(false, 0, pdfaNone);
+    PDF := TPdfDocument.Create(false, 0, pdfaNone);
     try
       PDF.CompressionMethod := cmNone; // so the objects stay readable
       { PDF/UA needs embedded fonts with a Unicode round-trip, so Tagged picks
@@ -369,10 +411,10 @@ begin
       Check(PDF.EmbeddedWholeTtf = not PdfCanSubsetRetainingGids,
         'Tagged embeds the whole face only without a retain-GID subsetter');
       PDF.AddPage;
-      PDF.BeginStructContent(psrP);
-      PDF.VclCanvas.Font.Size := 12;
-      PDF.VclCanvas.TextOut(20, 20, 'Hello');
-      PDF.EndStructContent;
+      PDF.Canvas.BeginStructContent(psrP);
+      UseSansFont(PDF, 12);
+      DrawUtf8Text(PDF, 20 * PX, PAGE_H - 20 * PX, 'Hello');
+      PDF.Canvas.EndStructContent;
       PDF.SaveToStream(Stream);
     finally
       PDF.Free;
@@ -393,10 +435,10 @@ end;
 
 procedure TPdfSmokeTests.TestTaggedAfterAddPageRaises;
 var
-  PDF: TPdfDocumentVcl;
+  PDF: TPdfDocument;
   Raised: boolean;
 begin
-  PDF := TPdfDocumentVcl.Create(false, 0, pdfaNone);
+  PDF := TPdfDocument.Create(false, 0, pdfaNone);
   try
     PDF.AddPage;
     Raised := false;
@@ -419,21 +461,21 @@ const
   // the characters a PDF string literal has to escape
   ALT = 'Chart (2026): 50% \ up';
 var
-  PDF: TPdfDocumentVcl;
+  PDF: TPdfDocument;
   Stream: TMemoryStream;
   s: RawByteString;
 begin
   Stream := TMemoryStream.Create;
   try
-    PDF := TPdfDocumentVcl.Create(false, 0, pdfaNone);
+    PDF := TPdfDocument.Create(false, 0, pdfaNone);
     try
       PDF.CompressionMethod := cmNone; // so the content stream stays readable
       PDF.Tagged := true;
       PDF.DefaultLanguage := 'en';
       PDF.AddPage;
-      PDF.BeginStructContent(psrFigure, ALT);
-      PDF.VclCanvas.Rectangle(10, 10, 100, 100);
-      PDF.EndStructContent;
+      PDF.Canvas.BeginStructContent(psrFigure, ALT);
+      StrokeRectPx(PDF, 10, 10, 100, 100);
+      PDF.Canvas.EndStructContent;
       PDF.SaveToStream(Stream);
     finally
       PDF.Free;
@@ -452,6 +494,7 @@ begin
   end;
 end;
 
+{$ifdef FPC} // measuring through TPdfVclCanvas (R-20)
 procedure TPdfSmokeTests.TestVclCanvasTextMetrics;
 const
   // Adobe AFM advance widths of Helvetica, in 1000-per-em units
@@ -493,10 +536,11 @@ begin
     PDF.Free;
   end;
 end;
+{$endif FPC}
 
 procedure TPdfSmokeTests.TestPdfCreation;
 var
-  PDF: TPdfDocumentVcl;
+  PDF: TPdfDocument;
   Stream: TMemoryStream;
   Size: Integer;
   Header: AnsiString;
@@ -504,7 +548,7 @@ begin
   Stream := TMemoryStream.Create;
   try
     // Create PDF with default options (no PDF/A)
-    PDF := TPdfDocumentVcl.Create(false, 0, pdfaNone);  // Use Outlines=false, CodePage=0, pdfaNone
+    PDF := TPdfDocument.Create(false, 0, pdfaNone);  // Use Outlines=false, CodePage=0, pdfaNone
     try
       // Set metadata
       PDF.Info.Title := 'Test Document';
@@ -539,12 +583,12 @@ end;
 
 procedure TPdfSmokeTests.TestPdfMetadata;
 var
-  PDF: TPdfDocumentVcl;
+  PDF: TPdfDocument;
   Stream: TMemoryStream;
 begin
   Stream := TMemoryStream.Create;
   try
-    PDF := TPdfDocumentVcl.Create(false, 0, pdfaNone);
+    PDF := TPdfDocument.Create(false, 0, pdfaNone);
     try
       // Verify we can set metadata without errors
       PDF.Info.Title := 'Metadata Test';
@@ -567,13 +611,13 @@ end;
 
 procedure TPdfSmokeTests.TestPdfMultiplePages;
 var
-  PDF: TPdfDocumentVcl;
+  PDF: TPdfDocument;
   Stream: TMemoryStream;
   i: Integer;
 begin
   Stream := TMemoryStream.Create;
   try
-    PDF := TPdfDocumentVcl.Create(false, 0, pdfaNone);
+    PDF := TPdfDocument.Create(false, 0, pdfaNone);
     try
       PDF.Info.Title := 'Multi-Page Test';
       PDF.DefaultPageWidth  := 595;
@@ -593,12 +637,12 @@ end;
 
 procedure TPdfSmokeTests.TestPdfDifferentSizes;
 var
-  PDF: TPdfDocumentVcl;
+  PDF: TPdfDocument;
   Stream: TMemoryStream;
 begin
   Stream := TMemoryStream.Create;
   try
-    PDF := TPdfDocumentVcl.Create(false, 0, pdfaNone);
+    PDF := TPdfDocument.Create(false, 0, pdfaNone);
     try
       PDF.Info.Title := 'Different Sizes';
       // A4: 210mm × 297mm = 595 × 842 points
@@ -770,43 +814,43 @@ end;
 
 procedure TPdfSmokeTests.TestTaggedTableRowGroups;
 
-  procedure Cell(PDF: TPdfDocumentVcl; ARole: TPdfStructRole;
+  procedure Cell(PDF: TPdfDocument; ARole: TPdfStructRole;
     Y: integer; const S: string);
   begin
-    PDF.BeginStructContent(psrTR);
-    PDF.BeginStructContent(ARole);
-    PDF.VclCanvas.TextOut(20, Y, S);
-    PDF.EndStructContent;
-    PDF.EndStructContent;
+    PDF.Canvas.BeginStructContent(psrTR);
+    PDF.Canvas.BeginStructContent(ARole);
+    DrawUtf8Text(PDF, 20 * PX, PAGE_H - Y * PX, S);
+    PDF.Canvas.EndStructContent;
+    PDF.Canvas.EndStructContent;
   end;
 
 var
-  PDF: TPdfDocumentVcl;
+  PDF: TPdfDocument;
   Stream: TMemoryStream;
   s: RawByteString;
   tbl: RawByteString;
 begin
   Stream := TMemoryStream.Create;
   try
-    PDF := TPdfDocumentVcl.Create(false, 0, pdfaNone);
+    PDF := TPdfDocument.Create(false, 0, pdfaNone);
     try
       PDF.CompressionMethod := cmNone; // so the struct tree stays readable
       PDF.Tagged := true;
       PDF.AddPage;
-      PDF.VclCanvas.Font.Size := 12;
+      UseSansFont(PDF, 12);
       { Table > THead|TBody|TFoot > TR > TH|TD, ISO 32000-1 14.8.4.3.4 }
-      PDF.BeginStructContent(psrTable);
-      PDF.BeginStructContent(psrTHead);
+      PDF.Canvas.BeginStructContent(psrTable);
+      PDF.Canvas.BeginStructContent(psrTHead);
       Cell(PDF, psrTH, 20, 'Item');
-      PDF.EndStructContent;
-      PDF.BeginStructContent(psrTBody);
+      PDF.Canvas.EndStructContent;
+      PDF.Canvas.BeginStructContent(psrTBody);
       Cell(PDF, psrTD, 40, 'Row 1');
       Cell(PDF, psrTD, 60, 'Row 2');
-      PDF.EndStructContent;
-      PDF.BeginStructContent(psrTFoot);
+      PDF.Canvas.EndStructContent;
+      PDF.Canvas.BeginStructContent(psrTFoot);
       Cell(PDF, psrTD, 80, 'Total');
-      PDF.EndStructContent;
-      PDF.EndStructContent;
+      PDF.Canvas.EndStructContent;
+      PDF.Canvas.EndStructContent;
       PDF.SaveToStream(Stream);
     finally
       PDF.Free;
