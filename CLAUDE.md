@@ -273,9 +273,12 @@ display (`xvfb-run` otherwise); on macOS Cocoa runs it headless.
 - **PDF/A** (R-17): A-3U + PDF/UA-1, A-3A (tagged) and A-3B verified on all three platforms with veraPDF, Mustang and PAC; A-1 and A-2 implemented, unverified. Pass the level to the constructor — the `PdfA` setter calls `NewDoc`. A levels need `Tagged := True`. With PDF/A + Tagged the engine describes `pdfuaid` in the XMP extension schemas, inside the caller's `<pdfaExtension:schemas><rdf:Bag>` if `PdfAMetadaExtension` has one — keep that single list
 - **E-invoices**: the engine writes the PDF/A-3 container (`CreateFileAttachmentFrom` + `PdfMetadataFacturX`) and never generates or validates invoice XML. Scope is B2B (ZUGFeRD/Factur-X profile EN 16931); invoices to German authorities are pure XML and out of scope. Third-party material only with a verified license, recorded in the demo's `THIRD_PARTY.md`
 - **Links in tagged output**: no `Link` role, `OBJR` or `/StructParent` for annotations — `CreateHyperLink` in tagged output fails veraPDF `ua1` on four 7.18 rules (measured). `TGDIPages.DrawLink` draws link-styled text as a `Span` and drops the URL: conformant, not clickable (roadmap R-18, only on request)
-- **Delphi** (R-19, R-20, R-21): the core builds and tests green on Delphi 7 (R-19 steps 1–3). R-19, priority 1: the core
+- **Delphi** (R-19, R-21, R-20): R-19, priority 1 — the core
   (`mormot.pdf.types`, `mormot.ui.pdf`, GDI backend, Uniscribe) on Delphi 7,
-  Win32. R-20, priority 2: the TCanvas bridge — `TPdfVclCanvas` relies on
+  Win32; steps 1–3 done, `test_runner` green with 117 assertions (the layer 1
+  suites), built with `tests\build_delphi7.bat <project>`. R-21, before R-20 —
+  `{$I mormot.defines.inc}` in every unit instead of a bare `{$mode}`.
+  R-20, priority 2: the TCanvas bridge — `TPdfVclCanvas` relies on
   `override`, but Delphi 7's `TCanvas` drawing methods are static, so a call
   through a `TCanvas` reference bypasses the bridge. Never put `mORMot2/src/ui`
   on a Delphi search path: it holds the original `mormot.ui.pdf`/`report`/`core`
