@@ -3,7 +3,23 @@
 ## Unreleased
 
 PDF/A-3 verified for the first time, combined with PDF/UA-1 in one file, and a
-demo that uses it for a hybrid e-invoice (roadmap R-17).
+demo that uses it for a hybrid e-invoice (roadmap R-17). The core builds and
+tests green on **Delphi 7** (roadmap R-19), which found two defects in tagged
+output with CJK or Arabic text that every compiler had.
+
+### Delphi 7
+
+Layer 1 — `TPdfDocument`/`TPdfCanvas`, the GDI backend and Uniscribe — builds
+with Delphi 7 for Win32 (`tests\build_delphi7.bat`). `test_runner` passes there
+with 123 assertions: the layer 1 suites, all tests shared with FPC. A tagged PDF
+with Latin, CJK and shaped Arabic comes out the same from Delphi 7/Win32 and
+FPC/Win64 — size, text, roles, `/ToUnicode` — and passes **PAC 2024**. The
+TCanvas bridge and `TGDIPages` stay FPC-only for now: they override `TCanvas`
+methods that Delphi 7's VCL does not declare virtual (roadmap R-20).
+
+The one byte-level difference: the 32-bit `fontsub.dll` writes a non-zero
+`language` into the format 12 `cmap` subtable of a subset, the 64-bit one zero.
+It is Windows' own output, stable from run to run, and ignored by viewers.
 
 ### Verification
 
@@ -34,6 +50,13 @@ standing down where a platform lacks what they need, not failures.
 - **`tests/test_pdf_pdfa.pas`**: associated files, XMP identification and
   extension schemas, `PdfMetadataFacturX`, `/ToUnicode` for every font under U,
   encryption rejected; plus `TestPdfA3Subsets`.
+- **`GetPdfFonts` and `PDF_FONT_TTF_SANS/SERIF/MONO`** in `mormot.pdf.types`:
+  the platform font names, usable without the report engine.
+  `GetReportFonts` and `REPORT_FONT_*` in `mormot.ui.report` stay, as aliases.
+- **`TestTaggedUnicode`**: tagged Latin, CJK and shaped Arabic through
+  `TPdfCanvas`; the file stays in the test runner's `data` folder for PAC and
+  veraPDF.
+- **`tests/build_delphi7.bat`** and `tests/delphi7_core.dpr`.
 
 ### Fixed
 
@@ -47,6 +70,24 @@ standing down where a platform lacks what they need, not failures.
   inside the caller's list of extension schemas when there is one.
 - **`/Params /Size 0` for attachments read from a file.** The size came from
   the empty buffer while the content arrived through a stream.
+- **PAC 2024 stopped on tagged output with CJK or Arabic text.** The WinAnsi
+  peer of a face that draws only such text shows no character, and was written
+  without `/FirstChar`, `/LastChar` and `/Widths`, which a simple TrueType font
+  requires. It now carries the space. Removing the peer altogether is on the
+  roadmap.
+- **`/CIDToGIDMap` was written for PDF/A only.** PDF/UA-1 (7.21.3.2) wants it
+  for every `CIDFontType2` as well, and PAC failed the font without it.
+- **`GetCharABCWidthsI` was imported without `stdcall`**: a wrong calling
+  convention on any Win32 build. Win64 has only one, so it never showed.
+
+### Changed
+
+- **The PDF test suites draw through `TPdfDocument`/`TPdfCanvas`** instead of
+  the TCanvas bridge: they test the output, so they now run on Delphi too. The
+  two tests of the bridge itself need `PDF_HASVCLCANVAS`
+  (`tests/test_defines.inc`), defined for FPC.
+- Test suite: 227 assertions on Windows with FPC (221 before), 123 with
+  Delphi 7. Linux and macOS not re-run since.
 
 ### Known limitations
 
@@ -59,6 +100,7 @@ standing down where a platform lacks what they need, not failures.
   scope; the engine never generates or validates invoice XML.
 - **PDF/A-1 accepts attachments** although it forbids them; the engine does not
   check.
+- **Delphi: layer 1 only** (R-20), and Delphi 7 is the only version built.
 
 ## v0.9.0 — 2026-09-23
 

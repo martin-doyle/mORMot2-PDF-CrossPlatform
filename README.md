@@ -9,8 +9,8 @@ veraPDF (106/106) and PAC 2024 on all three platforms.
 
 | Platform | Compiler | Backend | Status |
 |---|---|---|---|
-| Windows | Delphi 7+ | GDI (original) | Production |
 | Windows | FreePascal/Lazarus | GDI via interfaces | Production |
+| Windows (Win32) | Delphi 7 | GDI via interfaces | Layer 1 only — `TPdfDocument`/`TPdfCanvas`; tests green, tagged Unicode output PAC-verified. The TCanvas bridge and `TGDIPages` need FPC for now (roadmap R-20) |
 | Linux | FreePascal/Lazarus | FreeType2 | Production |
 | macOS | FreePascal/Lazarus | FreeType2 | Production |
 
@@ -241,6 +241,19 @@ lazbuild examples/zugferd_demo/zugferd_demo.lpi -B
 lazbuild tests/test_runner.lpi -B && tests/bin/test_runner
 ```
 
+**Delphi 7** (Win32, layer 1) builds from the command line. `MORMOT2` points to
+the mORMot2 checkout, `DELPHI7` defaults to the standard install folder; output
+goes to `bin\d7\<project>\`:
+
+```bat
+set MORMOT2=C:\path\to\mORMot2
+tests\build_delphi7.bat tests\test_runner.lpr
+bin\d7\test_runner\test_runner.exe --noenter
+```
+
+Do not put `mORMot2\src\ui` on a Delphi search path: it holds the original
+`mormot.ui.pdf`, which the compiler would take instead of this project's.
+
 The two GUI demos also export without their window, which is what the
 automated checks use:
 
@@ -282,6 +295,7 @@ Fonts from `/Library/Fonts`, `/System/Library/Fonts`, `~/Library/Fonts`.
 - **EMF/MetaFile:** Windows-only (`TPdfDocumentGdi`), not portable
 - **GDI+/Gradient fills:** available only via EMF on Windows
 - **Table pagination:** no row wrap within a cell
+- **Delphi:** layer 1 only, on Delphi 7 (Win32). The TCanvas bridge overrides methods that Delphi 7's VCL does not declare virtual; it comes with roadmap R-20
 - **Links in tagged output:** `CreateHyperLink` in a tagged document fails PDF/UA — there is no `Link` structure element for annotations. `TGDIPages.DrawLink` stays conformant by drawing styled text only; its URL is not clickable (roadmap R-18)
 
 Details and the current verification status: [docs/ROADMAP.md](docs/ROADMAP.md)

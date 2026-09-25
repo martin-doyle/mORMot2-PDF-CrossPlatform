@@ -9,8 +9,8 @@ Cross-platform PDF-Generierung für Windows, Linux und macOS, basierend auf der 
 
 | Plattform | Compiler | Backend | Status |
 |---|---|---|---|
-| Windows | Delphi 7+ | GDI (Original) | Produktiv |
 | Windows | FreePascal/Lazarus | GDI via Interfaces | Produktiv |
+| Windows (Win32) | Delphi 7 | GDI via Interfaces | Nur Ebene 1 — `TPdfDocument`/`TPdfCanvas`; Tests grün, getaggte Unicode-Ausgabe mit PAC geprüft. TCanvas-Brücke und `TGDIPages` brauchen vorerst FPC (Roadmap R-20) |
 | Linux | FreePascal/Lazarus | FreeType2 | Produktiv |
 | macOS | FreePascal/Lazarus | FreeType2 | Produktiv |
 
@@ -248,6 +248,20 @@ lazbuild examples/zugferd_demo/zugferd_demo.lpi -B
 lazbuild tests/test_runner.lpi -B && tests/bin/test_runner
 ```
 
+**Delphi 7** (Win32, Ebene 1) baut von der Kommandozeile. `MORMOT2` zeigt auf
+den mORMot2-Checkout, `DELPHI7` ist standardmäßig der übliche
+Installationsordner; die Ausgabe landet in `bin\d7\<Projekt>\`:
+
+```bat
+set MORMOT2=C:\pfad\zu\mORMot2
+tests\build_delphi7.bat tests\test_runner.lpr
+bin\d7\test_runner\test_runner.exe --noenter
+```
+
+`mORMot2\src\ui` gehört nicht in einen Delphi-Suchpfad: Dort liegt das
+originale `mormot.ui.pdf`, das der Compiler sonst statt der Unit dieses
+Projekts nimmt.
+
 Die beiden GUI-Demos exportieren auch ohne Fenster — so laufen die
 automatisierten Prüfungen:
 
@@ -289,6 +303,7 @@ Fonts aus `/Library/Fonts`, `/System/Library/Fonts`, `~/Library/Fonts`.
 - **EMF/MetaFile:** Windows-only (`TPdfDocumentGdi`), nicht portierbar
 - **GDI+/Gradient Fills:** nur via EMF auf Windows verfügbar
 - **Tabellen-Pagination:** kein Zeilenumbruch innerhalb einer Zelle
+- **Delphi:** nur Ebene 1 unter Delphi 7 (Win32). Die TCanvas-Brücke überschreibt Methoden, die in der VCL von Delphi 7 nicht virtuell sind; sie kommt mit Roadmap R-20
 - **Links in getaggter Ausgabe:** `CreateHyperLink` in einem getaggten Dokument verletzt PDF/UA — es gibt kein `Link`-Strukturelement für Annotationen. `TGDIPages.DrawLink` bleibt konform, weil es nur formatierten Text zeichnet; seine URL ist nicht anklickbar (Roadmap R-18)
 
 Details und aktueller Prüfstand: [docs/ROADMAP.md](docs/ROADMAP.md)

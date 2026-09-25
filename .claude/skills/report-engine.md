@@ -381,7 +381,8 @@ function MMToPixels(Value100: Integer; DPI: Integer): Integer;
 // Convert pixels to 1/100-mm at the given DPI:
 function PixelsToMM(Pixels: Integer; DPI: Integer): Integer;
 
-// Get platform-default font names:
+// Get platform-default font names - an alias of GetPdfFonts() in
+// mormot.pdf.types, which layer 1 code uses without the report engine:
 procedure GetReportFonts(Embedded: boolean;
   out SansFont, SerifFont, MonoFont: string);
 ```

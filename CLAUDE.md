@@ -83,9 +83,11 @@ examples/
   (each demo folder carries a short README.md; the source header of its .lpr
    says the same thing in two sentences)
 tests/
-  test_runner.lpr              runs every suite below (green on all three: 277 assertions on macOS, 260 on Linux, 221 on Windows — the rest are skips)
+  test_runner.lpr              runs every suite below (green: 227 assertions on Windows with FPC, 123 with Delphi 7 — layer 1 suites only; 277 on macOS and 260 on Linux before R-19, not re-run since — the rest are skips)
+  test_defines.inc             PDF_HASVCLCANVAS: the TCanvas bridge suites (FPC until R-20)
+  build_delphi7.bat            dcc32 build of one project (R-19); delphi7_core.dpr is the core compile guard
   test_pdf_crossplatform.pas   platform backend, text shaper, TTC extraction
-  test_pdf_smoke.pas           PDF basics, tagged output, struct tree
+  test_pdf_smoke.pas           PDF basics, tagged output, struct tree, tagged Unicode (all through TPdfCanvas)
   test_report_crossplatform.pas report engine, tables, tagged export
   test_pdf_subset.pas          font subsetting: IPdfFontSubsetter and TPdfDocument
   test_pdf_pdfa.pas            PDF/A-3: associated files, XMP schemas, PdfMetadataFacturX, level U
@@ -241,7 +243,14 @@ lazbuild examples/report_demo/mormot_report_demo.lpi -B
 lazbuild examples/mormot_demo/mormot_demo.lpi -B
 lazbuild examples/zugferd_demo/zugferd_demo.lpi -B
 lazbuild tests/test_runner.lpi -B && tests/bin/test_runner
+
+# Delphi 7 (Win32, layer 1 only) — MORMOT2 must point to the mORMot2 checkout:
+tests\build_delphi7.bat tests\test_runner.lpr
+bin\d7\test_runner\test_runner.exe --noenter
 ```
+
+On Windows every test runner waits for Enter at the end unless it gets a
+parameter — pass `--noenter` when it runs unattended.
 
 A Lazarus installed outside the distribution packages — `fpcupdeluxe`, a
 source build — usually leaves `lazbuild` off `PATH`; use the full path then.
@@ -273,10 +282,10 @@ display (`xvfb-run` otherwise); on macOS Cocoa runs it headless.
 - **PDF/A** (R-17): A-3U + PDF/UA-1, A-3A (tagged) and A-3B verified on all three platforms with veraPDF, Mustang and PAC; A-1 and A-2 implemented, unverified. Pass the level to the constructor — the `PdfA` setter calls `NewDoc`. A levels need `Tagged := True`. With PDF/A + Tagged the engine describes `pdfuaid` in the XMP extension schemas, inside the caller's `<pdfaExtension:schemas><rdf:Bag>` if `PdfAMetadaExtension` has one — keep that single list
 - **E-invoices**: the engine writes the PDF/A-3 container (`CreateFileAttachmentFrom` + `PdfMetadataFacturX`) and never generates or validates invoice XML. Scope is B2B (ZUGFeRD/Factur-X profile EN 16931); invoices to German authorities are pure XML and out of scope. Third-party material only with a verified license, recorded in the demo's `THIRD_PARTY.md`
 - **Links in tagged output**: no `Link` role, `OBJR` or `/StructParent` for annotations — `CreateHyperLink` in tagged output fails veraPDF `ua1` on four 7.18 rules (measured). `TGDIPages.DrawLink` draws link-styled text as a `Span` and drops the URL: conformant, not clickable (roadmap R-18, only on request)
-- **Delphi** (R-19, R-21, R-20): R-19, priority 1 — the core
-  (`mormot.pdf.types`, `mormot.ui.pdf`, GDI backend, Uniscribe) on Delphi 7,
-  Win32; steps 1–3 done, `test_runner` green with 117 assertions (the layer 1
-  suites), built with `tests\build_delphi7.bat <project>`. R-21, before R-20 —
+- **Delphi** (R-19 done, R-21, R-20): layer 1 — `mormot.pdf.types`,
+  `mormot.ui.pdf`, GDI backend, Uniscribe — builds on Delphi 7, Win32;
+  `test_runner` green with 123 assertions (the layer 1 suites), and the tagged
+  Unicode test file passes PAC 2024 from both compilers. R-21, before R-20 —
   `{$I mormot.defines.inc}` in every unit instead of a bare `{$mode}`.
   R-20, priority 2: the TCanvas bridge — `TPdfVclCanvas` relies on
   `override`, but Delphi 7's `TCanvas` drawing methods are static, so a call

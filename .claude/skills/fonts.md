@@ -140,6 +140,18 @@ Navigation:
 - `WinAnsiFont` — returns the WinAnsi instance (self or linked peer)
 - `UnicodeFont` — `nil` until first non-Latin char; created lazily by `CreateAssociatedUnicodeFont`
 
+Two rules of the written dictionaries, both found by PAC 2024 on tagged CJK and
+Arabic output (R-19, 2026-09-26):
+- **A WinAnsi peer with no used character** — a face that draws only CJK or
+  Arabic: `SetFont` writes `Tf` for it anyway, and it was written without
+  `/FirstChar`, `/LastChar` and `/Widths`, which a simple TrueType font
+  requires. It now gets `/FirstChar 32 /LastChar 32` and the width of the
+  space. Dropping the peer altogether is on the roadmap.
+- **`/CIDToGIDMap /Identity`** is written for every `CIDFontType2`, not for
+  PDF/A only: PDF/UA-1 7.21.3.2 wants it although Identity is the default. A
+  `CIDFontType0` (CFF) writes it for PDF/A only, as before.
+`TestTaggedUnicode` (`test_pdf_smoke`) asserts both.
+
 ### Key Fields (`pdf.pas:2611`)
 
 | Field | Type | Instance | Purpose |

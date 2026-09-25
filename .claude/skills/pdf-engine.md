@@ -12,6 +12,15 @@ FPImage adapter: `src/core/mormot.pdf.fpimage.pas`
 
 `TPdfDocumentGdi` (Windows-only, Delphi) uses EMF/GDI — not ported.
 
+**Compilers.** `TPdfDocument`/`TPdfCanvas` build with FPC everywhere and with
+Delphi 7 for Win32 (R-19, `tests\build_delphi7.bat`). `TPdfDocumentVcl` is
+FPC-only until R-20: `TPdfVclCanvas` overrides `TCanvas` drawing methods that
+are virtual in the LCL but static in Delphi 7's VCL, so a call through a
+`TCanvas` reference would bypass it. Code for both compilers follows the rule
+in `CLAUDE.md` (Coding Conventions): mORMot2 functions first — `PosEx`, not the
+three-argument `Pos`; `MinPtrInt`, not `Min` — and no `Default()`, `for..in`,
+`inline` or records with methods.
+
 ---
 
 ## Enums Reference
@@ -610,14 +619,23 @@ are subset by hb-subset with retained glyph IDs, which keeps `/ToUnicode` valid
 embedded. Set `EmbeddedWholeTtf := True` afterwards to force the whole face. It
 raises `ESynException` when set after the first `AddPage`, and it also widens the
 WinAnsi `/ToUnicode` CMap — previously written for PDF/A only — to tagged
-documents. Resolve font names with `GetReportFonts` *after* setting `Tagged`.
+documents. Resolve font names with `GetPdfFonts` *after* setting `Tagged`.
 
-Platform-specific TTF fonts via `GetReportFonts(Embedded, SansFont, SerifFont, MonoFont)`:
+Platform-specific TTF fonts via `GetPdfFonts(Embedded, SansFont, SerifFont, MonoFont)`
+in `mormot.pdf.types` (constants `PDF_FONT_TTF_SANS/SERIF/MONO`) — layer 1, no
+report engine needed. `GetReportFonts` and `REPORT_FONT_*` in `mormot.ui.report`
+are aliases of them:
 - Windows: Calibri, Cambria, Consolas
 - macOS: Trebuchet MS, Georgia, Andale Mono
 - Linux: Liberation Sans, Liberation Serif, Liberation Mono
 
 Standard constants in `mormot.pdf.types.pas`: `PDF_FONT_STD_SANS` = 'Helvetica', `PDF_FONT_STD_SERIF` = 'Times', `PDF_FONT_STD_MONO` = 'Courier'.
+
+**Calling `TPdfCanvas.SetFont` directly with a non-Latin face:** pass
+`DEFAULT_CHARSET` (1) as `ACharSet`, as `TPdfVclCanvas` does. Without it,
+Windows falls back to the document charset and exposes only the ANSI part of
+the cmap — see `fonts.md` §10. The tests use `PDF_DEFAULT_CHARSET` from
+`test_pdf_subset`, which needs no `{$ifdef}`.
 
 `FontFallBackName` (TPdfDocument property): font substituted when a requested TrueType font is not found on the system.
 
