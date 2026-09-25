@@ -895,14 +895,15 @@ const
   /// the file PAC 2024 and veraPDF are run on (R-19 step 4)
   UNICODE_PDF = 'tagged_unicode_lowlevel.pdf';
 
-{ simple TrueType font dictionaries lacking /FirstChar - they also lack
-  /LastChar and /Widths then, which ISO 32000-1 table 111 requires }
-function TrueTypeFontsWithoutFirstChar(const s: RawByteString): integer;
+{ font dictionaries of ASubtype (e.g. '/Subtype/TrueType') lacking AKey
+  - the dictionary is taken from the '<<' before the subtype to the first
+    '>>' after it, which holds for the font dictionaries this engine writes }
+function FontsWithout(const s, ASubtype, AKey: RawByteString): integer;
 var
   p, b, e: PtrInt;
 begin
   result := 0;
-  p := PosEx(RawByteString('/Subtype/TrueType'), s);
+  p := PosEx(ASubtype, s);
   while p > 0 do
   begin
     b := p;
@@ -910,9 +911,9 @@ begin
           not ((s[b] = '<') and (s[b - 1] = '<')) do
       dec(b);
     e := PosEx(RawByteString('>>'), s, p);
-    if PosEx(RawByteString('/FirstChar'), copy(s, b, e - b)) = 0 then
+    if PosEx(AKey, copy(s, b, e - b)) = 0 then
       inc(result);
-    p := PosEx(RawByteString('/Subtype/TrueType'), s, p + 1);
+    p := PosEx(ASubtype, s, p + 1);
   end;
 end;
 
@@ -964,8 +965,13 @@ begin
     { the WinAnsi peers of the CJK and Arabic faces show no character, and
       were written without /FirstChar, /LastChar and /Widths - PAC 2024
       stopped on them ("'FirstChar' not defined in TrueType font") }
-    CheckEqual(TrueTypeFontsWithoutFirstChar(s), 0,
+    CheckEqual(FontsWithout(s, '/Subtype/TrueType', '/FirstChar'), 0,
       'every simple TrueType font has FirstChar, LastChar and Widths');
+    { PDF/UA-1 7.21.3.2 wants the map written even though Identity is the
+      default - it was, for PDF/A only: PAC 2024 "An invalid CIDToGIDMap
+      entry in a Type 2 CID font" }
+    CheckEqual(FontsWithout(s, '/Subtype/CIDFontType2', '/CIDToGIDMap/Identity'), 0,
+      'every CIDFontType2 has CIDToGIDMap Identity');
   finally
     Stream.Free;
   end;

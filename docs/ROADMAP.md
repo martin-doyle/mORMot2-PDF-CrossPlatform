@@ -180,8 +180,14 @@ through `TextOutW`. The encoding question sits only where a public method takes
    it. Stable from run to run. The spec wants 0 there outside the Mac
    platform; viewers ignore it. **PAC 2024, first run:** stopped on both
    files at the WinAnsi peer of YaHei — an engine defect independent of the
-   compiler, stopgap in place (see "The Unused WinAnsi Peer" below). Open:
-   PAC and veraPDF on the files written after it.
+   compiler, stopgap in place (see "The Unused WinAnsi Peer" below).
+   **Second run:** "An invalid CIDToGIDMap entry in a Type 2 CID font" —
+   `/CIDToGIDMap /Identity` was written for PDF/A only, and PDF/UA-1
+   (7.21.3.2) wants it too, default or not. Now written for every
+   `CIDFontType2`; `CIDFontType0` (CFF) keeps its PDF/A-only behaviour, which
+   veraPDF verified. `TestTaggedUnicode` asserts it (fails 1/6 without the
+   change). No tagged file had a CID font before: the tagged demos draw Latin
+   only. Open: PAC and veraPDF on the files written after it.
    The helpers now pass `DEFAULT_CHARSET` to `SetFont`, as the bridge does
    (`fonts.md` §10) — without it Windows exposes only the ANSI part of the
    cmap.

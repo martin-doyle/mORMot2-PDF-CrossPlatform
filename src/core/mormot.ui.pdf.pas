@@ -7425,7 +7425,11 @@ begin
       // subset both names are the plain face name and this is a no-op
       TPdfName(Data.ValueByName('BaseFont')).Value :=
         TPdfName(WinAnsiFont.Data.ValueByName('BaseFont')).Value;
-      if fDoc.fPdfA <> pdfaNone then
+      // Identity is the default, but PDF/A and PDF/UA-1 (7.21.3.2) want it
+      // written for every CIDFontType2 - PAC 2024 fails the font otherwise
+      if (sub = nil) or
+         not sub^.IsCff or
+         (fDoc.fPdfA <> pdfaNone) then
         font.AddItem('CIDToGIDMap', 'Identity');
       info := TPdfDictionary.Create(fDoc.fXRef);
       info.AddItem('Supplement', 0);
