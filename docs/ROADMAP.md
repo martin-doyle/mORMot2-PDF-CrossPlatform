@@ -133,10 +133,19 @@ through `TextOutW`. The encoding question sits only where a public method takes
 
 **Steps**, one at a time:
 
-1. Build script `tests/build_delphi7` with the paths above; output to `bin/d7/`.
-2. Compile unit by unit in dependency order: `mormot.pdf.types` ✓,
-   `mormot.lib.uniscribe` ✓, `mormot.pdf.gdi`, `mormot.ui.pdf` (the bulk).
-   Estimate the effort only after this step.
+1. ~~Build script~~ — **done 2026-09-25**: `tests/build_delphi7.bat
+   <project>` (`MORMOT2` must be set, `DELPHI7` defaults to the standard
+   install), output to `bin/d7/<project>/`. Two traps of `dcc32` 7 it works
+   around: `-N`/`-E` split at a space even when quoted, and a path ending in
+   `\` before a closing quote escapes the quote. The Windows test runner waits
+   for Enter unless started with `--noenter`.
+2. ~~Compile the core~~ — **done 2026-09-25**: `tests/delphi7_core.dpr` builds
+   and runs. Two changes were needed, both small: `MinPtrInt` instead of `Min`
+   in `mormot.pdf.gdi`, and `PABC` instead of the FPC-only `LPABC` in the local
+   `GetCharABCWidthsI` import of `mormot.ui.pdf`. That import also **lacked
+   `stdcall`** — harmless on Win64, a wrong calling convention on any Win32
+   build, FPC included. `mormot.ui.pdf` needed nothing else: it descends from
+   the Delphi 7 original. FPC/Win64 still green, 221.
 3. `test_runner` under Delphi 7: suites that need the bridge or FPImage stand
    down under Delphi instead of failing. Record the assertion count beside
    FPC/Win64 and account for every difference.

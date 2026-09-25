@@ -92,7 +92,7 @@ begin
   lf.lfQuality        := DEFAULT_QUALITY;
   if ALogFont.FaceName <> '' then
     Move(ALogFont.FaceName[1], lf.lfFaceName[0],
-      Min(Length(ALogFont.FaceName), LF_FACESIZE - 1) * SizeOf(WideChar));
+      MinPtrInt(Length(ALogFont.FaceName), LF_FACESIZE - 1) * SizeOf(WideChar));
   {$ifdef FPC}
   result := TPdfPlatformFontHandle(CreateFontIndirectW(@lf));
   {$else}

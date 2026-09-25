@@ -3470,8 +3470,9 @@ implementation
 // GetCharABCWidthsI retrieves ABC advance widths by glyph index (not char code).
 // Available in gdi32.dll since Windows 2000; FPC RTL has this declaration commented out.
 // pgi=nil means use consecutive glyph indices starting at giFirst.
-function GetCharABCWidthsI(DC: HDC; giFirst, cgi: UINT; pgi: PWORD; lpabc: LPABC): BOOL;
-  external 'gdi32' name 'GetCharABCWidthsI';
+// stdcall matters on Win32 only: Win64 has a single calling convention.
+function GetCharABCWidthsI(DC: HDC; giFirst, cgi: UINT; pgi: PWORD; lpabc: PABC): BOOL;
+  stdcall; external 'gdi32' name 'GetCharABCWidthsI';
 {$endif OSWINDOWS}
 
 
