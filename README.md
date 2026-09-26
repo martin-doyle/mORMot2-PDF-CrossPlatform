@@ -211,7 +211,7 @@ Doc.PdfAMetadaExtension := PdfMetadataFacturX('EN 16931');
 | [chinese_demo](examples/chinese_demo/) | `TPdfDocumentVcl` | CJK text, subset embedding |
 | [rtl_demo](examples/rtl_demo/) | `TPdfDocumentVcl` | Arabic RTL, HarfBuzz / Uniscribe shaping |
 | [zugferd_demo](examples/zugferd_demo/) | `TPdfDocumentVcl` | PDF/A-3U + PDF/UA-1, ZUGFeRD / Factur-X invoice with embedded XML |
-| [layer1_demo](examples/layer1_demo/) | `TPdfDocument` | The low-level API alone: tagged H1/H2/P/Figure in PDF points; builds with FPC and Delphi 7 |
+| [layer1_demo](examples/layer1_demo/) | `TPdfDocument` | The low-level API alone: tagged headings, text, a figure and a table with THead/TBody/TFoot, in PDF points; builds with FPC and Delphi 7 |
 
 Full guide: [docs/DEMOS.md](docs/DEMOS.md)
 

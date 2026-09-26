@@ -17,7 +17,9 @@ Demo 1 — pdf_demo         Direct TCanvas graphics
 whatever the current folder: `<os>` is mORMot2's `OS_NAME[OS_KIND]` in lower
 case — `windows`, `osx`, and on Linux the distribution (`debian`, `ubuntu`,
 …). The files of all platforms can so share one folder for checking. The GUI
-demos write it with `--export` and no file name.
+demos write it with `--export` and no file name. `layer1_demo`, which builds
+with two compilers, adds CPU and compiler:
+`layer1_demo_<os>_<cpu>_<compiler>.pdf`.
 
 ---
 
@@ -660,8 +662,8 @@ examples/zugferd_demo/bin/<target>/zugferd_demo
 
 **The low-level API alone, for FPC and Delphi 7**
 
-Draws one tagged page with `TPdfDocument` and `TPdfCanvas`, without the
-TCanvas bridge and without `TGDIPages`. It is the only demo that builds with
+Draws two tagged pages with `TPdfDocument` and `TPdfCanvas`, without the
+TCanvas bridge and without `TGDIPages`: text and a figure, then a table. It is the only demo that builds with
 Delphi 7 (Win32). The other seven need the bridge, which is FPC-only until
 roadmap R-20.
 
@@ -676,8 +678,12 @@ roadmap R-20.
 - With this API you build the structure yourself: `BeginStructContent` for
   `H1`/`H2`/`P`, a `Figure` with alternate text, and `CreateOutline` for
   every heading
-- Artifacts: a path outside any element becomes one by itself; text such as
-  a running footer needs `BeginArtifact`/`EndArtifact`
+- A table by hand: `Table` › `THead`/`TBody`/`TFoot` › `TR` › `TH`/`TD`,
+  numbers right-aligned with `UnicodeTextWidth`. What `TGDIPages` does for you
+  (roadmap R-14), step by step
+- Artifacts: a path outside any element becomes one by itself — so the
+  table's fills and rules are drawn before the table; text such as a running
+  footer needs `BeginArtifact`/`EndArtifact`
 
 **Core pattern:**
 
@@ -710,13 +716,29 @@ begin
   Doc.Canvas.Rectangle(76, 330, 50, 64);  // x, y (bottom), width, height
   Doc.Canvas.Fill;
   Doc.Canvas.EndStructContent;
-  Doc.SaveToFile(PdfFileName); // layer1_demo_<os>.pdf
+  // a table: fills and rules first (artifacts), then the elements
+  Doc.AddPage;
+  Doc.Canvas.Rectangle(56, 680, 483, 20);  // header fill
+  Doc.Canvas.Fill;
+  Doc.Canvas.BeginStructContent(psrTable);
+  Doc.Canvas.BeginStructContent(psrTHead);
+  Doc.Canvas.BeginStructContent(psrTR);
+  Doc.Canvas.BeginStructContent(psrTH);
+  DrawText(Doc.Canvas, 62, 686, 'Article');
+  Doc.Canvas.EndStructContent;             // TH, then the other three
+  Doc.Canvas.EndStructContent;             // TR
+  Doc.Canvas.EndStructContent;             // THead
+  // TBody with one TR of four TD per row, TFoot with the totals row
+  Doc.Canvas.EndStructContent;             // Table
+  Doc.SaveToFile(PdfFileName); // layer1_demo_<os>_<cpu>_<compiler>.pdf
   Doc.Free;
 end;
 ```
 
-**Output:** `layer1_demo_<os>.pdf` (1 page). The FPC/Win64 and the Delphi
-7/Win32 files give the same `pdftotext` output, fonts and structure tree.
+**Output:** `layer1_demo_<os>_<cpu>_<compiler>.pdf` (2 pages), e.g.
+`layer1_demo_windows_x64_free-pascal-3.2.2.pdf` and
+`layer1_demo_windows_x86_delphi-7.pdf`. The FPC/Win64 and the Delphi 7/Win32
+files give the same `pdftotext` output, fonts and structure tree.
 
 **Build & run:**
 ```bash

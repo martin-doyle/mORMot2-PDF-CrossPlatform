@@ -139,7 +139,7 @@ For interface and backend details: `.claude/skills/platform-backends.md`
 | chinese_demo | `TPdfDocumentVcl` | Console | CJK text, subset embedding |
 | rtl_demo | `TPdfDocumentVcl` | Console | Arabic RTL, HarfBuzz/Uniscribe shaping |
 | zugferd_demo | `TPdfDocumentVcl` | Console | PDF/A-3U + PDF/UA-1, `/AF` attachment, `PdfMetadataFacturX`, third-party invoice XML (KoSIT, Apache-2.0) |
-| layer1_demo | `TPdfDocument` | Console | Layer 1 only, PDF points (Y=0 bottom), tagged H1/H2/P/Figure, UTF-8 via `TextOutW`; the only demo that builds with Delphi 7 |
+| layer1_demo | `TPdfDocument` | Console | Layer 1 only, PDF points (Y=0 bottom), tagged H1/H2/P/Figure and a Table with THead/TBody/TFoot, UTF-8 via `TextOutW`; the only demo that builds with Delphi 7 |
 
 Detailed description with code examples: `docs/DEMOS.md`
 

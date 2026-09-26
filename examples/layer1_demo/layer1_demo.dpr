@@ -1,7 +1,8 @@
 /// Layer 1 Demo — mORMot2 PDF Cross-Platform
-// Produces a one-page tagged PDF with TPdfDocument and TPdfCanvas alone - no
+// Produces a two-page tagged PDF with TPdfDocument and TPdfCanvas alone - no
 // TCanvas bridge, no report engine - so it builds with FPC on every platform
-// and with Delphi 7 on Win32 (tests\build_delphi7.bat).
+// and with Delphi 7 on Win32 (tests\build_delphi7.bat): text, a figure, and
+// a table with header, body and totals row.
 //
 // Worth noting:
 // - coordinates are PDF points (1/72 inch), X from the left edge and Y from
@@ -17,6 +18,11 @@
 //   every heading gets its outline entry here, PDF/UA wants one
 // - a path drawn outside a struct element becomes an artifact by itself, a
 //   running footer has to be marked with BeginArtifact/EndArtifact
+// - a table is Table / THead, TBody, TFoot / TR / TH, TD, opened by the
+//   caller; its fills and rules are drawn before it, outside any element, so
+//   they are artifacts, and only the cell text is content
+// - the file name carries OS, CPU and compiler, so the FPC and Delphi 7 runs
+//   can be compared in one folder
 program layer1_demo;
 
 {$I mormot.defines.inc}
@@ -32,6 +38,7 @@ uses
   SysUtils,
   mormot.core.base,
   mormot.core.os,
+  mormot.core.text,   // FormatUtf8
   mormot.core.unicode,
   mormot.pdf.types,   // TPdfStructRole, GetPdfFonts
   {$ifdef OSWINDOWS}
@@ -50,6 +57,19 @@ const
     ' '#$C3#$96' '#$C3#$9C' '#$C3#$9F' '#$E2#$82#$AC' '#$C2#$A7' '#$C2#$B0;
   BAR_VALUES: array[0..3] of integer = (40, 75, 55, 90);
   BAR_COLORS: array[0..3] of TPdfColor = ($B4642D, $2D8CD2, $3CA03C, $3C3CC8);
+  /// the table: top edge, row height, and the right edge of the columns 1..3
+  TABLE_TOP = 700;
+  ROW_H = 20;
+  COL_RIGHT: array[1..3] of single = (330, 430, 533);
+  /// 'Unit €' and 'Total €' as UTF-8
+  HEADERS: array[0..3] of RawUtf8 = ('Article', 'Qty',
+    'Unit '#$E2#$82#$AC, 'Total '#$E2#$82#$AC);
+  ROWS: array[0..3, 0..3] of RawUtf8 = (
+    ('Bolt M4x10',  '100', '0.05', '5.00'),
+    ('Nut M4',      '100', '0.03', '3.00'),
+    ('Washer 4 mm', '200', '0.02', '4.00'),
+    ('Dowel 8 mm',  '50',  '0.12', '6.00'));
+  TOTALS: array[0..3] of RawUtf8 = ('Total', '450', '', '18.00');
 
 var
   Doc: TPdfDocument;
@@ -58,11 +78,16 @@ var
   Sans, Serif, Mono: RawUtf8;
   i: integer;
 
-{ <demo>_<os>.pdf next to the executable, as the other demos write it }
+{ <demo>_<os>_<cpu>_<compiler>.pdf next to the executable, e.g.
+  layer1_demo_windows_x64_free-pascal-3.2.2.pdf or ..._x86_delphi-7.pdf }
 function PdfFileName: TFileName;
+var
+  compiler: RawUtf8;
 begin
-  result := Executable.ProgramFilePath + 'layer1_demo_' +
-    Utf8ToString(LowerCase(ShortStringToAnsi7String(OS_NAME[OS_KIND]))) + '.pdf';
+  compiler := StringReplaceAll(COMPILER_VERSION, [' 32 bit', '', ' 64 bit', '']);
+  result := Executable.ProgramFilePath + Utf8ToString(LowerCase('layer1_demo_' +
+    ShortStringToAnsi7String(OS_NAME[OS_KIND]) + '_' + CPU_ARCH_TEXT + '_' +
+    StringReplaceAll(compiler, ' ', '-') + '.pdf'));
 end;
 
 procedure DrawText(X, Y: single; const Text: RawUtf8);
@@ -71,6 +96,46 @@ var
 begin
   W := Utf8ToSynUnicode(Text);
   C.TextOutW(X, Y, pointer(W));
+end;
+
+{ width in points of Text in the current font, for right alignment }
+function TextWidth(const Text: RawUtf8): single;
+var
+  W: SynUnicode;
+begin
+  W := Utf8ToSynUnicode(Text);
+  result := C.UnicodeTextWidth(pointer(W));
+end;
+
+{ one TH or TD; column 0 is left-aligned, the numbers are right-aligned }
+procedure Cell(Role: TPdfStructRole; Col: integer; Baseline: single;
+  const Text: RawUtf8);
+begin
+  // an empty cell is still an element, so every row keeps four
+  C.BeginStructContent(Role);
+  if Text <> '' then
+    if Col = 0 then
+      DrawText(LEFT + 6, Baseline, Text)
+    else
+      DrawText(COL_RIGHT[Col] - TextWidth(Text), Baseline, Text);
+  C.EndStructContent;
+end;
+
+{ baseline of table row Row (0 = header), 6 pt above the row's bottom edge }
+function RowBaseline(Row: integer): single;
+begin
+  result := TABLE_TOP - (Row + 1) * ROW_H + 6;
+end;
+
+procedure Footer(Page: integer);
+begin
+  // a running footer is no content, but text needs the explicit mark
+  C.BeginArtifact;
+  C.SetFont(Sans, 9, [], DEFAULT_CHARSET);
+  C.SetRGBFillColor($808080);
+  DrawText(LEFT, 40, FormatUtf8('mORMot2 PDF Cross-Platform - layer1_demo - page %',
+    [Page]));
+  C.EndArtifact;
 end;
 
 { a heading element and its bookmark; Y is the baseline }
@@ -160,12 +225,75 @@ begin
     C.Stroke;
     C.EndStructContent;
 
-    // a running footer is no content either, but text needs the explicit mark
-    C.BeginArtifact;
-    C.SetFont(Sans, 9, [], DEFAULT_CHARSET);
-    C.SetRGBFillColor($808080);
-    DrawText(LEFT, 40, 'mORMot2 PDF Cross-Platform - layer1_demo');
-    C.EndArtifact;
+    Footer(1);
+
+    Doc.AddPage;
+    C := Doc.Canvas;
+    Heading(2, 780, 15, 'A table with header, body and totals');
+    C.BeginStructContent(psrP);
+    C.SetFont(Sans, 11, [], DEFAULT_CHARSET);
+    C.SetRGBFillColor(0);
+    DrawText(LEFT, 755, 'The fills and rules are drawn first, outside any element: artifacts.');
+    DrawText(LEFT, 740, 'Then the cells, each a TH or TD inside a TR of THead, TBody or TFoot.');
+    C.EndStructContent;
+
+    // the table's decoration: header fill, zebra rows, rules
+    C.SetRGBFillColor($5A2D14);
+    C.Rectangle(LEFT, TABLE_TOP - ROW_H, 539 - LEFT, ROW_H);
+    C.Fill;
+    C.SetRGBFillColor($F5EEE8);
+    for i := 0 to high(ROWS) do
+      if odd(i) then
+      begin
+        C.Rectangle(LEFT, TABLE_TOP - (i + 2) * ROW_H, 539 - LEFT, ROW_H);
+        C.Fill;
+      end;
+    C.SetRGBStrokeColor($C8C8C8);
+    C.SetLineWidth(0.5);
+    for i := 2 to high(ROWS) + 1 do
+    begin
+      C.MoveTo(LEFT, TABLE_TOP - i * ROW_H);
+      C.LineTo(539, TABLE_TOP - i * ROW_H);
+    end;
+    C.Stroke;
+    C.SetRGBStrokeColor(0);
+    C.SetLineWidth(1);
+    C.MoveTo(LEFT, TABLE_TOP - (high(ROWS) + 2) * ROW_H);
+    C.LineTo(539, TABLE_TOP - (high(ROWS) + 2) * ROW_H);
+    C.Stroke;
+
+    // the table's content: TH get /Scope /Column from the engine
+    C.BeginStructContent(psrTable);
+    C.BeginStructContent(psrTHead);
+    C.BeginStructContent(psrTR);
+    C.SetFont(Sans, 11, [pfsBold], DEFAULT_CHARSET);
+    C.SetRGBFillColor($FFFFFF);
+    for i := 0 to 3 do
+      Cell(psrTH, i, RowBaseline(0), HEADERS[i]);
+    C.EndStructContent; // TR
+    C.EndStructContent; // THead
+    C.BeginStructContent(psrTBody);
+    C.SetFont(Sans, 11, [], DEFAULT_CHARSET);
+    C.SetRGBFillColor(0);
+    for i := 0 to high(ROWS) do
+    begin
+      C.BeginStructContent(psrTR);
+      Cell(psrTD, 0, RowBaseline(i + 1), ROWS[i, 0]);
+      Cell(psrTD, 1, RowBaseline(i + 1), ROWS[i, 1]);
+      Cell(psrTD, 2, RowBaseline(i + 1), ROWS[i, 2]);
+      Cell(psrTD, 3, RowBaseline(i + 1), ROWS[i, 3]);
+      C.EndStructContent; // TR
+    end;
+    C.EndStructContent; // TBody
+    C.BeginStructContent(psrTFoot);
+    C.BeginStructContent(psrTR);
+    C.SetFont(Sans, 11, [pfsBold], DEFAULT_CHARSET);
+    for i := 0 to 3 do
+      Cell(psrTD, i, RowBaseline(high(ROWS) + 2), TOTALS[i]);
+    C.EndStructContent; // TR
+    C.EndStructContent; // TFoot
+    C.EndStructContent; // Table
+    Footer(2);
 
     Doc.SaveToFile(PdfFileName);
     writeln('PDF saved to ', PdfFileName);

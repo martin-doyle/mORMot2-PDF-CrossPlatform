@@ -144,14 +144,23 @@ it, so the `string` encoding question stays with R-20.
 **Check:** veraPDF `ua1` and PAC on the files of both compilers, the same
 `pdftotext` output and structure tree.
 
-**Built on Windows, 2026-09-26:** `examples/layer1_demo/layer1_demo.dpr` — a `.dpr`, so the Delphi IDE opens it too, and the `.lpi` points to it — one page — `H1`,
-two `H2`, three `P`, a `Figure` (bar chart) with `/Alt`, an outline entry per
-heading, a rule and a footer as artifacts, text as UTF-8 through
-`Utf8ToSynUnicode` + `TextOutW`. FPC/Win64 and Delphi 7/Win32 give the same
-`pdftotext` output (umlauts and `€` included), the same four subset faces
-(Calibri, Calibri Bold, Cambria Italic, Consolas), the same roles and the
-same Figure `/BBox`. Compared uncompressed, after the fix below, the files
-are the same apart from the dates and `/ID`.
+**Built on Windows, 2026-09-26:** `examples/layer1_demo/layer1_demo.dpr` (a
+`.dpr`, so the Delphi IDE opens it too; the `.lpi` points to it), two pages.
+Page 1: `H1`, two `H2`, three `P`, a `Figure` (bar chart) with `/Alt`. Page 2:
+an `H2`, a `P` and a `Table` — `THead` with four `TH`, `TBody` with four rows,
+`TFoot` with the totals row and one empty `TD`, numbers right-aligned by
+`UnicodeTextWidth`, fills and rules drawn before it as artifacts. An outline
+entry per heading, a footer per page as artifact, text as UTF-8 through
+`Utf8ToSynUnicode` + `TextOutW`. The file is
+`layer1_demo_<os>_<cpu>_<compiler>.pdf`, like the tagged Unicode test file.
+FPC/Win64 and Delphi 7/Win32 give the same `pdftotext` output (umlauts and
+`€` included), the same four subset faces (Calibri, Calibri Bold, Cambria
+Italic, Consolas), the same roles (1 `H1`, 3 `H2`, 4 `P`, 1 `Figure`, 1
+`Table`, 6 `TR`, 4 `TH` with `/Scope /Column`, 20 `TD`) and the same Figure
+`/BBox`. Compared uncompressed, after the fix below, the files are the same
+apart from the dates and `/ID`. xpdf's
+`pdftotext -layout` shifts the Qty and Unit columns by a row; the content
+stream has them on the right baselines.
 
 **Found with it and fixed — a real 0 written as nothing under FPC.** FPC
 wrote the outline destinations as `/Dest[5 0 R/XYZ 0 802 ]`, Delphi 7 as
