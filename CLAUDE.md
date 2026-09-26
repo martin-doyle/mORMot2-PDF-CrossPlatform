@@ -83,7 +83,7 @@ examples/
   (each demo folder carries a short README.md; the source header of its .lpr
    says the same thing in two sentences)
 tests/
-  test_runner.lpr              runs every suite below (green: 227 assertions on Windows with FPC, 123 with Delphi 7 — layer 1 suites only; 277 on macOS and 260 on Linux before R-19, not re-run since — the rest are skips)
+  test_runner.lpr              runs every suite below (green: 227 assertions on Windows with FPC, 123 with Delphi 7 — layer 1 suites only; 288 on macOS; 260 on Linux before R-19, not re-run since — the rest are skips)
   test_defines.inc             PDF_HASVCLCANVAS: the TCanvas bridge suites (FPC until R-20)
   build_delphi7.bat            dcc32 build of one project (R-19); delphi7_core.dpr is the core compile guard
   test_pdf_crossplatform.pas   platform backend, text shaper, TTC extraction
@@ -220,6 +220,14 @@ Details on interfaces and registration: `.claude/skills/platform-backends.md`
 - Interfaces with reference counting (`TInterfacedObject`)
 - Error handling via `ESynException`
 - No RTTI where avoidable
+- **Comments: short, the why only.** A source comment says in a line or two
+  why the code is as it is, so nobody removes what looks redundant. While a
+  fix is in progress, findings may sit in the source; once it is accepted,
+  move them to the matching skill in `.claude/skills/` (what future work needs
+  to know) or the commit message (how it was found: measurements, validator
+  output, dead ends), and cut the comment back to the rule it protects. One
+  home per fact — do not retell a skill paragraph in the code. The older code
+  does not follow this yet (roadmap R-22)
 
 ## Build Commands
 
@@ -285,7 +293,7 @@ display (`xvfb-run` otherwise); on macOS Cocoa runs it headless.
 - **Delphi** (R-19 done, R-21, R-20): layer 1 — `mormot.pdf.types`,
   `mormot.ui.pdf`, GDI backend, Uniscribe — builds on Delphi 7, Win32;
   `test_runner` green with 123 assertions (the layer 1 suites), and the tagged
-  Unicode test file passes PAC 2024 from both compilers. R-21, before R-20 —
+  Unicode test file passes PAC 2024 and veraPDF `ua1` from both compilers. R-21, before R-20 —
   `{$I mormot.defines.inc}` in every unit instead of a bare `{$mode}`.
   R-20, priority 2: the TCanvas bridge — `TPdfVclCanvas` relies on
   `override`, but Delphi 7's `TCanvas` drawing methods are static, so a call

@@ -13,7 +13,8 @@ Layer 1 — `TPdfDocument`/`TPdfCanvas`, the GDI backend and Uniscribe — build
 with Delphi 7 for Win32 (`tests\build_delphi7.bat`). `test_runner` passes there
 with 123 assertions: the layer 1 suites, all tests shared with FPC. A tagged PDF
 with Latin, CJK and shaped Arabic comes out the same from Delphi 7/Win32 and
-FPC/Win64 — size, text, roles, `/ToUnicode` — and passes **PAC 2024**. The
+FPC/Win64 — size, text, roles, `/ToUnicode` — and passes **PAC 2024** and
+**veraPDF** `ua1` (106/106). The
 TCanvas bridge and `TGDIPages` stay FPC-only for now: they override `TCanvas`
 methods that Delphi 7's VCL does not declare virtual (roadmap R-20).
 
@@ -77,6 +78,11 @@ standing down where a platform lacks what they need, not failures.
   roadmap.
 - **`/CIDToGIDMap` was written for PDF/A only.** PDF/UA-1 (7.21.3.2) wants it
   for every `CIDFontType2` as well, and PAC failed the font without it.
+- **A `.ttc` face could be embedded as the whole collection** on Linux and
+  macOS: the FreeType backend left one flag of its font context to the heap,
+  and a stale value skipped the extraction of the face. The raw collection went
+  to `/FontFile2` unsubset — 23 MB for Hiragino Sans GB, failing veraPDF `ua1`
+  7.21.4.1 — at random, by heap layout, since the first version.
 - **`GetCharABCWidthsI` was imported without `stdcall`**: a wrong calling
   convention on any Win32 build. Win64 has only one, so it never showed.
 
@@ -87,7 +93,7 @@ standing down where a platform lacks what they need, not failures.
   two tests of the bridge itself need `PDF_HASVCLCANVAS`
   (`tests/test_defines.inc`), defined for FPC.
 - Test suite: 227 assertions on Windows with FPC (221 before), 123 with
-  Delphi 7. Linux and macOS not re-run since.
+  Delphi 7, 288 on macOS. Linux not re-run since.
 
 ### Known limitations
 

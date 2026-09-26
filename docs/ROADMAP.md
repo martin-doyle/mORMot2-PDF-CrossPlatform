@@ -9,10 +9,12 @@ tagged output passes PAC 2024 with accepted warnings only (W-1, a Figure in
 `ua1`. PDF/A-3U with PDF/UA-1 is verified (R-17). Fonts are embedded and subset
 on all three platforms; tables carry `THead`/`TBody`/`TFoot` row groups. All
 three platforms build with FPC; `test_runner` is green with 227 assertions on
-Windows (277 on macOS and 260 on Linux before R-19, not re-run since).
-**Layer 1 builds on Delphi 7** (R-19): 123 assertions on Win32, and the tagged
-Unicode test file passes PAC. **Next:** veraPDF on that file, the Linux and
-macOS re-run, then R-21 and R-20.
+Windows and 288 on macOS (260 on Linux before R-19, not re-run since).
+**Layer 1 builds on Delphi 7** (R-19, done): 123 assertions on Win32, and the
+tagged Unicode test file passes PAC 2024 and veraPDF `ua1` from Delphi 7/Win32
+and FPC/Win64 alike. The macOS run found a heap-dependent `.ttc` defect in the
+FreeType backend, fixed (`fonts.md` §3). **Next:** the Linux re-run, then R-21
+and R-20.
 
 ---
 
@@ -28,7 +30,7 @@ a PAC error like "unbalanced marked content" then names no culprit.
 | PAC 2024 + tag-tree inspection | **Windows** (only platform; mandatory) |
 | Third-platform verification per change | macOS |
 | Delphi 7 build and Win32 run (R-19) | **Windows** VM with Delphi 7 (`dcc32`) |
-| `veraPDF` (`ua1`, `3b`, `3u`, `3a`) | installed on macOS since 2026-09-22; not yet part of the routine runs |
+| `veraPDF` (`ua1`, `3b`, `3u`, `3a`) | installed on macOS since 2026-09-22; the Windows and Linux files are copied there |
 
 **PAC caveat.** The traffic-light status is not enough: a flat tree of
 individually valid `Table`/`TR`/`TD` elements passes while the nesting is
@@ -77,134 +79,6 @@ comparison is valid **within** one platform only — see V below.
 
 ## Open
 
-### R-19 — Delphi 7: the Core Engine — priority 1, done 2026-09-26 but for veraPDF
-
-**Never built with Delphi so far.** mORMot2 supports Delphi 7 up to the current
-releases, and a library whose point is to make the Windows unit available
-elsewhere should not lose the compiler the original served. Delphi 7 is the
-lower bound: `string` is `AnsiString`, and nothing from Delphi 2005 on exists.
-
-**Scope — option A, decided 2026-09-25.** Win32 only (Delphi 7 has no Win64),
-GDI backend.
-
-| In | Out |
-|---|---|
-| `mormot.pdf.types`, `mormot.ui.pdf`, `mormot.pdf.gdi`, `mormot.lib.uniscribe`, and whatever these pull in | `mormot.ui.pdfcanvas` and `mormot.ui.report` — R-20 |
-| the test suites that use the low-level API (`TPdfDocument`/`TPdfCanvas`) | `mormot.pdf.fpimage` — FPImage is FPC-only |
-| | FreeType, HarfBuzz, hb-subset — POSIX backends |
-
-All seven demos draw through `TPdfDocumentVcl`, so none of them builds under
-R-19. The Delphi check is the test suite plus one low-level test that writes a
-tagged Unicode PDF.
-
-**Measured 2026-09-25** — `pdf_demo` probe-compiled with `dcc32` into a scratch
-directory, repository unchanged:
-
-1. `mormot.lib.uniscribe.pas(21)`: `{$I ..\mormot.defines.inc}` not found.
-   Delphi resolves the path relative to the unit's own folder, FPC through
-   `-Fi`. Fixed by the build, not the code: add `mORMot2/src/core` to the
-   include path, so `..\` lands in `mORMot2/src`.
-2. `mormot.pdf.types` and `mormot.lib.uniscribe` then compile.
-3. `mormot.pdf.gdi.pas(95)`: `Min` undeclared — `Math` is not in `uses`.
-
-Delphi stops at the first fatal error per unit, so the rest is unknown. Expect
-the Delphi 7 language limits: no `for..in`, `inline`, records with methods,
-`strict private`, `class var`, nested types, `Exit(Value)`, `Default()`,
-dynamic array literals or generics; LCL units (`LCLIntf`, `LCLType`) where the
-Windows unit is meant.
-
-**Build setup.** `dcc32` from the command line; the path is in
-`CLAUDE.local.md`. Unit search path: this project's `src/core`,
-`src/platform/windows` and `src/lib` before mORMot2's
-`src/{core,lib,crypt,net,db,orm,rest,soa,misc}` — and **never `mORMot2/src/ui`**.
-That folder holds the original `mormot.ui.pdf`, `mormot.ui.report` and
-`mormot.ui.core`, and the compiler would take them without a word. Delphi wants
-a `.dpr`; the build script copies the `.lpr`, so there stays one source.
-
-**Rules for the fixes.** Minimal, and in the idioms mORMot2 itself uses for
-Delphi 7 (`object` instead of records with methods, `PtrInt`, `RawUtf8`).
-No platform `{$ifdef}` in `mormot.ui.pdf.pas`; where the compilers genuinely
-differ, the rule in `CLAUDE.md` applies (mORMot2 first, a conditional named
-after the feature last). After every unit, rebuild with FPC for x86_64-win64
-and run `test_runner` — its assertion count must not change.
-
-**Unicode is not the limit here.** Internally the engine carries `RawUtf8` — an
-`AnsiString` holding UTF-8 bytes, which works in Delphi 7 as in FPC — and draws
-through `TextOutW`. The encoding question sits only where a public method takes
-`string`, and that is the TCanvas bridge, R-20.
-
-**Steps**, one at a time:
-
-1. ~~Build script~~ — **done 2026-09-25**: `tests/build_delphi7.bat
-   <project>` (`MORMOT2` must be set, `DELPHI7` defaults to the standard
-   install), output to `bin/d7/<project>/`. Two traps of `dcc32` 7 it works
-   around: `-N`/`-E` split at a space even when quoted, and a path ending in
-   `\` before a closing quote escapes the quote. The Windows test runner waits
-   for Enter unless started with `--noenter`.
-2. ~~Compile the core~~ — **done 2026-09-25**: `tests/delphi7_core.dpr` builds
-   and runs. Two changes were needed, both small: `MinPtrInt` instead of `Min`
-   in `mormot.pdf.gdi`, and `PABC` instead of the FPC-only `LPABC` in the local
-   `GetCharABCWidthsI` import of `mormot.ui.pdf`. That import also **lacked
-   `stdcall`** — harmless on Win64, a wrong calling convention on any Win32
-   build, FPC included. `mormot.ui.pdf` needed nothing else: it descends from
-   the Delphi 7 original. FPC/Win64 still green, 221.
-3. ~~`test_runner` under Delphi 7~~ — **done 2026-09-25: green, 117
-   assertions on Win32.** The PDF suites tested layer 1 through layer 2 — the
-   `BuildPdf` helpers and every smoke test drew through `TPdfDocumentVcl`.
-   They now draw through `TPdfDocument`/`TPdfCanvas` (pixel coordinates
-   converted, so the expected values stay), and the platform font names moved
-   to `mormot.pdf.types` (`PDF_FONT_TTF_*`, `GetPdfFonts`; `mormot.ui.report`
-   keeps its names as aliases). FPC/Win64 is unchanged at 221, suite by suite.
-   The difference is exact: 221 − 94 (report and coordinate suites, layer 3)
-   − 10 (`TestLineToWritesCompletePath` and `TestVclCanvasTextMetrics`, which
-   test the bridge itself) = 117. Those are FPC-only until R-20.
-   Delphi 7 language gaps met in the tests: `Default()`, three-argument
-   `Pos`, an unguarded `{$mode}`.
-   **Found on the way:** `mormot.pdf.types` and `mormot.pdf.gdi` put
-   `{$mode delphi}` after `uses`, where it does not take effect — `string`
-   was `ShortString` there under FPC. Harmless until now, since neither used
-   `string`; `mormot.pdf.types` got `{$H+}` for the new `GetPdfFonts`.
-4. Output: the low-level test PDF — tagged, with CJK and Arabic — against the
-   same file from FPC/Win64, in what has to match (see V). Then veraPDF `ua1`
-   and PAC 2024. 32-bit is new ground: `CreateFontPackage` and Uniscribe are
-   called with records whose layout depends on pointer size.
-   **Compared 2026-09-25**, `TestTaggedUnicode` in `test_pdf_smoke` (H1 and
-   a P in Calibri, a P in Microsoft YaHei, a P of shaped Arabic in Tahoma;
-   the file stays in the runner's `data/` folder): Delphi 7/Win32 and
-   FPC/Win64 write files of the same size, the same text (`pdftotext`, the
-   Arabic in presentation forms, so Uniscribe shaped it from Win32 too), the
-   same roles and the same `/ToUnicode` entries. Apart from date and `/ID`
-   they differ in **one field**: the `language` of the format 12 `cmap`
-   subtable of the YaHei subset, `0x0008DFF0` from Win32 and `0` from Win64,
-   and with it the subset tag (`KFTFAP` against `HNCHGJ`). It comes from the
-   32-bit `fontsub.dll` itself — the `cmap` checksum it writes differs by
-   exactly that value, and zeroed memory from `lpfnAllocate` does not change
-   it. Stable from run to run. The spec wants 0 there outside the Mac
-   platform; viewers ignore it. **PAC 2024, first run:** stopped on both
-   files at the WinAnsi peer of YaHei — an engine defect independent of the
-   compiler, stopgap in place (see "The Unused WinAnsi Peer" below).
-   **Second run:** "An invalid CIDToGIDMap entry in a Type 2 CID font" —
-   `/CIDToGIDMap /Identity` was written for PDF/A only, and PDF/UA-1
-   (7.21.3.2) wants it too, default or not. Now written for every
-   `CIDFontType2`; `CIDFontType0` (CFF) keeps its PDF/A-only behaviour, which
-   veraPDF verified. `TestTaggedUnicode` asserts it (fails 1/6 without the
-   change). No tagged file had a CID font before: the tagged demos draw Latin
-   only. **Third run, 2026-09-26: PAC 2024 green on both files.**
-   The helpers now pass `DEFAULT_CHARSET` to `SetFont`, as the bridge does
-   (`fonts.md` §10) — without it Windows exposes only the ANSI part of the
-   cmap.
-5. ~~Document~~ — **done 2026-09-26**: build commands in `CLAUDE.md` and both
-   READMEs, the compiler rule in `CLAUDE.md` (Coding Conventions), the
-   compiler notes in the pdf-engine skill, the two font rules in `fonts.md`,
-   `CHANGELOG.md`.
-
-**Done when** the core units and the low-level suites build with `dcc32` and
-pass on Win32, and the tagged Unicode PDF from Delphi 7 matches the FPC/Win64
-one and passes veraPDF `ua1` and PAC. **All of it holds except veraPDF**,
-which has not been run on the test file yet; the two engine fixes of step 4
-change the font dictionaries, so the Linux and macOS files are worth a
-veraPDF pass as well.
-
 ### R-21 — Compiler Switches From `mormot.defines.inc` — before R-20
 
 **Why.** mORMot2 never writes `{$mode}` itself: every unit starts with
@@ -238,7 +112,7 @@ Delphi's and FPC's own and not affected.
 function that makes the branch unnecessary. The rule is in `CLAUDE.md`
 (Coding Conventions): mORMot2 first, `{$ifdef}` last, named after the feature.
 
-### R-20 — Delphi: the TCanvas Bridge and `TGDIPages` — priority 2, after R-19
+### R-20 — Delphi: the TCanvas Bridge and `TGDIPages` — priority 2
 
 **The obstacle, checked against the source 2026-09-25.** `TPdfVclCanvas =
 class(TCanvas)` overrides `TextOut`, `TextExtent`, `TextWidth`, `TextHeight`,
@@ -281,20 +155,40 @@ references. Checking that needs a current Delphi, e.g. a Community Edition.
 carries no structure, so there is no tagged output, and the original in
 `mORMot2/src/ui` already does this on Delphi 7.
 
+### R-22 — Source Comments Back to the Why — priority 3
+
+**The rule** (`CLAUDE.md`, Coding Conventions, since 2026-09-26): a source
+comment says in a line or two why the code is as it is. Findings may sit in the
+source while a fix is in progress; once it is accepted they move to the skill
+(what future work needs) or the commit message (how it was found), and the
+comment shrinks to the rule it protects.
+
+**The state.** The older code carries the investigations themselves —
+measurements, validator runs, spec clauses argued out, roadmap IDs — above all
+`mormot.ui.pdf.pas` (`PrepareForSaving`, `PrepareFontSubsets`, the text
+rendering chains), also `mormot.ui.report.pas`, the backends and the test
+units. Part of it repeats the skills, part of it is found nowhere else.
+
+**Work.** Unit by unit, one commit each; `mormot.ui.pdf.pas` by section. For
+every long comment: is the knowledge in a skill? If not, move it there first,
+then cut the comment. Comments only — `test_runner` gives the same assertion
+count, and the demo PDFs are byte-identical apart from date and `/ID`.
+The `///` API documentation inherited from the original mORMot2 units stays.
+
 ### V — Verification Outstanding
 
-All three platforms build and pass `test_runner` (227 assertions on Windows;
-277 on macOS and 260 on Linux before R-19). The four tagged demos pass veraPDF `ua1` 106/106 and
-PAC 2024 on all three. That was the stated gate for a first version tag, and
+All three platforms build and pass `test_runner` (227 assertions on Windows,
+288 on macOS; 260 on Linux before R-19). The tagged demos pass veraPDF `ua1`
+106/106 on all three and PAC 2024 — measured again on 2026-09-26 for the
+Windows and macOS files, `zugferd_demo` also `3u` 148/148 and Mustang. That was the stated gate for a first version tag, and
 the project still has none.
 
 | Open | Why it matters |
 |---|---|
 | HarfBuzz older than 2.9 | loads, but lacks `hb_subset_or_fail`. The **missing** library is covered by `tests/no_hbsubset.sh`; an old one needs an old distribution, e.g. Debian 11 |
 | The U-2 width fix on Linux | exercised on macOS only: no Linux Arabic face reaches the shaper width path (`fonts.md` §10), and `TestShapedGlyphWidthFromHmtx` skips itself there |
-| veraPDF in the routine runs | installed on macOS with `ua1`, `3a`, `3b`, `3u` (path in `CLAUDE.local.md`), not yet part of every run |
-| veraPDF on `tagged_unicode_lowlevel.pdf` | the R-19 acceptance still lacks it; `TestTaggedUnicode` writes the file into the runner's `data` folder on every platform |
-| Linux and macOS after R-19 | the test suites and two font dictionaries changed (`/Widths` of an unused WinAnsi peer, `/CIDToGIDMap`); last measured before — 277 and 260 assertions |
+| veraPDF in the routine runs | installed on macOS with `ua1`, `3a`, `3b`, `3u` (path in `CLAUDE.local.md`); run by hand on each platform's files, not scripted |
+| Linux after R-19 and the `.ttc` fix | the test suites, two font dictionaries (`/Widths` of an unused WinAnsi peer, `/CIDToGIDMap`) and the FreeType backend changed; last measured before — 260 assertions. veraPDF on its `tagged_unicode_lowlevel.pdf` and demos |
 | Delphi beyond layer 1 | the TCanvas bridge and `TGDIPages` — R-20; only Delphi 7 has been built |
 
 **Comparing the platforms — but not pixel by pixel.** The demos resolve
