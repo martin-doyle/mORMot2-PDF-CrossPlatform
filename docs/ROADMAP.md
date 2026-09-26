@@ -9,12 +9,12 @@ tagged output passes PAC 2024 with accepted warnings only (W-1, a Figure in
 `ua1`. PDF/A-3U with PDF/UA-1 is verified (R-17). Fonts are embedded and subset
 on all three platforms; tables carry `THead`/`TBody`/`TFoot` row groups. All
 three platforms build with FPC; `test_runner` is green with 227 assertions on
-Windows and 288 on macOS (260 on Linux before R-19, not re-run since).
+Windows, 288 on macOS and 268 on Linux (re-run on 2026-09-26).
 **Layer 1 builds on Delphi 7** (R-19, done): 123 assertions on Win32, and the
 tagged Unicode test file passes PAC 2024 and veraPDF `ua1` from Delphi 7/Win32
 and FPC/Win64 alike. The macOS run found a heap-dependent `.ttc` defect in the
-FreeType backend, fixed (`fonts.md` §3). **Next:** the Linux re-run, then R-21
-and R-20.
+FreeType backend, fixed (`fonts.md` §3). The Linux re-run is done up to
+veraPDF on its files (V). **Next:** R-21, then R-20.
 
 ---
 
@@ -178,7 +178,7 @@ The `///` API documentation inherited from the original mORMot2 units stays.
 ### V — Verification Outstanding
 
 All three platforms build and pass `test_runner` (227 assertions on Windows,
-288 on macOS; 260 on Linux before R-19). The tagged demos pass veraPDF `ua1`
+288 on macOS, 268 on Linux). The tagged demos pass veraPDF `ua1`
 106/106 on all three and PAC 2024 — measured again on 2026-09-26 for the
 Windows and macOS files, `zugferd_demo` also `3u` 148/148 and Mustang. That was the stated gate for a first version tag, and
 the project still has none.
@@ -188,7 +188,8 @@ the project still has none.
 | HarfBuzz older than 2.9 | loads, but lacks `hb_subset_or_fail`. The **missing** library is covered by `tests/no_hbsubset.sh`; an old one needs an old distribution, e.g. Debian 11 |
 | The U-2 width fix on Linux | exercised on macOS only: no Linux Arabic face reaches the shaper width path (`fonts.md` §10), and `TestShapedGlyphWidthFromHmtx` skips itself there |
 | veraPDF in the routine runs | installed on macOS with `ua1`, `3a`, `3b`, `3u` (path in `CLAUDE.local.md`); run by hand on each platform's files, not scripted |
-| Linux after R-19 and the `.ttc` fix | the test suites, two font dictionaries (`/Widths` of an unused WinAnsi peer, `/CIDToGIDMap`) and the FreeType backend changed; last measured before — 260 assertions. veraPDF on its `tagged_unicode_lowlevel.pdf` and demos |
+| veraPDF on the Linux files after R-19 | re-run on 2026-09-26: 268 assertions green, all seven demos compared with the previous run — identical apart from the date and the new `/CIDToGIDMap /Identity` in `chinese_demo` and `rtl_demo`. Still open: `ua1` on `tests/bin/data/tagged_unicode_lowlevel.pdf` and the tagged demos, `3u` on `zugferd_demo` |
+| The `.ttc` fix on Linux | `TestTtcFaceExtraction` skips itself: the Linux machine has no `.ttc` installed (e.g. `fonts-noto-cjk` would bring one) |
 | Delphi beyond layer 1 | the TCanvas bridge and `TGDIPages` — R-20; only Delphi 7 has been built |
 
 **Comparing the platforms — but not pixel by pixel.** The demos resolve

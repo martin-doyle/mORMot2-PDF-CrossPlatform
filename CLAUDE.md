@@ -83,7 +83,7 @@ examples/
   (each demo folder carries a short README.md; the source header of its .lpr
    says the same thing in two sentences)
 tests/
-  test_runner.lpr              runs every suite below (green: 227 assertions on Windows with FPC, 123 with Delphi 7 — layer 1 suites only; 288 on macOS; 260 on Linux before R-19, not re-run since — the rest are skips)
+  test_runner.lpr              runs every suite below (green: 227 assertions on Windows with FPC, 123 with Delphi 7 — layer 1 suites only; 288 on macOS; 268 on Linux — the rest are skips)
   test_defines.inc             PDF_HASVCLCANVAS: the TCanvas bridge suites (FPC until R-20)
   build_delphi7.bat            dcc32 build of one project (R-19); delphi7_core.dpr is the core compile guard
   test_pdf_crossplatform.pas   platform backend, text shaper, TTC extraction
