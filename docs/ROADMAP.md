@@ -8,13 +8,14 @@ tagged output passes PAC 2024 with accepted warnings only (W-1, a Figure in
 `pdf_demo`; W-2, e-mail addresses without links in `zugferd_demo`) and veraPDF
 `ua1`. PDF/A-3U with PDF/UA-1 is verified (R-17). Fonts are embedded and subset
 on all three platforms; tables carry `THead`/`TBody`/`TFoot` row groups. All
-three platforms build with FPC; `test_runner` is green with 229 assertions on
-Windows, 288 on macOS and 268 on Linux (re-run on 2026-09-26).
+three platforms build with FPC; `test_runner` is green with 231 assertions on
+Windows (after R-21), 288 on macOS and 268 on Linux (before R-21).
 **Layer 1 builds on Delphi 7** (R-19, done): 125 assertions on Win32, and the
 tagged Unicode test file passes PAC 2024 and veraPDF `ua1` from Delphi 7/Win32
 and FPC/Win64 alike. The macOS run found a heap-dependent `.ttc` defect in the
 FreeType backend, fixed (`fonts.md` §3). The Linux re-run is done up to
-veraPDF on its files (V). **Next:** R-21, R-23, then R-20.
+veraPDF on its files (V). R-21 is done on Windows (231 assertions with FPC);
+Linux and macOS are to run. **Next:** R-23, then R-20.
 
 ---
 
@@ -79,38 +80,34 @@ comparison is valid **within** one platform only — see V below.
 
 ## Open
 
-### R-21 — Compiler Switches From `mormot.defines.inc` — before R-20
+### R-21 — Compiler Switches From `mormot.defines.inc` — Linux and macOS open
 
-**Why.** mORMot2 never writes `{$mode}` itself: every unit starts with
-`{$I mormot.defines.inc}`, which sets `{$MODE DELPHI}` and `{$H+}` under FPC
-and the feature conditionals (`HASINLINE`, `UNICODE`, `CPUX86`, `OSWINDOWS` …)
-for every compiler. This project does it three ways:
+**Done on Windows, 2026-09-26** (`6e503a9` … `4eaaff0`, one commit per unit):
+every unit in `src/` and the seven test units `test_runner` builds start with
+`{$I mormot.defines.inc}` after `interface`, by name, without `..\`;
+`build_delphi7.bat` has no include path trick left. `test_runner` 231/231
+(FPC/Win64), 125/125 (Delphi 7); the seven demos give the same `pdftotext`
+output as before.
 
-| Form | Units |
-|---|---|
-| `{$I mormot.defines.inc}` | `mormot.ui.pdf`, `tests/test_runner.lpr` |
-| `{$I ..\mormot.defines.inc}` | `mormot.lib.uniscribe`, `mormot.ui.core`, `mormot.ui.gdiplus` — Delphi finds it only through the extra include path in `tests/build_delphi7.bat` |
-| `{$ifdef FPC}{$mode delphi}{$endif}` | `mormot.pdf.types`, `mormot.pdf.gdi`, `mormot.ui.pdfcanvas`, `mormot.ui.report`, `mormot.pdf.fpimage`, `mormot.pdf.freetype`, `mormot.pdf.harfbuzz`, `mormot.pdf.hbsubset`, the test units |
+- **Enum size — no risk after all.** The bindings of `mormot.pdf.freetype`,
+  `mormot.pdf.harfbuzz` and `mormot.pdf.hbsubset` declare every C enum as
+  `integer` and hold no set, so `{$MINENUMSIZE 1}` and `{$PACKSET 1}` do not
+  reach the libraries.
+- **`{$CODEPAGE UTF8}` did bite:** the default value `'• '` of
+  `DrawListItem` arrived as `'?'` (`TestListItemBullet`); the rule is in
+  `CLAUDE.md` (Coding Conventions).
+- **`{$ifdef FPC}` pass:** `CreateFontIndirectW` in `mormot.pdf.gdi` needs no
+  branch any more. The branches in `mormot.ui.core` and `mormot.ui.gdiplus`
+  come with the mORMot2 originals and stay; the one around all of
+  `mormot.ui.report` is R-20.
 
-The third form is where it went wrong: in `mormot.pdf.types` and
-`mormot.pdf.gdi` the switch sits after `uses` and does not take effect, so
-`string` was `ShortString` there (found in R-19 step 3, patched with `{$H+}`).
-
-**Work:** `{$I mormot.defines.inc}` before `interface` in every unit, drop the
-`..\`, then drop the include path trick from the build script. One unit at a
-time, `test_runner` on all three platforms after each.
-
-**The risk — enum size.** `mormot.defines.inc` also sets `{$MINENUMSIZE 1}`
-under FPC. A record handed to a C library needs 4-byte enums, as in C. Before
-switching `mormot.pdf.freetype`, `mormot.pdf.harfbuzz` and `mormot.pdf.hbsubset`,
-check every record of their bindings for enum fields (or set
-`{$MINENUMSIZE 4}` locally around the bindings). The Windows API units are
-Delphi's and FPC's own and not affected.
-
-**With it:** a pass over the older `{$ifdef FPC}` in `src/` — e.g.
-`CreateFontIndirectW(@lf)` against `(lf)` in `mormot.pdf.gdi` — for a mORMot2
-function that makes the branch unnecessary. The rule is in `CLAUDE.md`
-(Coding Conventions): mORMot2 first, `{$ifdef}` last, named after the feature.
+**Open:**
+- `test_runner` on Linux and macOS — expected 270 and 290, two more than
+  before. The four Unix units (`d9b05a3` … `538f768`) have not been compiled
+  at all yet; if one breaks, bisect them
+- the seven `{$ifdef FPC}` in `mormot.ui.pdf`, not looked at yet
+- `test_margins_analysis` and `test_wrap_analysis` still carry `{$mode}`: no
+  project builds them — convert or delete
 
 ### R-23 — A Layer 1 Demo for Delphi — after R-21, before R-20
 
@@ -199,8 +196,8 @@ The `///` API documentation inherited from the original mORMot2 units stays.
 
 ### V — Verification Outstanding
 
-All three platforms build and pass `test_runner` (229 assertions on Windows,
-288 on macOS, 268 on Linux). The tagged demos pass veraPDF `ua1`
+All three platforms build and pass `test_runner` (231 assertions on Windows,
+288 on macOS, 268 on Linux — the last two before R-21). The tagged demos pass veraPDF `ua1`
 106/106 on all three and PAC 2024 — measured again on 2026-09-26 for the
 Windows and macOS files, `zugferd_demo` also `3u` 148/148 and Mustang. That was the stated gate for a first version tag, and
 the project still has none.
