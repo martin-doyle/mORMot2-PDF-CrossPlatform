@@ -8,13 +8,13 @@ tagged output passes PAC 2024 with accepted warnings only (W-1, a Figure in
 `pdf_demo`; W-2, e-mail addresses without links in `zugferd_demo`) and veraPDF
 `ua1`. PDF/A-3U with PDF/UA-1 is verified (R-17). Fonts are embedded and subset
 on all three platforms; tables carry `THead`/`TBody`/`TFoot` row groups. All
-three platforms build with FPC; `test_runner` is green with 231 assertions on
+three platforms build with FPC; `test_runner` is green with 235 assertions on
 Windows (after R-21), 288 on macOS and 268 on Linux (before R-21).
 **Layer 1 builds on Delphi 7** (R-19, done): 125 assertions on Win32, and the
 tagged Unicode test file passes PAC 2024 and veraPDF `ua1` from Delphi 7/Win32
 and FPC/Win64 alike. The macOS run found a heap-dependent `.ttc` defect in the
 FreeType backend, fixed (`fonts.md` §3). The Linux re-run is done up to
-veraPDF on its files (V). R-21 is done on Windows (231 assertions with FPC);
+veraPDF on its files (V). R-21 is done on Windows (235 assertions with FPC);
 Linux and macOS are to run. **Next:** R-23, then R-20.
 
 ---
@@ -112,12 +112,12 @@ output as before.
   `{$CODEPAGE UTF8}`.
 
 **Open:**
-- `test_runner` on Linux and macOS — expected 270 and 290, two more than
+- `test_runner` on Linux and macOS — expected 274 and 294, six more than
   before. The four Unix units (`d9b05a3` … `538f768`) have not been compiled
   at all yet; if one breaks, bisect them
-- `test_margins_analysis` and `test_wrap_analysis` still carry `{$mode}`:
-  printing programs without a check, and no project builds them — decision
-  pending
+- nothing else: `test_margins_analysis` and `test_wrap_analysis`, printing
+  programs without a check that no project built, are gone; what they asked
+  is now `TestParagraphWrapsWithinPageWidth` (and `TestA4WithMargins`)
 
 ### R-23 — A Layer 1 Demo for Delphi — after R-21, before R-20
 
@@ -206,7 +206,7 @@ The `///` API documentation inherited from the original mORMot2 units stays.
 
 ### V — Verification Outstanding
 
-All three platforms build and pass `test_runner` (231 assertions on Windows,
+All three platforms build and pass `test_runner` (235 assertions on Windows,
 288 on macOS, 268 on Linux — the last two before R-21). The tagged demos pass veraPDF `ua1`
 106/106 on all three and PAC 2024 — measured again on 2026-09-26 for the
 Windows and macOS files, `zugferd_demo` also `3u` 148/148 and Mustang. That was the stated gate for a first version tag, and

@@ -24,6 +24,7 @@ type
     procedure TestDifferentMargins;
     procedure TestPageDimensionConsistency;
     procedure TestMarginModification;
+    procedure TestParagraphWrapsWithinPageWidth;
   end;
 
 implementation
@@ -138,6 +139,57 @@ begin
     { Expected: 210 - 15 - 20 = 175mm = 17500 }
     CheckEqual(17500, NewWidth, 'PageWidth after margin change');
     Check(NewWidth <> OldWidth, 'PageWidth correctly recalculated');
+  finally
+    Report.Free;
+  end;
+end;
+
+procedure TCoordinateTests.TestParagraphWrapsWithinPageWidth;
+const
+  SENTENCE = 'This is a longer text that should wrap in a standard column ' +
+    'width on an A4 page with 15mm margins on all sides.';
+var
+  Report: TGDIPages;
+  Source, Joined: string;
+  i, Lines, Unmeasured, W, Widest: Integer;
+begin
+  Source := SENTENCE + ' ' + SENTENCE + ' ' + SENTENCE + ' ' + SENTENCE;
+  Report := TGDIPages.Create(nil);
+  try
+    Report.PaperSize := psA4;
+    Report.Orientation := poPortrait;
+    Report.MarginLeft := 1500;
+    Report.MarginRight := 1500;
+    Report.MarginTop := 1500;
+    Report.MarginBottom := 1500;
+    Report.NewPage;
+    Report.SetFont(REPORT_FONT_SANS, 11);
+    Report.DrawParagraph(Source);
+    Report.EndDoc;
+    Lines := 0;
+    Unmeasured := 0;
+    Widest := 0;
+    Joined := '';
+    for i := 0 to High(Report.Pages[0].Commands) do
+      with Report.Pages[0].Commands[i] do
+        if Kind = dckDrawText then
+        begin
+          Inc(Lines);
+          { TextWidthMM is measured when the line is recorded, with the
+            metrics the layout wrapped it with }
+          if TextWidthMM <= 0 then
+            Inc(Unmeasured);
+          W := X + TextWidthMM;
+          if W > Widest then
+            Widest := W;
+          if Joined <> '' then
+            Joined := Joined + ' ';
+          Joined := Joined + Trim(Text);
+        end;
+    Check(Lines > 1, 'the paragraph wraps');
+    CheckEqual(0, Unmeasured, 'every line has its width recorded');
+    Check(Widest <= Report.PageWidth, 'no line reaches past the right margin');
+    CheckEqual(Source, Joined, 'the lines hold every word, in order');
   finally
     Report.Free;
   end;
