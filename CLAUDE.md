@@ -264,7 +264,7 @@ lazbuild tests/test_runner.lpi -B && tests/bin/<cpu-os>/test_runner
 # Delphi 7 (Win32, layer 1 only) — MORMOT2 must point to the mORMot2 checkout:
 tests\build_delphi7.bat tests\test_runner.lpr
 bin\d7\test_runner\test_runner.exe --noenter
-tests\build_delphi7.bat examples\layer1_demo\layer1_demo.lpr
+tests\build_delphi7.bat examples\layer1_demo\layer1_demo.dpr
 ```
 
 On Windows every test runner waits for Enter at the end unless it gets a

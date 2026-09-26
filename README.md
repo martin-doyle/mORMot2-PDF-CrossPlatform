@@ -252,7 +252,7 @@ goes to `bin\d7\<project>\`:
 set MORMOT2=C:\path\to\mORMot2
 tests\build_delphi7.bat tests\test_runner.lpr
 bin\d7\test_runner\test_runner.exe --noenter
-tests\build_delphi7.bat examples\layer1_demo\layer1_demo.lpr
+tests\build_delphi7.bat examples\layer1_demo\layer1_demo.dpr
 bin\d7\layer1_demo\layer1_demo.exe
 ```
 

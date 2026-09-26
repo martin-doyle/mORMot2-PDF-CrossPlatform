@@ -62,7 +62,7 @@
     </RequiredPackages>
     <Units Count="1">
       <Unit0>
-        <Filename Value="layer1_demo.lpr"/>
+        <Filename Value="layer1_demo.dpr"/>
         <IsPartOfProject Value="True"/>
       </Unit0>
     </Units>

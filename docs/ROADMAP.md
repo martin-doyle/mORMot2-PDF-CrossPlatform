@@ -144,7 +144,7 @@ it, so the `string` encoding question stays with R-20.
 **Check:** veraPDF `ua1` and PAC on the files of both compilers, the same
 `pdftotext` output and structure tree.
 
-**Built on Windows, 2026-09-26:** `examples/layer1_demo`, one page — `H1`,
+**Built on Windows, 2026-09-26:** `examples/layer1_demo/layer1_demo.dpr` — a `.dpr`, so the Delphi IDE opens it too, and the `.lpi` points to it — one page — `H1`,
 two `H2`, three `P`, a `Figure` (bar chart) with `/Alt`, an outline entry per
 heading, a rule and a footer as artifacts, text as UTF-8 through
 `Utf8ToSynUnicode` + `TextOutW`. FPC/Win64 and Delphi 7/Win32 give the same

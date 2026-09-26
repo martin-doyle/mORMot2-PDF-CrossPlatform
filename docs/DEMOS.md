@@ -723,7 +723,7 @@ end;
 lazbuild examples/layer1_demo/layer1_demo.lpi -B
 examples/layer1_demo/bin/<target>/layer1_demo
 # Delphi 7, MORMOT2 set to the mORMot2 checkout:
-tests\build_delphi7.bat examples\layer1_demo\layer1_demo.lpr
+tests\build_delphi7.bat examples\layer1_demo\layer1_demo.dpr
 bin\d7\layer1_demo\layer1_demo.exe
 ```
 
