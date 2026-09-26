@@ -13,9 +13,7 @@
 //   the struct roles and the THead/TBody row groups itself
 program pdf_demo_crossplat;
 
-{$ifdef FPC}
-{$mode delphi}
-{$endif FPC}
+{$I mormot.defines.inc}
 
 uses
   {$ifdef FPC}

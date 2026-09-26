@@ -1,7 +1,5 @@
 unit uMainForm;
 
-{$mode objfpc}{$H+}
-
 { ============================================================
   mORMot2 - TGDIPages Report Demo (Lazarus / FPC)
   Demonstrates typical usage of mormot.ui.report.pas:
@@ -15,6 +13,8 @@ unit uMainForm;
   ============================================================ }
 
 interface
+
+{$I mormot.defines.inc}
 
 uses
   Classes, SysUtils, Forms, Controls, Graphics, Dialogs,
@@ -121,8 +121,7 @@ var
   MonoFont: String;
 
 { Table layout for the order list. Built at runtime instead of as a typed
-  constant: the [1000, ...] syntax for the dynamic array fields needs
-  {$mode delphi}, and this unit is compiled in objfpc mode.
+  constant: Delphi 7 has no constants for dynamic array fields.
   Empty font names and size 0 inherit the document font set before BeginTable. }
 function OrderTableLayout: TTableLayout;
 begin

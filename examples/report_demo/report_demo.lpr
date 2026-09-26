@@ -12,7 +12,7 @@
 //   the window; TGDIPages is an LCL control, so this still needs a display
 program report_demo;
 
-{$mode objfpc}{$H+}
+{$I mormot.defines.inc}
 
 uses
   {$IFDEF UNIX}

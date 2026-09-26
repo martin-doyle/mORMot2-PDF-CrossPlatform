@@ -12,10 +12,7 @@
 //   font flags decide which metrics the layout is measured with
 program markdown_demo;
 
-{$IFDEF FPC}
-  {$mode delphi}
-  {$H+}
-{$ENDIF}
+{$I mormot.defines.inc}
 
 uses
   {$IFDEF FPC}

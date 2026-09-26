@@ -16,9 +16,7 @@
 //   Linux   : Droid Sans Fallback — sudo apt install fonts-droid-fallback
 program chinese_demo;
 
-{$ifdef FPC}
-{$mode delphi}
-{$endif FPC}
+{$I mormot.defines.inc}
 
 uses
   {$ifdef FPC}

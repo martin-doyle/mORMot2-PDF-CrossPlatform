@@ -23,9 +23,7 @@
 //   brew install harfbuzz            (macOS)
 program rtl_demo;
 
-{$ifdef FPC}
-{$mode delphi}
-{$endif FPC}
+{$I mormot.defines.inc}
 
 uses
   {$ifdef FPC}

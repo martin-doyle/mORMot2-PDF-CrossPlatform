@@ -22,9 +22,7 @@
 //   --untagged        no structure tree (PDF/A without PDF/UA)
 program zugferd_demo;
 
-{$ifdef FPC}
-{$mode delphi}
-{$endif FPC}
+{$I mormot.defines.inc}
 
 uses
   {$ifdef FPC}
