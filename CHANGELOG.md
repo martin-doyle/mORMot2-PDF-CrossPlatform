@@ -93,7 +93,13 @@ standing down where a platform lacks what they need, not failures.
   two tests of the bridge itself need `PDF_HASVCLCANVAS`
   (`tests/test_defines.inc`), defined for FPC.
 - Test suite: 227 assertions on Windows with FPC (221 before), 123 with
-  Delphi 7, 288 on macOS. Linux not re-run since.
+  Delphi 7, 288 on macOS, 268 on Linux (260 before).
+- **The demos write `<demo>_<os>.pdf` next to their executable**, whatever the
+  current folder — `<os>` is mORMot2's `OS_NAME[OS_KIND]` in lower case:
+  `windows`, `osx`, on Linux the distribution. Formerly `output_crossplat.pdf`,
+  `output_chinese.pdf`, `output_rtl.pdf`, `markdown_demo.pdf` and
+  `zugferd_invoice.pdf` in the current folder. The GUI demos use the name for
+  `--export` without a file name.
 
 ### Known limitations
 

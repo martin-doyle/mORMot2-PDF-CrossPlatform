@@ -23,8 +23,15 @@ mORMot ORM.
 ```bash
 lazbuild mormot_demo.lpi -B
 bin/<target>/mormot_demo                    # GUI
-bin/<target>/mormot_demo --export out.pdf   # batch, still needs a display
+bin/<target>/mormot_demo --export           # batch -> mormot_demo_<os>.pdf, next to the executable
+bin/<target>/mormot_demo --export out.pdf   # batch to a file of your choice; both need a display
 ```
 
-**Status:** the demo compiles on all platforms but has never been run — it
-waits for a sample database (see [ROADMAP](../../docs/ROADMAP.md)).
+**The database** is `data/mormot_demo.db` in this folder, found two levels
+above the executable. The sample database with the orders is not versioned
+(`.gitignore`); without it SQLite creates an empty one, and the table shows its
+placeholder row "No orders available". The `data/` folder itself has to exist:
+a fresh clone has none, and the demo then stops with runtime error 217.
+
+**Status:** runs; checked on Linux with `--export` (2026-09-26), both with the
+sample database (5 pages) and with an empty one (1 page).

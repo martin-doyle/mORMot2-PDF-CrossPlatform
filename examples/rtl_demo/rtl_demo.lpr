@@ -35,6 +35,7 @@ uses
   Graphics,
   mormot.core.base,
   mormot.core.os,
+  mormot.core.unicode,
   {$ifndef MSWINDOWS}
   mormot.pdf.freetype,   // FreeType2 backend (must be before mormot.pdf.harfbuzz)
   mormot.pdf.harfbuzz,   // HarfBuzz shaper — registers PdfTextShaper at startup
@@ -58,8 +59,6 @@ const
   {$endif DARWIN}
   {$endif MSWINDOWS}
 
-  OUTPUT_PDF = 'output_rtl.pdf';
-
   // UTF-8 encoded Arabic string constants
   // U+0628 ARABIC LETTER BA — isolated form
   ARABIC_BA     = #$D8#$A8;
@@ -75,6 +74,14 @@ const
   // بيت  (bayt = House)
   // ب=U+0628 ي=U+064A ت=U+062A
   ARABIC_HOUSE  = #$D8#$A8#$D9#$8A#$D8#$AA;
+
+{ <demo>_<os>.pdf next to the executable: the runs of all platforms can then
+  share one folder for checking. OS_KIND names the distribution on Linux }
+function PdfFileName: TFileName;
+begin
+  result := Executable.ProgramFilePath + 'rtl_demo_' +
+    Utf8ToString(LowerCase(ShortStringToAnsi7String(OS_NAME[OS_KIND]))) + '.pdf';
+end;
 
 var
   Doc:                  TPdfDocumentVcl;
@@ -213,13 +220,13 @@ begin
     C.TextOut(40, 571, 'madrasa = School');
     C.TextOut(40, 615, 'bayt = House');
 
-    Doc.SaveToFile(OUTPUT_PDF);
+    Doc.SaveToFile(PdfFileName);
   finally
     Doc.Free;
   end;
 
-  PdfSize := mormot.core.os.FileSize(OUTPUT_PDF);
-  WriteLn('PDF saved : ', OUTPUT_PDF, '  (', PdfSize div 1024, ' KB)');
+  PdfSize := mormot.core.os.FileSize(PdfFileName);
+  WriteLn('PDF saved : ', PdfFileName, '  (', PdfSize div 1024, ' KB)');
   WriteLn('Font used : ', ARABIC_FONT);
   WriteLn('');
   WriteLn('Section 1a: isolated U+0628 BA — CMAP lookup (DEFAULT_CHARSET fix).');

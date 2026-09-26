@@ -28,6 +28,7 @@ uses
   Graphics,
   mormot.core.base,
   mormot.core.os,
+  mormot.core.unicode,
   mormot.ui.pdf,
   mormot.ui.pdfcanvas,
   mormot.ui.report;
@@ -43,8 +44,6 @@ const
   {$endif DARWIN}
   {$endif MSWINDOWS}
 
-  OUTPUT_PDF = 'output_chinese.pdf';
-
   // UTF-8 encoded Chinese string constants
   CJK_TITLE     = #$E4#$B8#$AD#$E6#$96#$87#$E6#$BC#$94#$E7#$A4#$BA;
   // 中文演示  (Chinese Demo)
@@ -56,6 +55,14 @@ const
   // 字体嵌入测试  (Font embedding test)
   CJK_SENTENCE  = #$E8#$BF#$99#$E6#$98#$AF#$E4#$B8#$80#$E4#$B8#$AA#$E6#$B5#$8B#$E8#$AF#$95#$E3#$80#$82;
   // 这是一个测试。  (This is a test.)
+
+{ <demo>_<os>.pdf next to the executable: the runs of all platforms can then
+  share one folder for checking. OS_KIND names the distribution on Linux }
+function PdfFileName: TFileName;
+begin
+  result := Executable.ProgramFilePath + 'chinese_demo_' +
+    Utf8ToString(LowerCase(ShortStringToAnsi7String(OS_NAME[OS_KIND]))) + '.pdf';
+end;
 
 var
   Doc:                  TPdfDocumentVcl;
@@ -111,13 +118,13 @@ begin
     C.Font.Size  := 16;
     C.TextOut(40, 250, CJK_SENTENCE);
 
-    Doc.SaveToFile(OUTPUT_PDF);
+    Doc.SaveToFile(PdfFileName);
   finally
     Doc.Free;
   end;
 
-  PdfSize := mormot.core.os.FileSize(OUTPUT_PDF);
-  WriteLn('PDF saved : ', OUTPUT_PDF);
+  PdfSize := mormot.core.os.FileSize(PdfFileName);
+  WriteLn('PDF saved : ', PdfFileName);
   WriteLn('File size : ', PdfSize div 1024, ' KB');
   WriteLn('Font used : ', CJK_FONT, '  (EmbeddedWholeTtf=false)');
   WriteLn('');

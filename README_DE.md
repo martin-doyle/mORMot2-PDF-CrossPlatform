@@ -152,7 +152,7 @@ vollständige Schrift ein.
 | Latin-Text | Subset | Subset |
 | CJK, geformtes Arabisch | Subset | Subset |
 | Getaggte Ausgabe | Subset | Subset |
-| `markdown_demo.pdf` | 46 KB | 230 KB |
+| `markdown_demo_<os>.pdf` | 46 KB | 230 KB |
 
 Beide Subsetter behalten die ursprüngliche Glyphennummerierung —
 `libharfbuzz-subset` über Retain-GIDs, `CreateFontPackage` über eine

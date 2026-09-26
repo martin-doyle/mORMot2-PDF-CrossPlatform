@@ -46,15 +46,15 @@ two levels above the executable, i.e. in this folder:
 
 ```bash
 lazbuild zugferd_demo.lpi -B      # Windows: "C:\lazarus\lazbuild.exe" …
-bin/<target>/zugferd_demo         # -> zugferd_invoice.pdf
+bin/<target>/zugferd_demo         # -> zugferd_demo_<os>.pdf, next to the executable
 ```
 
 **Checking the output**
 
 ```bash
-verapdf -f 3u  zugferd_invoice.pdf     # PDF/A-3U
-verapdf -f ua1 zugferd_invoice.pdf     # PDF/UA-1
-java -jar Mustang-CLI-<version>.jar --action validate --source zugferd_invoice.pdf
+verapdf -f 3u  zugferd_demo_<os>.pdf     # PDF/A-3U
+verapdf -f ua1 zugferd_demo_<os>.pdf     # PDF/UA-1
+java -jar Mustang-CLI-<version>.jar --action validate --source zugferd_demo_<os>.pdf
 ```
 
 **Other files here**

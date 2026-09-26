@@ -18,7 +18,7 @@ subset goes to `/FontFile3` with `/Subtype /OpenType` rather than `/FontFile2`
 (roadmap R-15c). Before that was handled the file was ~10 MB; it is ~23 KB now.
 
 ```bash
-grep -a -oE "/BaseFont[ ]*/[A-Za-z0-9+,#_-]+" output_chinese.pdf | sort -u
+grep -a -oE "/BaseFont[ ]*/[A-Za-z0-9+,#_-]+" chinese_demo_<os>.pdf | sort -u
 # HFCPMT+HiraginoSansGB  <- the six-letter prefix means subset
 ```
 
@@ -34,5 +34,5 @@ grep -a -oE "/BaseFont[ ]*/[A-Za-z0-9+,#_-]+" output_chinese.pdf | sort -u
 
 ```bash
 lazbuild chinese_demo.lpi -B
-bin/<target>/chinese_demo      # -> output_chinese.pdf
+bin/<target>/chinese_demo      # -> chinese_demo_<os>.pdf, next to the executable
 ```

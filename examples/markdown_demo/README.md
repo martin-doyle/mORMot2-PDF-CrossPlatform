@@ -21,5 +21,5 @@ H1-H6, paragraphs, quotes, list items, captions, inline runs (`DrawStrong`,
 
 ```bash
 lazbuild markdown_demo.lpi -B
-bin/<target>/markdown_demo      # -> markdown_demo.pdf
+bin/<target>/markdown_demo      # -> markdown_demo_<os>.pdf, next to the executable
 ```

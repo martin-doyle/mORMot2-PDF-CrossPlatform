@@ -30,5 +30,5 @@ needed for section 2: `sudo apt install libharfbuzz0b` / `brew install harfbuzz`
 
 ```bash
 lazbuild rtl_demo.lpi -B
-bin/<target>/rtl_demo          # -> output_rtl.pdf
+bin/<target>/rtl_demo          # -> rtl_demo_<os>.pdf, next to the executable
 ```

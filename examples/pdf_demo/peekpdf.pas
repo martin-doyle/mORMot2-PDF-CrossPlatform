@@ -1,6 +1,6 @@
 program peekpdf;
 {$mode delphi}
-uses SysUtils, Classes, ZStream;
+uses SysUtils, StrUtils, Classes, ZStream;
 var
   f: TFileStream;
   ms: TMemoryStream;
@@ -9,21 +9,26 @@ var
   n: integer;
   all: TMemoryStream;
   data, s: AnsiString;
-  pos, start, nl, e, idx, streampos: integer;
+  p, start, nl, e, idx, streampos: integer;
   raw: AnsiString;
   b0: byte;
 begin
-  f := TFileStream.Create('output_crossplat.pdf', fmOpenRead);
+  if ParamCount < 1 then
+  begin
+    writeln('usage: peekpdf <file.pdf>');
+    halt(1);
+  end;
+  f := TFileStream.Create(ParamStr(1), fmOpenRead);
   all := TMemoryStream.Create;
   all.CopyFrom(f, 0);
   f.Free;
   SetLength(data, all.Size);
   Move(all.Memory^, data[1], all.Size);
   idx := 0;
-  pos := 1;
-  while pos < Length(data) do
+  p := 1;
+  while p < Length(data) do
   begin
-    start := PosEx('stream', data, pos);
+    start := PosEx('stream', data, p);
     if start = 0 then break;
     nl := PosEx(#10, data, start) + 1;
     e := PosEx('endstream', data, nl);
@@ -43,7 +48,7 @@ begin
         end;
       end;
     end;
-    pos := e + 9;
+    p := e + 9;
     inc(idx);
   end;
   all.Free;

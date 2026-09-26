@@ -21,7 +21,7 @@ by hand from header and data rows.
 
 ```bash
 lazbuild pdf_demo_crossplat.lpi -B      # Windows: "C:\lazarus\lazbuild.exe" …
-bin/<target>/pdf_demo_crossplat         # -> output_crossplat.pdf
+bin/<target>/pdf_demo_crossplat         # -> pdf_demo_<os>.pdf, next to the executable
 ```
 
 **Other files here**
@@ -29,4 +29,4 @@ bin/<target>/pdf_demo_crossplat         # -> output_crossplat.pdf
 | File | What it is |
 |---|---|
 | `pdf_demo_windows.dpr` | Delphi 7 golden master on `TPdfDocumentGDI`, the reference the cross-platform output is compared against — do not change it |
-| `peekpdf.pas`, `peekpdf2.pas` | console tools that dump a PDF's object structure, for comparing the two outputs |
+| `peekpdf.pas`, `peekpdf2.pas` | console tools that dump a PDF's uncompressed content streams, for comparing the two outputs: `peekpdf <file.pdf>` |

@@ -34,6 +34,7 @@ uses
   Graphics,
   mormot.core.base,
   mormot.core.os,
+  mormot.core.unicode,
   mormot.pdf.types,   // TPdfStructRole
   mormot.ui.pdf,
   mormot.ui.pdfcanvas,
@@ -41,7 +42,6 @@ uses
 
 const
   XML_NAME = 'factur-x.xml';
-  PDF_NAME = 'zugferd_invoice.pdf';
   // page and table geometry, in pixels at 96 dpi
   LEFT_X      = 60;
   RIGHT_X     = 734;
@@ -81,6 +81,14 @@ procedure Close;
 begin
   if WithTags then
     Doc.EndStructContent;
+end;
+
+{ <demo>_<os>.pdf next to the executable: the runs of all platforms can then
+  share one folder for checking. OS_KIND names the distribution on Linux }
+function PdfFileName: TFileName;
+begin
+  result := Executable.ProgramFilePath + 'zugferd_demo_' +
+    Utf8ToString(LowerCase(ShortStringToAnsi7String(OS_NAME[OS_KIND]))) + '.pdf';
 end;
 
 // factur-x.xml sits beside the .lpr; the executable is two levels below it
@@ -269,8 +277,8 @@ begin
         'Factur-X invoice data', 'text/xml', Now, Now, nil, afrAlternative);
       Doc.PdfAMetadaExtension := PdfMetadataFacturX('EN 16931', XML_NAME);
     end;
-    Doc.SaveToFile(PDF_NAME);
-    writeln('PDF saved to ', PDF_NAME);
+    Doc.SaveToFile(PdfFileName);
+    writeln('PDF saved to ', PdfFileName);
   finally
     Doc.Free;
   end;

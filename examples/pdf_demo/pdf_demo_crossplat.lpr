@@ -25,10 +25,19 @@ uses
   Graphics,
   mormot.core.base,
   mormot.core.os,
+  mormot.core.unicode,
   mormot.pdf.types,   // TPdfStructRole: psrH1, psrP, psrFigure, psrTable, ...
   mormot.ui.pdf,
   mormot.ui.pdfcanvas,
   mormot.ui.report;   // for REPORT_FONT_SANS/SERIF/MONO constants
+
+{ <demo>_<os>.pdf next to the executable: the runs of all platforms can then
+  share one folder for checking. OS_KIND names the distribution on Linux }
+function PdfFileName: TFileName;
+begin
+  result := Executable.ProgramFilePath + 'pdf_demo_' +
+    Utf8ToString(LowerCase(ShortStringToAnsi7String(OS_NAME[OS_KIND]))) + '.pdf';
+end;
 
 var
   // FPC/Lazarus: always use TPdfDocumentVcl — LCL metafile canvas does not
@@ -254,8 +263,8 @@ begin
     Doc.EndStructContent; // TBody
     Doc.EndStructContent; // Table
 
-    Doc.SaveToFile('output_crossplat.pdf');
-    writeln('PDF saved to output_crossplat.pdf');
+    Doc.SaveToFile(PdfFileName);
+    writeln('PDF saved to ', PdfFileName);
   finally
     Doc.Free;
   end;

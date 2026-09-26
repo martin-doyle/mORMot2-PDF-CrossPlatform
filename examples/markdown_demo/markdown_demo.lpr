@@ -24,6 +24,9 @@ uses
   SysUtils,
   Classes,
   Graphics,
+  mormot.core.base,
+  mormot.core.os,
+  mormot.core.unicode,
   mormot.ui.report;
 
 type
@@ -323,6 +326,14 @@ begin
     Format('Page: %s — Demonstrates Phase 5 Markdown-style formatting with automatic spacing.', [Config.PageLabel]));
 end;
 
+{ <demo>_<os>.pdf next to the executable: the runs of all platforms can then
+  share one folder for checking. OS_KIND names the distribution on Linux }
+function PdfFileName: TFileName;
+begin
+  result := Executable.ProgramFilePath + 'markdown_demo_' +
+    Utf8ToString(LowerCase(ShortStringToAnsi7String(OS_NAME[OS_KIND]))) + '.pdf';
+end;
+
 procedure DemoMarkdownFormatting;
 var
   Report: TGDIPages;
@@ -379,11 +390,11 @@ begin
     try
       if Report.ExportPdfStream(MS) then
       begin
-        FS := TFileStream.Create('markdown_demo.pdf', fmCreate);
+        FS := TFileStream.Create(PdfFileName, fmCreate);
         try
           MS.Position := 0;
           FS.CopyFrom(MS, MS.Size);
-          WriteLn('✓ PDF exported to: markdown_demo.pdf');
+          WriteLn('✓ PDF exported to: ', PdfFileName);
         finally
           FS.Free;
         end;

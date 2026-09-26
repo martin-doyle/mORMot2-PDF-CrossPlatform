@@ -96,6 +96,7 @@ uses
   mormot.core.base,
   mormot.core.text,
   mormot.core.datetime,
+  mormot.core.os,
   mormot.core.unicode;
 
 { ============================================================
@@ -478,7 +479,9 @@ begin
       if i < ParamCount then
         AFileName := ParamStr(i + 1)
       else
-        AFileName := 'report_demo.pdf';
+        // <demo>_<os>.pdf next to the executable, as the console demos write it
+        AFileName := Executable.ProgramFilePath + 'report_demo_' +
+          Utf8ToString(LowerCase(ShortStringToAnsi7String(OS_NAME[OS_KIND]))) + '.pdf';
       result := true;
       exit;
     end;

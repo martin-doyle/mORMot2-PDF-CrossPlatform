@@ -7,8 +7,13 @@ var
   b0: byte;
   f: TMemoryStream;
 begin
+  if ParamCount < 1 then
+  begin
+    writeln('usage: peekpdf2 <file.pdf>');
+    halt(1);
+  end;
   f := TMemoryStream.Create;
-  f.LoadFromFile('output_crossplat.pdf');
+  f.LoadFromFile(ParamStr(1));
   SetLength(data, f.Size);
   Move(f.Memory^, data[1], f.Size);
   f.Free;
