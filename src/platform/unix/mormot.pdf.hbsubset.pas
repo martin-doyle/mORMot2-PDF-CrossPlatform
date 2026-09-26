@@ -19,9 +19,7 @@ unit mormot.pdf.hbsubset;
 
 interface
 
-{$ifdef FPC}
-  {$mode delphi}
-{$endif FPC}
+{$I mormot.defines.inc}
 
 {$ifndef MSWINDOWS}
 
