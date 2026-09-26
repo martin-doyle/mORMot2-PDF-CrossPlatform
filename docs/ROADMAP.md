@@ -97,17 +97,27 @@ output as before.
   `DrawListItem` arrived as `'?'` (`TestListItemBullet`); the rule is in
   `CLAUDE.md` (Coding Conventions).
 - **`{$ifdef FPC}` pass:** `CreateFontIndirectW` in `mormot.pdf.gdi` needs no
-  branch any more. The branches in `mormot.ui.core` and `mormot.ui.gdiplus`
-  come with the mORMot2 originals and stay; the one around all of
-  `mormot.ui.report` is R-20.
+  branch any more (a local `var`, and FPC has a `var` overload). The branches
+  in `mormot.ui.core` and `mormot.ui.gdiplus` come with the mORMot2 originals
+  and stay; the one around all of `mormot.ui.report` is R-20. The seven in
+  `mormot.ui.pdf` stay too: all are in the original (`reference/`), and each
+  is a real difference — LCL against VCL units, the compatibility types, and
+  four Windows API calls FPC declares differently (`EnumPrinters` with
+  pointers, `GdiComment` with `var`, `EnumEnhMetaFile` with `RECT`,
+  `CreateFontIndirectW` on a `const` parameter, which the `var` overload
+  cannot take). No mORMot2 function wraps these calls.
+- **Demos** (`e02df4d`) switched as well, and they are callers with non-ASCII
+  literals: same `pdftotext` output. `pdf_demo_windows.dpr` stays — the
+  Delphi 7 golden master, with cp1252 literals FPC rejects under
+  `{$CODEPAGE UTF8}`.
 
 **Open:**
 - `test_runner` on Linux and macOS — expected 270 and 290, two more than
   before. The four Unix units (`d9b05a3` … `538f768`) have not been compiled
   at all yet; if one breaks, bisect them
-- the seven `{$ifdef FPC}` in `mormot.ui.pdf`, not looked at yet
-- `test_margins_analysis` and `test_wrap_analysis` still carry `{$mode}`: no
-  project builds them — convert or delete
+- `test_margins_analysis` and `test_wrap_analysis` still carry `{$mode}`:
+  printing programs without a check, and no project builds them — decision
+  pending
 
 ### R-23 — A Layer 1 Demo for Delphi — after R-21, before R-20
 
