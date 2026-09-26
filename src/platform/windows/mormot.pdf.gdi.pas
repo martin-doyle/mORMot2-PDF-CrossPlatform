@@ -20,6 +20,8 @@ unit mormot.pdf.gdi;
 
 interface
 
+{$I mormot.defines.inc}
+
 {$ifdef MSWINDOWS}
 
 uses
@@ -28,10 +30,6 @@ uses
   mormot.core.base,
   mormot.core.unicode,
   mormot.pdf.types;
-
-{$ifdef FPC}
-  {$mode delphi}
-{$endif FPC}
 
 type
   /// Windows GDI implementation of IPdfPlatformFont
@@ -93,11 +91,7 @@ begin
   if ALogFont.FaceName <> '' then
     Move(ALogFont.FaceName[1], lf.lfFaceName[0],
       MinPtrInt(Length(ALogFont.FaceName), LF_FACESIZE - 1) * SizeOf(WideChar));
-  {$ifdef FPC}
-  result := TPdfPlatformFontHandle(CreateFontIndirectW(@lf));
-  {$else}
   result := TPdfPlatformFontHandle(CreateFontIndirectW(lf));
-  {$endif FPC}
 end;
 
 procedure TPdfGdiFontProvider.DeleteFont(AFont: TPdfPlatformFontHandle);
