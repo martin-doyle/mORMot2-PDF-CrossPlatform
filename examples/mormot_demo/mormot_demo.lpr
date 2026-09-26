@@ -37,7 +37,9 @@ begin
   if BatchExportFile(PdfFile) then
   begin
     MainForm.ExportToFile(PdfFile);
-    WriteLn('PDF exported: ', PdfFile);
+    // a Windows GUI executable has no stdout: WriteLn raises I/O error 105
+    if IsConsole then
+      WriteLn('PDF exported: ', PdfFile);
     exit;
   end;
   Application.Run;
