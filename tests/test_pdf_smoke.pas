@@ -48,6 +48,7 @@ type
     {$endif PDF_HASVCLCANVAS}
     procedure TestTaggedTableRowGroups;
     procedure TestTaggedUnicode;
+    procedure TestZeroRealIsWritten;
   end;
 
 implementation
@@ -1010,6 +1011,35 @@ begin
       'no whole .ttc collection embedded');
     CheckEqual(StreamsWithout(s, 'OTTO', '/Subtype/OpenType'), 0,
       'every CFF face is a /FontFile3 with Subtype OpenType');
+  finally
+    Stream.Free;
+  end;
+end;
+
+procedure TPdfSmokeTests.TestZeroRealIsWritten;
+var
+  PDF: TPdfDocument;
+  Stream: TMemoryStream;
+  s: RawByteString;
+begin
+  { a TPdfReal of 0 came out empty under FPC, whose Grisu conversion writes
+    '0' where Str() writes '0.00': the outline zoom and alpha 0 lost their
+    operand, e.g. /XYZ 0 700 ] (found by layer1_demo, R-23) }
+  Stream := TMemoryStream.Create;
+  try
+    PDF := TPdfDocument.Create({AUseOutlines=}true);
+    try
+      PDF.CompressionMethod := cmNone;
+      PDF.AddPage;
+      PDF.CreateOutline('Top', 1, 700);
+      PDF.Canvas.SetFillAlpha(0);
+      PDF.SaveToStream(Stream);
+    finally
+      PDF.Free;
+    end;
+    s := StreamToRaw(Stream);
+    Check(Pos(RawByteString('/XYZ 0 700 0]'), s) > 0, 'outline zoom 0 written');
+    Check(Pos(RawByteString('/ca 0'), s) > 0, 'fill alpha 0 written');
   finally
     Stream.Free;
   end;

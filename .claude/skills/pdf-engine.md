@@ -21,6 +21,15 @@ in `CLAUDE.md` (Coding Conventions): mORMot2 functions first — `PosEx`, not th
 three-argument `Pos`; `MinPtrInt`, not `Min` — and no `Default()`, `for..in`,
 `inline` or records with methods.
 
+**Numbers in the output differ by compiler.** FPC formats `double` with
+Grisu (`DOUBLETOSHORT_USEGRISU` in `mormot.defines.inc`), Delphi 7 with
+`Str(Value:0:2)`. Both give `'3.40'`, but Grisu writes an exact 0 as `'0'`,
+not `'0.00'`. Code that post-processes the text — `TPdfWrite.Add(double)`
+cuts trailing zeros — must not assume two decimals; it once emptied every
+`TPdfReal` of 0 under FPC (`/XYZ 0 802 ]`, R-23, `TestZeroRealIsWritten`).
+Comparing the FPC and Delphi 7 output of one page is how such a difference
+shows up.
+
 ---
 
 ## Enums Reference

@@ -5285,7 +5285,8 @@ begin
   Str(Value:0:2, Buffer);
   {$endif DOUBLETOSHORT_USEGRISU}
   L := ord(Buffer[0]);
-  if Buffer[L] = '0' then
+  // Grisu writes an exact 0 as '0', not '0.00': trim only after a '.'
+  if (L > 3) and (Buffer[L - 2] = '.') and (Buffer[L] = '0') then
     if Buffer[L - 1] = '0' then // '3.00' -> '3'
       dec(L, 3)
     else
