@@ -188,7 +188,7 @@ the project still has none.
 | HarfBuzz older than 2.9 | loads, but lacks `hb_subset_or_fail`. The **missing** library is covered by `tests/no_hbsubset.sh`; an old one needs an old distribution, e.g. Debian 11 |
 | The U-2 width fix on Linux | exercised on macOS only: no Linux Arabic face reaches the shaper width path (`fonts.md` §10), and `TestShapedGlyphWidthFromHmtx` skips itself there |
 | veraPDF in the routine runs | installed on macOS with `ua1`, `3a`, `3b`, `3u` (path in `CLAUDE.local.md`); run by hand on each platform's files, not scripted |
-| veraPDF on the Linux files after R-19 | re-run on 2026-09-26: 268 assertions green, all seven demos compared with the previous run — identical apart from the date and the new `/CIDToGIDMap /Identity` in `chinese_demo` and `rtl_demo`. Still open: `ua1` on `tests/bin/data/tagged_unicode_lowlevel.pdf` and the tagged demos, `3u` on `zugferd_demo` |
+| veraPDF on the Linux files after R-19 | re-run on 2026-09-26: 268 assertions green, all seven demos compared with the previous run — identical apart from the date and the new `/CIDToGIDMap /Identity` in `chinese_demo` and `rtl_demo`. Still open: `ua1` on `tests/bin/aarch64-linux/tagged_unicode_lowlevel.pdf` and the tagged demos, `3u` on `zugferd_demo` |
 | The `.ttc` fix on Linux | `TestTtcFaceExtraction` skips itself: the Linux machine has no `.ttc` installed (e.g. `fonts-noto-cjk` would bring one) |
 | Delphi beyond layer 1 | the TCanvas bridge and `TGDIPages` — R-20; only Delphi 7 has been built |
 

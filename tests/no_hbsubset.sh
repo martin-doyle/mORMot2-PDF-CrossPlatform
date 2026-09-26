@@ -35,8 +35,9 @@ case "$(uname -s)" in
 esac
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-RUNNER="$ROOT/tests/bin/test_runner"
-[ -x "$RUNNER" ] || die "no test_runner at $RUNNER - build it first"
+# FPC names the target folder after CPU and OS, e.g. aarch64-linux
+RUNNER="$(ls "$ROOT"/tests/bin/*-linux/test_runner 2>/dev/null | head -1)"
+[ -x "$RUNNER" ] || die "no tests/bin/*-linux/test_runner - build it first"
 
 # ---------------------------------------------------------------------------
 # Stage 2: runs inside the mount namespace, with the library masked

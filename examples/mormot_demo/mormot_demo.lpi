@@ -2,7 +2,7 @@
 <CONFIG>
   <ProjectOptions>
     <Version Value="12"/>
-    <PathDelim Value="\"/>
+    <PathDelim Value="/"/>
     <General>
       <SessionStorage Value="InProjectDir"/>
       <Title Value="mormot_demo"/>
@@ -58,14 +58,14 @@
   </ProjectOptions>
   <CompilerOptions>
     <Version Value="11"/>
-    <PathDelim Value="\"/>
+    <PathDelim Value="/"/>
     <Target>
-      <Filename Value="bin\$(TargetCPU)-$(TargetOS)\mormot_demo"/>
+      <Filename Value="bin/$(TargetCPU)-$(TargetOS)/mormot_demo"/>
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>
-      <OtherUnitFiles Value="..\..\src\core;..\..\src\platform\windows;..\..\src\platform\unix;..\..\src\lib"/>
-      <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
+      <OtherUnitFiles Value="../../src/core;../../src/platform/windows;../../src/platform/unix;../../src/lib"/>
+      <UnitOutputDirectory Value="lib/$(TargetCPU)-$(TargetOS)"/>
     </SearchPaths>
     <Linking>
       <Debugging>

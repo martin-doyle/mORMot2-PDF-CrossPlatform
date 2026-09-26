@@ -65,7 +65,7 @@ begin
   TIntegrationTests.RunAsConsole('mORMot2 PDF and Report Tests',
     //LOG_VERBOSE +
     LOG_FILTER[lfExceptions] // + [sllErrors, sllWarning]
-    ,[], Executable.ProgramFilePath + 'data');
+    ,[]); // WorkDir: next to the executable, where the test PDF goes
   {$ifdef FPC_X64MM}
   WriteHeapStatus(' ', 16, 8, {compileflags=}true);
   {$endif FPC_X64MM}

@@ -2,7 +2,7 @@
 <CONFIG>
   <ProjectOptions>
     <Version Value="12"/>
-    <PathDelim Value="\"/>
+    <PathDelim Value="/"/>
     <General>
       <Flags>
         <MainUnitHasCreateFormStatements Value="False"/>
@@ -44,13 +44,14 @@
   </ProjectOptions>
   <CompilerOptions>
     <Version Value="11"/>
-    <PathDelim Value="\"/>
+    <PathDelim Value="/"/>
     <Target>
-      <Filename Value="bin\$(TargetCPU)-$(TargetOS)\pdf_demo_windows"/>
+      <Filename Value="bin/$(TargetCPU)-$(TargetOS)/pdf_demo_windows"/>
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>
-      <OtherUnitFiles Value="..\reference;..\..\Github\martin\mORMot2\src\lib;..\..\Github\martin\mORMot2\src\ui"/>
+      <OtherUnitFiles Value="../reference;../../Github/martin/mORMot2/src/lib;../../Github/martin/mORMot2/src/ui"/>
+      <UnitOutputDirectory Value="lib/$(TargetCPU)-$(TargetOS)"/>
     </SearchPaths>
     <Parsing>
       <SyntaxOptions>

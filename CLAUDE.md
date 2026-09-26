@@ -241,6 +241,7 @@ Details on interfaces and registration: `.claude/skills/platform-backends.md`
 "C:\lazarus\lazbuild.exe" examples/rtl_demo/rtl_demo.lpi -B
 "C:\lazarus\lazbuild.exe" examples/zugferd_demo/zugferd_demo.lpi -B
 "C:\lazarus\lazbuild.exe" tests/test_runner.lpi -B
+tests\bin\x86_64-win64\test_runner.exe --noenter
 
 # Linux/macOS:
 lazbuild examples/pdf_demo/pdf_demo_crossplat.lpi -B
@@ -250,7 +251,7 @@ lazbuild examples/rtl_demo/rtl_demo.lpi -B
 lazbuild examples/report_demo/mormot_report_demo.lpi -B
 lazbuild examples/mormot_demo/mormot_demo.lpi -B
 lazbuild examples/zugferd_demo/zugferd_demo.lpi -B
-lazbuild tests/test_runner.lpi -B && tests/bin/test_runner
+lazbuild tests/test_runner.lpi -B && tests/bin/<cpu-os>/test_runner
 
 # Delphi 7 (Win32, layer 1 only) — MORMOT2 must point to the mORMot2 checkout:
 tests\build_delphi7.bat tests\test_runner.lpr
@@ -259,6 +260,11 @@ bin\d7\test_runner\test_runner.exe --noenter
 
 On Windows every test runner waits for Enter at the end unless it gets a
 parameter — pass `--noenter` when it runs unattended.
+
+Every project builds to `bin/<cpu-os>/` — the executable, the PDF it writes
+and its logs — and its units to `lib/<cpu-os>/` (`<cpu-os>` as FPC names the
+target, e.g. `aarch64-linux`, `x86_64-win64`, `aarch64-darwin`). The Delphi 7
+build keeps its own layout under `bin\d7\`.
 
 A Lazarus installed outside the distribution packages — `fpcupdeluxe`, a
 source build — usually leaves `lazbuild` off `PATH`; use the full path then.

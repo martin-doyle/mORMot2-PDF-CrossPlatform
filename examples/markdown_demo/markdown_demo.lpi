@@ -2,7 +2,7 @@
 <CONFIG>
   <ProjectOptions>
     <Version Value="12"/>
-    <PathDelim Value="\"/>
+    <PathDelim Value="/"/>
     <General>
       <Flags>
         <MainUnitHasCreateFormStatements Value="False"/>
@@ -29,6 +29,14 @@
       <Item2 Name="Release">
         <CompilerOptions>
           <Version Value="11"/>
+          <Target>
+            <Filename Value="bin/$(TargetCPU)-$(TargetOS)/markdown_demo"/>
+          </Target>
+          <SearchPaths>
+            <IncludeFiles Value="$(ProjOutDir)"/>
+            <OtherUnitFiles Value="../../src/core;../../src/platform/windows;../../src/platform/unix;../../src/lib"/>
+            <UnitOutputDirectory Value="lib/$(TargetCPU)-$(TargetOS)"/>
+          </SearchPaths>
           <Parsing>
             <SyntaxOptions>
               <UseAnsiStrings Value="False"/>
@@ -66,8 +74,8 @@
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>
-      <Libraries Value="obj/$(TargetCPU)-$(TargetOS)"/>
       <OtherUnitFiles Value="../../src/core;../../src/platform/windows;../../src/platform/unix;../../src/lib"/>
+      <UnitOutputDirectory Value="lib/$(TargetCPU)-$(TargetOS)"/>
     </SearchPaths>
     <Parsing>
       <SyntaxOptions>

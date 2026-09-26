@@ -2,7 +2,7 @@
 <CONFIG>
   <ProjectOptions>
     <Version Value="12"/>
-    <PathDelim Value="\"/>
+    <PathDelim Value="/"/>
     <General>
       <Flags>
         <MainUnitHasCreateFormStatements Value="False"/>
@@ -19,14 +19,14 @@
       <Item Name="Debug">
         <CompilerOptions>
           <Version Value="11"/>
-          <PathDelim Value="\"/>
+          <PathDelim Value="/"/>
           <Target>
-            <Filename Value="pdf_demo_crossplat"/>
+            <Filename Value="bin/$(TargetCPU)-$(TargetOS)/pdf_demo_crossplat"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
-            <OtherUnitFiles Value="..\..\src\core;..\..\src\platform\unix;..\..\src\platform\windows;..\..\src\lib"/>
-            <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
+            <OtherUnitFiles Value="../../src/core;../../src/platform/unix;../../src/platform/windows;../../src/lib"/>
+            <UnitOutputDirectory Value="lib/$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
           <Parsing>
             <SyntaxOptions>
@@ -54,14 +54,14 @@
       <Item Name="Release">
         <CompilerOptions>
           <Version Value="11"/>
-          <PathDelim Value="\"/>
+          <PathDelim Value="/"/>
           <Target>
-            <Filename Value="bin\$(TargetCPU)-$(TargetOS)\pdf_demo_crossplat"/>
+            <Filename Value="bin/$(TargetCPU)-$(TargetOS)/pdf_demo_crossplat"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
-            <OtherUnitFiles Value="..\..\src\core;..\..\src\platform\unix;..\..\src\platform\windows;..\..\src\lib"/>
-            <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
+            <OtherUnitFiles Value="../../src/core;../../src/platform/unix;../../src/platform/windows;../../src/lib"/>
+            <UnitOutputDirectory Value="lib/$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
           <CodeGeneration>
             <SmartLinkUnit Value="True"/>
@@ -104,14 +104,14 @@
   </ProjectOptions>
   <CompilerOptions>
     <Version Value="11"/>
-    <PathDelim Value="\"/>
+    <PathDelim Value="/"/>
     <Target>
-      <Filename Value="bin\$(TargetCPU)-$(TargetOS)\pdf_demo_crossplat"/>
+      <Filename Value="bin/$(TargetCPU)-$(TargetOS)/pdf_demo_crossplat"/>
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>
-      <OtherUnitFiles Value="..\..\src\core;..\..\src\platform\unix;..\..\src\platform\windows;..\..\src\lib"/>
-      <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
+      <OtherUnitFiles Value="../../src/core;../../src/platform/unix;../../src/platform/windows;../../src/lib"/>
+      <UnitOutputDirectory Value="lib/$(TargetCPU)-$(TargetOS)"/>
     </SearchPaths>
     <CodeGeneration>
       <Optimizations>

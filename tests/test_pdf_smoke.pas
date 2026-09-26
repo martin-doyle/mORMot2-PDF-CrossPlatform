@@ -944,7 +944,8 @@ var
   s: RawByteString;
 begin
   { tagged Latin, CJK and shaped Arabic through layer 1 alone - the output
-    Delphi and FPC have to agree on (R-19); the file is kept in WorkDir }
+    Delphi and FPC have to agree on (R-19); the file is kept in WorkDir,
+    next to the executable }
   Stream := TMemoryStream.Create;
   try
     PDF := TPdfDocument.Create(false, 0, pdfaNone);

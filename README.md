@@ -238,7 +238,7 @@ lazbuild examples/mormot_demo/mormot_demo.lpi -B
 lazbuild examples/zugferd_demo/zugferd_demo.lpi -B
 
 # Test suite
-lazbuild tests/test_runner.lpi -B && tests/bin/test_runner
+lazbuild tests/test_runner.lpi -B && tests/bin/<cpu-os>/test_runner
 ```
 
 **Delphi 7** (Win32, layer 1) builds from the command line. `MORMOT2` points to

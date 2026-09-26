@@ -2,7 +2,7 @@
 <CONFIG>
   <ProjectOptions>
     <Version Value="12"/>
-    <PathDelim Value="\"/>
+    <PathDelim Value="/"/>
     <General>
       <Flags>
         <CompatibilityMode Value="True"/>
@@ -65,11 +65,12 @@
   <CompilerOptions>
     <Version Value="11"/>
     <Target>
-      <Filename Value="bin/test_runner"/>
+      <Filename Value="bin/$(TargetCPU)-$(TargetOS)/test_runner"/>
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>
       <OtherUnitFiles Value="../src/core;../src/platform/windows;../src/platform/unix;../src/lib"/>
+      <UnitOutputDirectory Value="lib/$(TargetCPU)-$(TargetOS)"/>
     </SearchPaths>
     <Parsing>
       <SyntaxOptions>
