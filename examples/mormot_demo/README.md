@@ -33,5 +33,15 @@ above the executable. The sample database with the orders is not versioned
 placeholder row "No orders available". The `data/` folder itself has to exist:
 a fresh clone has none, and the demo then stops with runtime error 217.
 
+The sample database is `Project10.db` in
+[mORMot2-Examples/10-InvoiceExample/Data](https://github.com/martin-doyle/mORMot2-Examples/tree/main/10-InvoiceExample/Data);
+save it as `data/mormot_demo.db`:
+
+```bash
+mkdir -p data
+curl -L -o data/mormot_demo.db \
+  https://raw.githubusercontent.com/martin-doyle/mORMot2-Examples/main/10-InvoiceExample/Data/Project10.db
+```
+
 **Status:** runs; checked on Linux with `--export` (2026-09-26), both with the
 sample database (5 pages) and with an empty one (1 page).
