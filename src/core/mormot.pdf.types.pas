@@ -22,15 +22,12 @@ unit mormot.pdf.types;
 
 interface
 
+{$I mormot.defines.inc}
+
 uses
   SysUtils,
   mormot.core.base,
   mormot.core.unicode;
-
-{$ifdef FPC}
-  {$mode delphi}
-  {$H+} // the mode switch after uses does not take effect: string would be ShortString
-{$endif FPC}
 
 const
   /// PDF standard Type 1 font names — supported by all PDF readers without embedding
