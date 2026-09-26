@@ -20,10 +20,10 @@ export from the form in `uMainForm.pas`.
 **Build and run**
 
 ```bash
-lazbuild mormot_report_demo.lpi -B
-bin/<target>/report_demo_crossplat                    # GUI
-bin/<target>/report_demo_crossplat --export           # batch -> report_demo_<os>.pdf, next to the executable
-bin/<target>/report_demo_crossplat --export out.pdf   # batch to a file of your choice
+lazbuild report_demo.lpi -B
+bin/<target>/report_demo                    # GUI
+bin/<target>/report_demo --export           # batch -> report_demo_<os>.pdf, next to the executable
+bin/<target>/report_demo --export out.pdf   # batch to a file of your choice
 ```
 
 The batch mode still needs a display, because `TGDIPages` is an LCL control —

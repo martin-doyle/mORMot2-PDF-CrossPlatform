@@ -11,7 +11,7 @@
         <CompatibilityMode Value="True"/>
       </Flags>
       <SessionStorage Value="InProjectDir"/>
-      <Title Value="Phase 5 Markdown-Style Formatting Demo"/>
+      <Title Value="markdown_demo"/>
       <ResourceType Value="res"/>
       <UseXPManifest Value="True"/>
       <XPManifest>
@@ -22,7 +22,7 @@
       <UseVersionInfo Value="True"/>
       <MajorVersionNr Value="1"/>
       <RevisionNr Value="1"/>
-      <StringTable ProductName="markdown_demo" FileDescription="Phase 5 Markdown-Style Formatting Demonstration" LegalCopyright="(c) 2026" Comments="Demonstrates H1-H6 headings, inline formatting, and PDF bookmarks"/>
+      <StringTable ProductName="markdown_demo" FileDescription="Semantic document layout" LegalCopyright="(c) 2026"/>
     </VersionInfo>
     <BuildModes Count="2">
       <Item1 Name="Debug" Default="True"/>

@@ -221,7 +221,7 @@ Full guide: [docs/DEMOS.md](docs/DEMOS.md)
 ```bash
 # Windows
 "C:\lazarus\lazbuild.exe" examples/pdf_demo/pdf_demo_crossplat.lpi -B
-"C:\lazarus\lazbuild.exe" examples/report_demo/mormot_report_demo.lpi -B
+"C:\lazarus\lazbuild.exe" examples/report_demo/report_demo.lpi -B
 "C:\lazarus\lazbuild.exe" examples/markdown_demo/markdown_demo.lpi -B
 "C:\lazarus\lazbuild.exe" examples/mormot_demo/mormot_demo.lpi -B
 "C:\lazarus\lazbuild.exe" examples/chinese_demo/chinese_demo.lpi -B
@@ -233,7 +233,7 @@ lazbuild examples/pdf_demo/pdf_demo_crossplat.lpi -B
 lazbuild examples/markdown_demo/markdown_demo.lpi -B
 lazbuild examples/chinese_demo/chinese_demo.lpi -B
 lazbuild examples/rtl_demo/rtl_demo.lpi -B
-lazbuild examples/report_demo/mormot_report_demo.lpi -B
+lazbuild examples/report_demo/report_demo.lpi -B
 lazbuild examples/mormot_demo/mormot_demo.lpi -B
 lazbuild examples/zugferd_demo/zugferd_demo.lpi -B
 
@@ -258,7 +258,7 @@ The two GUI demos also export without their window, which is what the
 automated checks use:
 
 ```bash
-examples/report_demo/bin/<target>/report_demo_crossplat --export report.pdf
+examples/report_demo/bin/<target>/report_demo --export report.pdf
 ```
 
 `TGDIPages` is an LCL control, so on Linux/GTK2 this still needs a display —

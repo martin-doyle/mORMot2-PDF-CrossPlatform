@@ -8,9 +8,9 @@
 // - TTableLayout with DrawTableHeader/DrawTableRow/DrawTableFooter produces a
 //   real Table > THead|TBody|TFoot structure; the totals line is the TFoot row
 // - SetHeader/SetFooter repeat on continuation pages and are tagged as artifacts
-// - mormot_report_demo --export <file.pdf> builds and exports without showing
+// - report_demo --export <file.pdf> builds and exports without showing
 //   the window; TGDIPages is an LCL control, so this still needs a display
-program mormot_report_demo;
+program report_demo;
 
 {$mode objfpc}{$H+}
 
@@ -32,7 +32,7 @@ begin
   Application.Scaled:=True;
   Application.Initialize;
   Application.CreateForm(TMainForm, MainForm);
-  // mormot_report_demo --export <file.pdf>: build and export, then quit
+  // report_demo --export <file.pdf>: build and export, then quit
   if BatchExportFile(PdfFile) then
   begin
     MainForm.ExportToFile(PdfFile);

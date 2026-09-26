@@ -11,7 +11,7 @@ unit uMainForm;
     - Graphical elements (lines, rectangles)
     - Tagged PDF export (PDF/UA): headings, bookmarks, table structure
     - Print preview (Windows: native; Linux/macOS: PDF viewer)
-    - Batch export without the GUI:  mormot_report_demo --export out.pdf
+    - Batch export without the GUI:  report_demo --export out.pdf
   ============================================================ }
 
 interface
@@ -462,7 +462,7 @@ begin
 end;
 
 { ============================================================
-  Batch mode:  mormot_report_demo --export <file.pdf>
+  Batch mode:  report_demo --export <file.pdf>
   - builds and exports the same report as the GUI action, without showing
     the window, so the demo can be checked automatically (PDF size, pdffonts,
     rendering) like the console demos

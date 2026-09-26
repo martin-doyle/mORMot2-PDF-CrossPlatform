@@ -33,6 +33,8 @@ uses
   mormot.ui.pdfcanvas,
   mormot.ui.report;
 
+{$R *.res}
+
 const
   {$ifdef MSWINDOWS}
   CJK_FONT = 'Microsoft YaHei';

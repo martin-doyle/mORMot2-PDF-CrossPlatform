@@ -44,6 +44,8 @@ uses
   mormot.ui.pdfcanvas,
   mormot.ui.report;
 
+{$R *.res}
+
 const
   {$ifdef MSWINDOWS}
   ARABIC_FONT = 'Tahoma';

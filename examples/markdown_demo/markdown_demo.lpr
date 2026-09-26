@@ -29,6 +29,8 @@ uses
   mormot.core.unicode,
   mormot.ui.report;
 
+{$R *.res}
+
 type
   { Page rendering configuration }
   TPageConfig = record
@@ -185,13 +187,13 @@ begin
   Report.DrawHeading(1, 'Markdown-Style Formatting Demo');
 
   Report.DrawParagraph(
-    'This document showcases all Phase 5 formatting features: headings, inline styles, and structured content.');
+    'This document shows the formatting features of TGDIPages: headings, inline styles, and structured content.');
 
   { === H2: Introduction === }
   Report.DrawHeading(2, 'Introduction');
 
   Report.DrawParagraph(
-    'Phase 5 adds comprehensive Markdown-style formatting to TGDIPages, including 6-level headings with automatic PDF bookmarks, inline formatting for emphasis, and structured document elements.');
+    'TGDIPages offers Markdown-style formatting, including 6-level headings with automatic PDF bookmarks, inline formatting for emphasis, and structured document elements.');
 
   { === H2: Heading Levels === }
   Report.DrawHeading(2, 'Heading Levels (H1 through H6)');
@@ -323,7 +325,7 @@ begin
 
   { === Footer Caption === }
   Report.DrawCaption(
-    Format('Page: %s — Demonstrates Phase 5 Markdown-style formatting with automatic spacing.', [Config.PageLabel]));
+    Format('Page: %s — Markdown-style formatting with automatic spacing.', [Config.PageLabel]));
 end;
 
 { <demo>_<os>.pdf next to the executable: the runs of all platforms can then

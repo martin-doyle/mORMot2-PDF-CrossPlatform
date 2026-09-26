@@ -8,9 +8,9 @@ tagged output passes PAC 2024 with accepted warnings only (W-1, a Figure in
 `pdf_demo`; W-2, e-mail addresses without links in `zugferd_demo`) and veraPDF
 `ua1`. PDF/A-3U with PDF/UA-1 is verified (R-17). Fonts are embedded and subset
 on all three platforms; tables carry `THead`/`TBody`/`TFoot` row groups. All
-three platforms build with FPC; `test_runner` is green with 227 assertions on
+three platforms build with FPC; `test_runner` is green with 229 assertions on
 Windows, 288 on macOS and 268 on Linux (re-run on 2026-09-26).
-**Layer 1 builds on Delphi 7** (R-19, done): 123 assertions on Win32, and the
+**Layer 1 builds on Delphi 7** (R-19, done): 125 assertions on Win32, and the
 tagged Unicode test file passes PAC 2024 and veraPDF `ua1` from Delphi 7/Win32
 and FPC/Win64 alike. The macOS run found a heap-dependent `.ttc` defect in the
 FreeType backend, fixed (`fonts.md` §3). The Linux re-run is done up to
@@ -177,7 +177,7 @@ The `///` API documentation inherited from the original mORMot2 units stays.
 
 ### V — Verification Outstanding
 
-All three platforms build and pass `test_runner` (227 assertions on Windows,
+All three platforms build and pass `test_runner` (229 assertions on Windows,
 288 on macOS, 268 on Linux). The tagged demos pass veraPDF `ua1`
 106/106 on all three and PAC 2024 — measured again on 2026-09-26 for the
 Windows and macOS files, `zugferd_demo` also `3u` 148/148 and Mustang. That was the stated gate for a first version tag, and

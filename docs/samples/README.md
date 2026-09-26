@@ -13,6 +13,6 @@ Regenerate:
 
 ```bash
 lazbuild examples/pdf_demo/pdf_demo_crossplat.lpi -B && (cd examples/pdf_demo && ./bin/<target>/pdf_demo_crossplat)
-lazbuild examples/report_demo/mormot_report_demo.lpi -B
-examples/report_demo/bin/<target>/report_demo_crossplat --export report_demo_linux_r14.pdf
+lazbuild examples/report_demo/report_demo.lpi -B
+examples/report_demo/bin/<target>/report_demo --export report_demo_linux_r14.pdf
 ```

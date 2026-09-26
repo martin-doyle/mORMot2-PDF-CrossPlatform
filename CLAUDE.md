@@ -83,7 +83,7 @@ examples/
   (each demo folder carries a short README.md; the source header of its .lpr
    says the same thing in two sentences)
 tests/
-  test_runner.lpr              runs every suite below (green: 227 assertions on Windows with FPC, 123 with Delphi 7 — layer 1 suites only; 288 on macOS; 268 on Linux — the rest are skips)
+  test_runner.lpr              runs every suite below (green: 229 assertions on Windows with FPC, 125 with Delphi 7 — layer 1 suites only; 288 on macOS; 268 on Linux — the rest are skips)
   test_defines.inc             PDF_HASVCLCANVAS: the TCanvas bridge suites (FPC until R-20)
   build_delphi7.bat            dcc32 build of one project (R-19); delphi7_core.dpr is the core compile guard
   test_pdf_crossplatform.pas   platform backend, text shaper, TTC extraction
@@ -234,7 +234,7 @@ Details on interfaces and registration: `.claude/skills/platform-backends.md`
 ```bash
 # Windows:
 "C:\lazarus\lazbuild.exe" examples/pdf_demo/pdf_demo_crossplat.lpi -B
-"C:\lazarus\lazbuild.exe" examples/report_demo/mormot_report_demo.lpi -B
+"C:\lazarus\lazbuild.exe" examples/report_demo/report_demo.lpi -B
 "C:\lazarus\lazbuild.exe" examples/markdown_demo/markdown_demo.lpi -B
 "C:\lazarus\lazbuild.exe" examples/mormot_demo/mormot_demo.lpi -B
 "C:\lazarus\lazbuild.exe" examples/chinese_demo/chinese_demo.lpi -B
@@ -248,7 +248,7 @@ lazbuild examples/pdf_demo/pdf_demo_crossplat.lpi -B
 lazbuild examples/markdown_demo/markdown_demo.lpi -B
 lazbuild examples/chinese_demo/chinese_demo.lpi -B
 lazbuild examples/rtl_demo/rtl_demo.lpi -B
-lazbuild examples/report_demo/mormot_report_demo.lpi -B
+lazbuild examples/report_demo/report_demo.lpi -B
 lazbuild examples/mormot_demo/mormot_demo.lpi -B
 lazbuild examples/zugferd_demo/zugferd_demo.lpi -B
 lazbuild tests/test_runner.lpi -B && tests/bin/<cpu-os>/test_runner
@@ -279,7 +279,7 @@ version` for the prebuilt mORMot2 units — noise, not an error. See
 `docs/ROADMAP.md` (Working Method).
 
 The two GUI demos export without their window, which is how they are checked:
-`report_demo_crossplat --export out.pdf`. On Linux/GTK2 this still needs a
+`report_demo --export out.pdf`. On Linux/GTK2 this still needs a
 display (`xvfb-run` otherwise); on macOS Cocoa runs it headless.
 
 ## Open Items
@@ -298,7 +298,7 @@ display (`xvfb-run` otherwise); on macOS Cocoa runs it headless.
 - **Links in tagged output**: no `Link` role, `OBJR` or `/StructParent` for annotations — `CreateHyperLink` in tagged output fails veraPDF `ua1` on four 7.18 rules (measured). `TGDIPages.DrawLink` draws link-styled text as a `Span` and drops the URL: conformant, not clickable (roadmap R-18, only on request)
 - **Delphi** (R-19 done, R-21, R-20): layer 1 — `mormot.pdf.types`,
   `mormot.ui.pdf`, GDI backend, Uniscribe — builds on Delphi 7, Win32;
-  `test_runner` green with 123 assertions (the layer 1 suites), and the tagged
+  `test_runner` green with 125 assertions (the layer 1 suites), and the tagged
   Unicode test file passes PAC 2024 and veraPDF `ua1` from both compilers. R-21, before R-20 —
   `{$I mormot.defines.inc}` in every unit instead of a bare `{$mode}`.
   R-20, priority 2: the TCanvas bridge — `TPdfVclCanvas` relies on

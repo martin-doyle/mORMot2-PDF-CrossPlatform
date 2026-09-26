@@ -228,7 +228,7 @@ Vollständige Anleitung: [docs/DEMOS.md](docs/DEMOS.md)
 ```bash
 # Windows
 "C:\lazarus\lazbuild.exe" examples/pdf_demo/pdf_demo_crossplat.lpi -B
-"C:\lazarus\lazbuild.exe" examples/report_demo/mormot_report_demo.lpi -B
+"C:\lazarus\lazbuild.exe" examples/report_demo/report_demo.lpi -B
 "C:\lazarus\lazbuild.exe" examples/markdown_demo/markdown_demo.lpi -B
 "C:\lazarus\lazbuild.exe" examples/mormot_demo/mormot_demo.lpi -B
 "C:\lazarus\lazbuild.exe" examples/chinese_demo/chinese_demo.lpi -B
@@ -240,7 +240,7 @@ lazbuild examples/pdf_demo/pdf_demo_crossplat.lpi -B
 lazbuild examples/markdown_demo/markdown_demo.lpi -B
 lazbuild examples/chinese_demo/chinese_demo.lpi -B
 lazbuild examples/rtl_demo/rtl_demo.lpi -B
-lazbuild examples/report_demo/mormot_report_demo.lpi -B
+lazbuild examples/report_demo/report_demo.lpi -B
 lazbuild examples/mormot_demo/mormot_demo.lpi -B
 lazbuild examples/zugferd_demo/zugferd_demo.lpi -B
 
@@ -266,7 +266,7 @@ Die beiden GUI-Demos exportieren auch ohne Fenster — so laufen die
 automatisierten Prüfungen:
 
 ```bash
-examples/report_demo/bin/<target>/report_demo_crossplat --export report.pdf
+examples/report_demo/bin/<target>/report_demo --export report.pdf
 ```
 
 `TGDIPages` ist ein LCL-Control, daher wird unter Linux/GTK2 trotzdem ein

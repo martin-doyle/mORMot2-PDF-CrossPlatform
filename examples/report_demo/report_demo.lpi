@@ -28,7 +28,7 @@
         <CompilerOptions>
           <Version Value="11"/>
           <Target>
-            <Filename Value="bin/$(TargetCPU)-$(TargetOS)/report_demo_crossplat"/>
+            <Filename Value="bin/$(TargetCPU)-$(TargetOS)/report_demo"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
@@ -60,7 +60,7 @@
     </RequiredPackages>
     <Units Count="2">
       <Unit0>
-        <Filename Value="mormot_report_demo.lpr"/>
+        <Filename Value="report_demo.lpr"/>
         <IsPartOfProject Value="True"/>
       </Unit0>
       <Unit1>
@@ -75,7 +75,7 @@
   <CompilerOptions>
     <Version Value="11"/>
     <Target>
-      <Filename Value="bin/$(TargetCPU)-$(TargetOS)/report_demo_crossplat"/>
+      <Filename Value="bin/$(TargetCPU)-$(TargetOS)/report_demo"/>
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>

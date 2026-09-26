@@ -11,7 +11,7 @@
         <CompatibilityMode Value="True"/>
       </Flags>
       <SessionStorage Value="InProjectDir"/>
-      <Title Value="RTL Single Character Test"/>
+      <Title Value="rtl_demo"/>
       <ResourceType Value="res"/>
       <UseXPManifest Value="True"/>
       <XPManifest>
@@ -22,7 +22,7 @@
       <UseVersionInfo Value="True"/>
       <MajorVersionNr Value="1"/>
       <RevisionNr Value="1"/>
-      <StringTable ProductName="rtl_demo" FileDescription="RTL Single Character Test (Arabic CMAP)" LegalCopyright="(c) 2026" Comments="Verifies Arabic U+0628 CMAP lookup in TPdfDocumentVcl; same fix needed as CJK."/>
+      <StringTable ProductName="rtl_demo" FileDescription="Arabic RTL and shaping" LegalCopyright="(c) 2026"/>
     </VersionInfo>
     <BuildModes Count="2">
       <Item1 Name="Debug" Default="True"/>

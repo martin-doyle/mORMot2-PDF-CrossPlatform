@@ -208,17 +208,17 @@ end;
 **File structure:**
 ```
 examples/report_demo/
-  mormot_report_demo.lpi    Lazarus project
-  uMainForm.pas             Main form with preview + export
+  report_demo.lpi    Lazarus project
+  uMainForm.pas      Main form with preview + export
 ```
 
 **Build & run:**
 ```bash
-"C:\lazarus\lazbuild.exe" examples/report_demo/mormot_report_demo.lpi -B
-examples/report_demo/bin/x86_64-win64/report_demo_crossplat.exe
+"C:\lazarus\lazbuild.exe" examples/report_demo/report_demo.lpi -B
+examples/report_demo/bin/x86_64-win64/report_demo.exe
 
 # batch export, without the GUI - for automated checks (pdffonts, rendering):
-examples/report_demo/bin/aarch64-linux/report_demo_crossplat --export            # -> report_demo_<os>.pdf
+examples/report_demo/bin/aarch64-linux/report_demo --export   # -> report_demo_<os>.pdf
 ```
 
 The batch mode still needs a display, because `TGDIPages` is an LCL control;
