@@ -26,6 +26,9 @@ as with FPC. Page 1 holds text and a figure, page 2 a table.
   before the table. Text needs `BeginArtifact`/`EndArtifact`, like the footer
 - the file name carries OS, CPU and compiler, so the FPC and Delphi 7 files
   can lie in one folder for checking
+- PAC 2024 passes both Windows files and keeps one hint, "possibly
+  inappropriate use of figure". It comes with every Figure, path or image,
+  and is accepted (roadmap W-1)
 - no image: `mormot.pdf.fpimage` is FPC-only, and the demo keeps to what both
   compilers share
 

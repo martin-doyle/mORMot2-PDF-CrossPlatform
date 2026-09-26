@@ -4,8 +4,8 @@ Open work only. Finished work is in the git history, and the technical knowledge
 it produced in `.claude/skills/` — this file repeats neither.
 
 **State on 2026-09-26.** The engine is cross-platform, writes PDF 1.7, and its
-tagged output passes PAC 2024 with accepted warnings only (W-1, a Figure in
-`pdf_demo`; W-2, e-mail addresses without links in `zugferd_demo`) and veraPDF
+tagged output passes PAC 2024 with accepted warnings only (W-1, a hint on
+every Figure; W-2, e-mail addresses without links in `zugferd_demo`) and veraPDF
 `ua1`. PDF/A-3U with PDF/UA-1 is verified (R-17). Fonts are embedded and subset
 on all three platforms; tables carry `THead`/`TBody`/`TFoot` row groups. All
 three platforms build with FPC; `test_runner` is green with 237 assertions on
@@ -174,7 +174,10 @@ veraPDF had not flagged it. The cut now needs a `.` before the digits;
 `TestZeroRealIsWritten` fails 2/2 without it. 237 (FPC/Win64) and 127
 (Delphi 7) assertions green.
 
-**Open:** PAC and veraPDF `ua1` on both files; the build on Linux and macOS.
+**PAC 2024, 2026-09-26:** both Windows files (FPC/Win64, Delphi 7) pass, with
+the Figure hint W-1 only.
+
+**Open:** veraPDF `ua1` on both files; the build on Linux and macOS.
 
 **For R-20:** the reference. A page drawn through the bridge under Delphi has
 to give the same text and structure as the same page through layer 1.
@@ -320,6 +323,25 @@ whose point is to make the Windows unit available elsewhere. A-1 is not
 obsolete — an archive demanding A-1 rejects A-3 precisely because A-3 permits
 arbitrary attachments. Say in the documentation which levels are verified
 instead.
+
+### W-1 — "Possibly Inappropriate Use of Figure" — accepted
+
+PAC 2024 passes, but keeps the hint "Possibly inappropriate use of figure
+structure element" on every `Figure` this engine writes — `pdf_demo` and
+`layer1_demo` alike. Not caused by text in the figure (`pdf_demo` keeps it
+without), nor by drawing it as vector paths.
+
+**Measured 2026-09-26 (PAC 2024, Windows),** one tagged page each, same `/Alt`:
+
+| Variant | Hint | Error |
+|---|---|---|
+| no Figure | — | — |
+| one filled rectangle as a path, with `/BBox` | yes | — |
+| the same rectangle as an image XObject, with `/BBox` | yes | — |
+| the path under a CTM, so no `/BBox` | yes | "no bounding box" (B-13) |
+
+So the hint comes with any Figure, path or image, with or without `/BBox`.
+Accepted; not investigated further.
 
 ### W-2 — E-Mail Addresses Without a Link Element (`zugferd_demo`) — accepted
 
