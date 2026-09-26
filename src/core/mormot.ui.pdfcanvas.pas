@@ -26,9 +26,7 @@ unit mormot.ui.pdfcanvas;
 
 interface
 
-{$ifdef FPC}
-  {$mode delphi}
-{$endif FPC}
+{$I mormot.defines.inc}
 
 uses
   SysUtils,
