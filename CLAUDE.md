@@ -80,10 +80,11 @@ examples/
   chinese_demo/       Demo 5 — CJK text, subset embedding (console)
   rtl_demo/           Demo 6 — Arabic RTL, HarfBuzz/Uniscribe shaping (console)
   zugferd_demo/       Demo 7 — PDF/A-3U + PDF/UA-1, ZUGFeRD/Factur-X invoice with embedded XML (console)
+  layer1_demo/        Demo 8 — TPdfDocument/TPdfCanvas alone, tagged; FPC and Delphi 7 (console)
   (each demo folder carries a short README.md; the source header of its .lpr
    says the same thing in two sentences)
 tests/
-  test_runner.lpr              runs every suite below (green: 235 assertions on Windows with FPC, 125 with Delphi 7 — layer 1 suites only; 294 on macOS; 268 on Linux before R-21, 274 expected — the rest are skips)
+  test_runner.lpr              runs every suite below (green: 237 assertions on Windows with FPC, 127 with Delphi 7 — layer 1 suites only; 294 on macOS; 268 on Linux before R-21 — both +2 since the zero-real test — the rest are skips)
   test_defines.inc             PDF_HASVCLCANVAS: the TCanvas bridge suites (FPC until R-20)
   build_delphi7.bat            dcc32 build of one project (R-19); delphi7_core.dpr is the core compile guard
   test_pdf_crossplatform.pas   platform backend, text shaper, TTC extraction
@@ -96,7 +97,7 @@ tests/
 reference/
   mormot.ui.pdf.pas   Original Windows/GDI file (12,514 lines, reference only)
 docs/
-  DEMOS.md            Learning path: the 7 demos step by step
+  DEMOS.md            Learning path: the 8 demos step by step
   API_REFERENCE.md    TCanvas methods, TReportFormat, TTableLayout
   ROADMAP.md          Open work in detail, completed work as one line each
 .claude/skills/
@@ -127,7 +128,7 @@ GDI (Windows)  /  FreeType2 (Linux/macOS)
 For all execution paths through this architecture: `.claude/skills/call-graph.md`
 For interface and backend details: `.claude/skills/platform-backends.md`
 
-## The 7 Demos
+## The 8 Demos
 
 | Demo | API | Type | Highlights |
 |---|---|---|---|
@@ -138,6 +139,7 @@ For interface and backend details: `.claude/skills/platform-backends.md`
 | chinese_demo | `TPdfDocumentVcl` | Console | CJK text, subset embedding |
 | rtl_demo | `TPdfDocumentVcl` | Console | Arabic RTL, HarfBuzz/Uniscribe shaping |
 | zugferd_demo | `TPdfDocumentVcl` | Console | PDF/A-3U + PDF/UA-1, `/AF` attachment, `PdfMetadataFacturX`, third-party invoice XML (KoSIT, Apache-2.0) |
+| layer1_demo | `TPdfDocument` | Console | Layer 1 only, PDF points (Y=0 bottom), tagged H1/H2/P/Figure, UTF-8 via `TextOutW`; the only demo that builds with Delphi 7 |
 
 Detailed description with code examples: `docs/DEMOS.md`
 
@@ -244,6 +246,7 @@ Details on interfaces and registration: `.claude/skills/platform-backends.md`
 "C:\lazarus\lazbuild.exe" examples/chinese_demo/chinese_demo.lpi -B
 "C:\lazarus\lazbuild.exe" examples/rtl_demo/rtl_demo.lpi -B
 "C:\lazarus\lazbuild.exe" examples/zugferd_demo/zugferd_demo.lpi -B
+"C:\lazarus\lazbuild.exe" examples/layer1_demo/layer1_demo.lpi -B
 "C:\lazarus\lazbuild.exe" tests/test_runner.lpi -B
 tests\bin\x86_64-win64\test_runner.exe --noenter
 
@@ -255,11 +258,13 @@ lazbuild examples/rtl_demo/rtl_demo.lpi -B
 lazbuild examples/report_demo/report_demo.lpi -B
 lazbuild examples/mormot_demo/mormot_demo.lpi -B
 lazbuild examples/zugferd_demo/zugferd_demo.lpi -B
+lazbuild examples/layer1_demo/layer1_demo.lpi -B
 lazbuild tests/test_runner.lpi -B && tests/bin/<cpu-os>/test_runner
 
 # Delphi 7 (Win32, layer 1 only) — MORMOT2 must point to the mORMot2 checkout:
 tests\build_delphi7.bat tests\test_runner.lpr
 bin\d7\test_runner\test_runner.exe --noenter
+tests\build_delphi7.bat examples\layer1_demo\layer1_demo.lpr
 ```
 
 On Windows every test runner waits for Enter at the end unless it gets a
@@ -302,11 +307,12 @@ display (`xvfb-run` otherwise); on macOS Cocoa runs it headless.
 - **Links in tagged output**: no `Link` role, `OBJR` or `/StructParent` for annotations — `CreateHyperLink` in tagged output fails veraPDF `ua1` on four 7.18 rules (measured). `TGDIPages.DrawLink` draws link-styled text as a `Span` and drops the URL: conformant, not clickable (roadmap R-18, only on request)
 - **Delphi** (R-19 done, R-21, R-23, R-20): layer 1 — `mormot.pdf.types`,
   `mormot.ui.pdf`, GDI backend, Uniscribe — builds on Delphi 7, Win32;
-  `test_runner` green with 125 assertions (the layer 1 suites), and the tagged
+  `test_runner` green with 127 assertions (the layer 1 suites), and the tagged
   Unicode test file passes PAC 2024 and veraPDF `ua1` from both compilers. R-21 done on
   Windows and macOS: `{$I mormot.defines.inc}` in every unit; the Linux
-  assertion count is to record. R-23
-  next: a console demo on layer 1 alone, the first demo that builds on Delphi 7.
+  assertion count is to record. R-23:
+  `layer1_demo`, the first demo that builds on Delphi 7 — built and compared
+  on Windows, PAC/veraPDF and the other platforms open.
   R-20, priority 2: the TCanvas bridge — `TPdfVclCanvas` relies on
   `override`, but Delphi 7's `TCanvas` drawing methods are static, so a call
   through a `TCanvas` reference bypasses the bridge. Never put `mORMot2/src/ui`

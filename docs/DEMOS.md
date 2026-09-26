@@ -1,8 +1,9 @@
-# Learning Path — The 7 Demos
+# Learning Path — The 8 Demos
 
-The seven demos show the framework from bottom to top: from the direct PDF API up to database-driven report generation, and then into specialised scripts. Each of the first four demos builds on the previous one.
+The eight demos show the framework from bottom to top: from the direct PDF API up to database-driven report generation, and then into specialised scripts. Each of the first four demos builds on the previous one. Demo 8 goes one layer below Demo 1, to the API that also builds with Delphi 7.
 
 ```
+Demo 8 — layer1_demo      TPdfDocument / TPdfCanvas alone, FPC and Delphi 7
 Demo 7 — zugferd_demo     PDF/A-3U + PDF/UA-1 hybrid e-invoice (ZUGFeRD / Factur-X)
 Demo 6 — rtl_demo         Arabic RTL text + HarfBuzz / Uniscribe shaping
 Demo 5 — chinese_demo     CJK (Chinese) text with font subsetting
@@ -655,6 +656,79 @@ examples/zugferd_demo/bin/<target>/zugferd_demo
 
 ---
 
+## Demo 8 — layer1_demo
+
+**The low-level API alone, for FPC and Delphi 7**
+
+Draws one tagged page with `TPdfDocument` and `TPdfCanvas`, without the
+TCanvas bridge and without `TGDIPages`. It is the only demo that builds with
+Delphi 7 (Win32). The other seven need the bridge, which is FPC-only until
+roadmap R-20.
+
+**What you learn:**
+- PDF points, with Y counted from the bottom edge: a text line at Y = 780 is
+  near the top of an A4 page (842 pt), and its Y is the baseline
+- Text in the same encoding on both compilers: UTF-8 in, `Utf8ToSynUnicode`,
+  `TextOutW`. Non-ASCII characters are UTF-8 bytes in a `RawUtf8` constant,
+  never literal characters in the source
+- `GetPdfFonts` from `mormot.pdf.types` gives the platform's faces without the
+  report engine; ask for them after `Tagged := True`
+- With this API you build the structure yourself: `BeginStructContent` for
+  `H1`/`H2`/`P`, a `Figure` with alternate text, and `CreateOutline` for
+  every heading
+- Artifacts: a path outside any element becomes one by itself; text such as
+  a running footer needs `BeginArtifact`/`EndArtifact`
+
+**Core pattern:**
+
+```pascal
+uses
+  mormot.core.base, mormot.core.unicode, mormot.pdf.types,
+  {$ifdef OSWINDOWS} mormot.pdf.gdi, {$else} mormot.pdf.freetype, {$endif}
+  mormot.ui.pdf;
+
+procedure DrawText(C: TPdfCanvas; X, Y: single; const Text: RawUtf8);
+var W: SynUnicode;
+begin
+  W := Utf8ToSynUnicode(Text);
+  C.TextOutW(X, Y, pointer(W));
+end;
+
+var Doc: TPdfDocument; Sans, Serif, Mono: string;
+begin
+  Doc := TPdfDocument.Create(true);       // with outlines
+  Doc.Tagged := True;
+  Doc.Info.Title := 'mORMot2 PDF Layer 1 Demo';
+  GetPdfFonts(Doc.EmbeddedTTF, Sans, Serif, Mono);
+  Doc.AddPage;
+  Doc.Canvas.BeginStructContent(psrH1);
+  Doc.Canvas.SetFont(StringToUtf8(Sans), 22, [pfsBold], 1); // 1 = DEFAULT_CHARSET
+  DrawText(Doc.Canvas, 56, 780, 'TPdfDocument and TPdfCanvas');
+  Doc.Canvas.EndStructContent;
+  Doc.CreateOutline('TPdfDocument and TPdfCanvas', 1, 780 + 22);
+  Doc.Canvas.BeginStructContent(psrFigure, 'Bar chart with four bars ...');
+  Doc.Canvas.Rectangle(76, 330, 50, 64);  // x, y (bottom), width, height
+  Doc.Canvas.Fill;
+  Doc.Canvas.EndStructContent;
+  Doc.SaveToFile(PdfFileName); // layer1_demo_<os>.pdf
+  Doc.Free;
+end;
+```
+
+**Output:** `layer1_demo_<os>.pdf` (1 page). The FPC/Win64 and the Delphi
+7/Win32 files give the same `pdftotext` output, fonts and structure tree.
+
+**Build & run:**
+```bash
+lazbuild examples/layer1_demo/layer1_demo.lpi -B
+examples/layer1_demo/bin/<target>/layer1_demo
+# Delphi 7, MORMOT2 set to the mORMot2 checkout:
+tests\build_delphi7.bat examples\layer1_demo\layer1_demo.lpr
+bin\d7\layer1_demo\layer1_demo.exe
+```
+
+---
+
 ## Summary: API Layers
 
 | Demo | Class | Coordinates | Dependency |
@@ -666,3 +740,4 @@ examples/zugferd_demo/bin/<target>/zugferd_demo
 | 5 chinese_demo | `TPdfDocumentVcl` | pixels, Y=0 top | mORMot2 + LCL + CJK font |
 | 6 rtl_demo | `TPdfDocumentVcl` | pixels, Y=0 top | mORMot2 + LCL + Arabic font + HarfBuzz (Linux/macOS) |
 | 7 zugferd_demo | `TPdfDocumentVcl` | pixels, Y=0 top | mORMot2 + LCL |
+| 8 layer1_demo | `TPdfDocument` | PDF points, Y=0 bottom | mORMot2 + LCL (FPC) or VCL (Delphi 7) |

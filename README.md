@@ -200,7 +200,7 @@ Doc.PdfAMetadaExtension := PdfMetadataFacturX('EN 16931');
 
 ---
 
-## The 7 demos (learning path)
+## The 8 demos (learning path)
 
 | Demo | API | What it shows |
 |---|---|---|
@@ -211,6 +211,7 @@ Doc.PdfAMetadaExtension := PdfMetadataFacturX('EN 16931');
 | [chinese_demo](examples/chinese_demo/) | `TPdfDocumentVcl` | CJK text, subset embedding |
 | [rtl_demo](examples/rtl_demo/) | `TPdfDocumentVcl` | Arabic RTL, HarfBuzz / Uniscribe shaping |
 | [zugferd_demo](examples/zugferd_demo/) | `TPdfDocumentVcl` | PDF/A-3U + PDF/UA-1, ZUGFeRD / Factur-X invoice with embedded XML |
+| [layer1_demo](examples/layer1_demo/) | `TPdfDocument` | The low-level API alone: tagged H1/H2/P/Figure in PDF points; builds with FPC and Delphi 7 |
 
 Full guide: [docs/DEMOS.md](docs/DEMOS.md)
 
@@ -227,6 +228,7 @@ Full guide: [docs/DEMOS.md](docs/DEMOS.md)
 "C:\lazarus\lazbuild.exe" examples/chinese_demo/chinese_demo.lpi -B
 "C:\lazarus\lazbuild.exe" examples/rtl_demo/rtl_demo.lpi -B
 "C:\lazarus\lazbuild.exe" examples/zugferd_demo/zugferd_demo.lpi -B
+"C:\lazarus\lazbuild.exe" examples/layer1_demo/layer1_demo.lpi -B
 
 # Linux/macOS
 lazbuild examples/pdf_demo/pdf_demo_crossplat.lpi -B
@@ -236,6 +238,7 @@ lazbuild examples/rtl_demo/rtl_demo.lpi -B
 lazbuild examples/report_demo/report_demo.lpi -B
 lazbuild examples/mormot_demo/mormot_demo.lpi -B
 lazbuild examples/zugferd_demo/zugferd_demo.lpi -B
+lazbuild examples/layer1_demo/layer1_demo.lpi -B
 
 # Test suite
 lazbuild tests/test_runner.lpi -B && tests/bin/<cpu-os>/test_runner
@@ -249,6 +252,8 @@ goes to `bin\d7\<project>\`:
 set MORMOT2=C:\path\to\mORMot2
 tests\build_delphi7.bat tests\test_runner.lpr
 bin\d7\test_runner\test_runner.exe --noenter
+tests\build_delphi7.bat examples\layer1_demo\layer1_demo.lpr
+bin\d7\layer1_demo\layer1_demo.exe
 ```
 
 Do not put `mORMot2\src\ui` on a Delphi search path: it holds the original

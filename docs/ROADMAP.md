@@ -8,9 +8,10 @@ tagged output passes PAC 2024 with accepted warnings only (W-1, a Figure in
 `pdf_demo`; W-2, e-mail addresses without links in `zugferd_demo`) and veraPDF
 `ua1`. PDF/A-3U with PDF/UA-1 is verified (R-17). Fonts are embedded and subset
 on all three platforms; tables carry `THead`/`TBody`/`TFoot` row groups. All
-three platforms build with FPC; `test_runner` is green with 235 assertions on
-Windows and 294 on macOS (both after R-21), 268 on Linux (before R-21).
-**Layer 1 builds on Delphi 7** (R-19, done): 125 assertions on Win32, and the
+three platforms build with FPC; `test_runner` is green with 237 assertions on
+Windows (after the zero-real fix of R-23), 294 on macOS (after R-21), 268 on
+Linux (before R-21) — the last two +2 with that fix.
+**Layer 1 builds on Delphi 7** (R-19, done): 127 assertions on Win32, and the
 tagged Unicode test file passes PAC 2024 and veraPDF `ua1` from Delphi 7/Win32
 and FPC/Win64 alike. The macOS run found a heap-dependent `.ttc` defect in the
 FreeType backend, fixed (`fonts.md` §3). The Linux re-run is done up to
@@ -124,7 +125,7 @@ to the pre-R-21 run apart from dates and a reworded `markdown_demo` paragraph.
   programs without a check that no project built, are gone; what they asked
   is now `TestParagraphWrapsWithinPageWidth` (and `TestA4WithMargins`)
 
-### R-23 — A Layer 1 Demo for Delphi — after R-21, before R-20
+### R-23 — A Layer 1 Demo for Delphi — built, validators open
 
 **Why.** Layer 1 builds on Delphi 7 (R-19), but all seven demos go through
 layer 2 or 3 — `TPdfDocumentVcl` or `TGDIPages` — so none of them builds
@@ -142,6 +143,29 @@ it, so the `string` encoding question stays with R-20.
 
 **Check:** veraPDF `ua1` and PAC on the files of both compilers, the same
 `pdftotext` output and structure tree.
+
+**Built on Windows, 2026-09-26:** `examples/layer1_demo`, one page — `H1`,
+two `H2`, three `P`, a `Figure` (bar chart) with `/Alt`, an outline entry per
+heading, a rule and a footer as artifacts, text as UTF-8 through
+`Utf8ToSynUnicode` + `TextOutW`. FPC/Win64 and Delphi 7/Win32 give the same
+`pdftotext` output (umlauts and `€` included), the same four subset faces
+(Calibri, Calibri Bold, Cambria Italic, Consolas), the same roles and the
+same Figure `/BBox`. Compared uncompressed, after the fix below, the files
+are the same apart from the dates and `/ID`.
+
+**Found with it and fixed — a real 0 written as nothing under FPC.** FPC
+wrote the outline destinations as `/Dest[5 0 R/XYZ 0 802 ]`, Delphi 7 as
+`/XYZ 0 802 0`; ISO 32000-1 table 151 wants three operands after `/XYZ`.
+`TPdfWrite.Add(double)` cut the `.00` of `Str(Value:0:2)`, but FPC converts
+with Grisu (`DOUBLETOSHORT_USEGRISU` in `mormot.defines.inc`), which writes an
+exact 0 as `'0'` — and the cut left an empty string. Every `TPdfReal` of 0 was
+hit: the outline zoom (every FPC bookmark, `pdf_demo` and `TGDIPages`
+included), `/ca`/`/CA` at alpha 0, a `/Rect` or Figure `/BBox` edge at 0.
+veraPDF had not flagged it. The cut now needs a `.` before the digits;
+`TestZeroRealIsWritten` fails 2/2 without it. 237 (FPC/Win64) and 127
+(Delphi 7) assertions green.
+
+**Open:** PAC and veraPDF `ua1` on both files; the build on Linux and macOS.
 
 **For R-20:** the reference. A page drawn through the bridge under Delphi has
 to give the same text and structure as the same page through layer 1.
@@ -231,7 +255,7 @@ dropping the hinting tables is allowed after `CreateFontPackage`.
 
 ### V — Verification Outstanding
 
-All three platforms build and pass `test_runner` (235 assertions on Windows,
+All three platforms build and pass `test_runner` (237 assertions on Windows,
 294 on macOS, 268 on Linux — the last before R-21). The tagged demos pass veraPDF `ua1`
 106/106 on all three and PAC 2024 — measured again on 2026-09-26 for the
 files of all three platforms, `zugferd_demo` also `3u` 148/148 and Mustang;
