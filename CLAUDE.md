@@ -304,6 +304,10 @@ display (`xvfb-run` otherwise); on macOS Cocoa runs it headless.
 - **Symbol fonts on POSIX**: excluded from subsetting, the whole face is embedded (roadmap R-15b); neither side is covered by a demo or test
 - **PDF/A** (R-17): A-3U + PDF/UA-1, A-3A (tagged) and A-3B verified on all three platforms with veraPDF, Mustang and PAC; A-1 and A-2 implemented, unverified. Pass the level to the constructor — the `PdfA` setter calls `NewDoc`. A levels need `Tagged := True`. With PDF/A + Tagged the engine describes `pdfuaid` in the XMP extension schemas, inside the caller's `<pdfaExtension:schemas><rdf:Bag>` if `PdfAMetadaExtension` has one — keep that single list
 - **E-invoices**: the engine writes the PDF/A-3 container (`CreateFileAttachmentFrom` + `PdfMetadataFacturX`) and never generates or validates invoice XML. Scope is B2B (ZUGFeRD/Factur-X profile EN 16931); invoices to German authorities are pure XML and out of scope. Third-party material only with a verified license, recorded in the demo's `THIRD_PARTY.md`
+- **Charts**: out of scope — no chart engine, as no invoice XML. A chart is an
+  image from a chart library in a `Figure` with `/Alt`, its values as a table
+  besides. `layer1_demo`'s figure is deliberately a set of shapes, not a
+  chart. A chart example only on request (ROADMAP "Charts")
 - **Links in tagged output**: no `Link` role, `OBJR` or `/StructParent` for annotations — `CreateHyperLink` in tagged output fails veraPDF `ua1` on four 7.18 rules (measured). `TGDIPages.DrawLink` draws link-styled text as a `Span` and drops the URL: conformant, not clickable (roadmap R-18, only on request)
 - **Delphi** (R-19 done, R-21, R-23, R-20): layer 1 — `mormot.pdf.types`,
   `mormot.ui.pdf`, GDI backend, Uniscribe — builds on Delphi 7, Win32;

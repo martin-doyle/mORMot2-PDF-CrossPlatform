@@ -98,8 +98,9 @@ Units: 1/100 mm. Learning path with all features: [docs/DEMOS.md](docs/DEMOS.md)
 
 `ExportPdfTagged := True` (report engine) or `Tagged := True` (low-level API)
 writes the structure tree that screen readers and accessibility checkers need.
-Both tagged demos pass **PAC 2024**, with one accepted warning for a decorative
-figure in `pdf_demo`.
+The tagged demos pass **PAC 2024**. PAC keeps one accepted hint on every
+`Figure`, "possibly inappropriate use of figure"; it shows for vector paths
+and images alike.
 
 What the engine emits:
 
@@ -137,6 +138,13 @@ Doc.BeginStructContent(psrH1);
 Doc.VclCanvas.TextOut(40, 40, 'Title');
 Doc.EndStructContent;
 ```
+
+**Charts are not in scope.** The project has no chart engine and will not get
+one, just as it generates no invoice XML. A chart comes as an image from a
+chart library of your choice, drawn into a `Figure` with an alternate text
+that says what the chart shows. A chart that carries data should also have
+those values as a real table in the document: an alternate text cannot carry
+a data series, a table can be read cell by cell.
 
 ## Font embedding and subsetting
 

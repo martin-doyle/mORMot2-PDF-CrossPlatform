@@ -678,6 +678,10 @@ roadmap R-20.
 - With this API you build the structure yourself: `BeginStructContent` for
   `H1`/`H2`/`P`, a `Figure` with alternate text, and `CreateOutline` for
   every heading
+- The path operations in one figure: `Rectangle`, `RoundRect`, `Ellipse`, a
+  Bézier curve with `CurveToC`, line widths; `Fill`, `Stroke`, `FillStroke`.
+  Deliberately not a chart: charts are out of scope — an image from a chart
+  library in a `Figure`, and its values as a table (README, "Tagged PDF")
 - A table by hand: `Table` › `THead`/`TBody`/`TFoot` › `TR` › `TH`/`TD`,
   numbers right-aligned with `UnicodeTextWidth`. What `TGDIPages` does for you
   (roadmap R-14), step by step
@@ -712,9 +716,11 @@ begin
   DrawText(Doc.Canvas, 56, 780, 'TPdfDocument and TPdfCanvas');
   Doc.Canvas.EndStructContent;
   Doc.CreateOutline('TPdfDocument and TPdfCanvas', 1, 780 + 22);
-  Doc.Canvas.BeginStructContent(psrFigure, 'Bar chart with four bars ...');
-  Doc.Canvas.Rectangle(76, 330, 50, 64);  // x, y (bottom), width, height
-  Doc.Canvas.Fill;
+  Doc.Canvas.BeginStructContent(psrFigure, 'Four shapes in a row ...');
+  Doc.Canvas.Rectangle(56, 420, 100, 70); // x, y (bottom), width, height
+  Doc.Canvas.FillStroke;
+  Doc.Canvas.Ellipse(306, 420, 100, 70);  // the bounding rectangle
+  Doc.Canvas.FillStroke;
   Doc.Canvas.EndStructContent;
   // a table: fills and rules first (artifacts), then the elements
   Doc.AddPage;

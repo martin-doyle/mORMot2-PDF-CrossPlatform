@@ -55,8 +55,6 @@ const
   /// 'Umlauts and symbols: ä ö ü Ä Ö Ü ß € § °' as UTF-8
   UMLAUTS: RawUtf8 = 'Umlauts and symbols: '#$C3#$A4' '#$C3#$B6' '#$C3#$BC' '#$C3#$84 +
     ' '#$C3#$96' '#$C3#$9C' '#$C3#$9F' '#$E2#$82#$AC' '#$C2#$A7' '#$C2#$B0;
-  BAR_VALUES: array[0..3] of integer = (40, 75, 55, 90);
-  BAR_COLORS: array[0..3] of TPdfColor = ($B4642D, $2D8CD2, $3CA03C, $3C3CC8);
   /// the table: top edge, row height, and the right edge of the columns 1..3
   TABLE_TOP = 700;
   ROW_H = 20;
@@ -195,34 +193,37 @@ begin
     DrawText(LEFT, 593, UMLAUTS);
     C.EndStructContent;
 
-    Heading(2, 553, 15, 'Lines and rectangles');
+    Heading(2, 553, 15, 'Paths: rectangles, an ellipse, a curve, lines');
     C.BeginStructContent(psrP);
     C.SetFont(Sans, 11, [], DEFAULT_CHARSET);
     C.SetRGBFillColor(0);
-    DrawText(LEFT, 530, 'The chart below is one Figure element with an alternate text.');
+    DrawText(LEFT, 530, 'The shapes below are one Figure element with an alternate text.');
     C.EndStructContent;
     // a Figure: its paths are real content, described by the /Alt text
     C.BeginStructContent(psrFigure,
-      'Bar chart with four bars of the values 40, 75, 55 and 90 on a frame ' +
-      'with five horizontal grid lines');
-    C.SetRGBStrokeColor($A0A0A0);
-    C.SetLineWidth(0.5);
-    for i := 0 to 4 do
-    begin
-      C.MoveTo(LEFT, 330 + i * 40);
-      C.LineTo(LEFT + 300, 330 + i * 40);
-    end;
+      'Four shapes in a row - a rectangle, a rounded rectangle, an ellipse ' +
+      'and an S-shaped curve - above three lines of increasing width');
+    C.SetRGBStrokeColor($5A2D14);
+    C.SetLineWidth(1.5);
+    C.SetRGBFillColor($E8C8B4);
+    C.Rectangle(LEFT, 420, 100, 70);        // x, y (bottom), width, height
+    C.FillStroke;
+    C.SetRGBFillColor($B4DCF0);
+    C.RoundRect(LEFT + 125, 420, LEFT + 225, 490, 16, 16); // two corners
+    C.FillStroke;
+    C.SetRGBFillColor($C8E6C8);
+    C.Ellipse(LEFT + 250, 420, 100, 70);    // the bounding rectangle
+    C.FillStroke;
+    C.MoveTo(LEFT + 375, 420);              // a cubic Bezier curve
+    C.CurveToC(LEFT + 415, 520, LEFT + 443, 390, LEFT + 483, 490);
     C.Stroke;
-    for i := 0 to high(BAR_VALUES) do
+    for i := 0 to 2 do
     begin
-      C.SetRGBFillColor(BAR_COLORS[i]);
-      C.Rectangle(LEFT + 20 + i * 70, 330, 50, BAR_VALUES[i] * 160 / 100);
-      C.Fill;
+      C.SetLineWidth(0.5 + i * 1.75);       // 0.5, 2.25, 4 pt
+      C.MoveTo(LEFT, 390 - i * 22);
+      C.LineTo(539, 390 - i * 22);
+      C.Stroke;
     end;
-    C.SetRGBStrokeColor(0);
-    C.SetLineWidth(1);
-    C.Rectangle(LEFT, 330, 300, 160);
-    C.Stroke;
     C.EndStructContent;
 
     Footer(1);
@@ -295,8 +296,14 @@ begin
     C.EndStructContent; // Table
     Footer(2);
 
-    Doc.SaveToFile(PdfFileName);
-    writeln('PDF saved to ', PdfFileName);
+    // false when the file cannot be written, e.g. while a viewer holds it
+    if Doc.SaveToFile(PdfFileName) then
+      writeln('PDF saved to ', PdfFileName)
+    else
+    begin
+      writeln('Cannot write ', PdfFileName, ' - is it open in a viewer?');
+      ExitCode := 1;
+    end;
   finally
     Doc.Free;
   end;

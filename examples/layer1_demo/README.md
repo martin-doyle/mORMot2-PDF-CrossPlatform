@@ -17,6 +17,9 @@ as with FPC. Page 1 holds text and a figure, page 2 a table.
 - the caller builds the structure: `H1`, `H2`, `P` and a `Figure` with
   alternate text. Each heading also gets its outline entry, which PDF/UA
   requires and which the low-level API does not create by itself
+- the figure is a set of shapes — rectangle, rounded rectangle, ellipse,
+  Bézier curve, line widths — and deliberately not a chart: charts are out of
+  scope (main README, "Tagged PDF")
 - the table is `Table` › `THead`/`TBody`/`TFoot` › `TR` › `TH`/`TD`, opened
   by the caller; the engine adds `/Scope /Column` to every `TH`. The numbers
   are right-aligned with `UnicodeTextWidth`, and an empty cell is still a `TD`,

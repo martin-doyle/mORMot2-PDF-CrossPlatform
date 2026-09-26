@@ -146,7 +146,9 @@ it, so the `string` encoding question stays with R-20.
 
 **Built on Windows, 2026-09-26:** `examples/layer1_demo/layer1_demo.dpr` (a
 `.dpr`, so the Delphi IDE opens it too; the `.lpi` points to it), two pages.
-Page 1: `H1`, two `H2`, three `P`, a `Figure` (bar chart) with `/Alt`. Page 2:
+Page 1: `H1`, two `H2`, three `P`, a `Figure` (rectangle, rounded rectangle,
+ellipse, Bézier curve, three line widths — no chart, see "Charts") with
+`/Alt`. Page 2:
 an `H2`, a `P` and a `Table` — `THead` with four `TH`, `TBody` with four rows,
 `TFoot` with the totals row and one empty `TD`, numbers right-aligned by
 `UnicodeTextWidth`, fills and rules drawn before it as artifacts. An outline
@@ -466,6 +468,16 @@ compile-time guard, not an output check. Nothing yet asserts that shaped Arabic
 reaches the PDF on the Windows path — by checking the `/ToUnicode` entries for
 `U+FExx` after drawing with `UseUniscribe` set. A Windows-side test; under
 R-19 it would run on Win32 as well.
+
+### Charts — out of scope; an example only on explicit request
+
+The project has no chart engine and will not get one, as it generates no
+invoice XML. A chart is an image from a chart library, drawn into a `Figure`
+with an alternate text; a chart that carries data gets its values as a real
+table besides (README, "Tagged PDF"). For the engine that image is an image
+like any other, so a demo would show nothing new, and it would bring a
+third-party dependency (licence, per-platform build). A layer 2 example with a
+chart library's bitmap is to be built only when someone asks for it.
 
 ### EMF/MetaFile and GDI+ Gradients — no work planned
 
