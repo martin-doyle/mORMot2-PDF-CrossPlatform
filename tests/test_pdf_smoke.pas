@@ -890,8 +890,21 @@ const
   CJK_TEXT = #$E5#$AD#$97#$E4#$BD#$93#$E5#$B5#$8C#$E5#$85#$A5#$E6#$B5#$8B#$E8#$AF#$95;
   /// مرحبا - "hello", joining letters: needs the shaper
   ARABIC_TEXT = #$D9#$85#$D8#$B1#$D8#$AD#$D8#$A8#$D8#$A7;
-  /// the file PAC 2024 and veraPDF are run on (R-19 step 4)
-  UNICODE_PDF = 'tagged_unicode_lowlevel.pdf';
+
+{ the file PAC 2024 and veraPDF are run on (R-19 step 4), named after the
+  build, e.g. tagged_unicode_windows_x86_delphi-7.pdf: the files of every
+  platform and compiler can then be checked from one folder.
+  COMPILER_VERSION ends with ' 32 bit' or ' 64 bit', which CPU_ARCH_TEXT
+  already says }
+function UnicodePdfName: TFileName;
+var
+  compiler: RawUtf8;
+begin
+  compiler := StringReplaceAll(COMPILER_VERSION, [' 32 bit', '', ' 64 bit', '']);
+  result := Utf8ToString(LowerCase('tagged_unicode_' +
+    ShortStringToAnsi7String(OS_NAME[OS_KIND]) + '_' + CPU_ARCH_TEXT + '_' +
+    StringReplaceAll(compiler, ' ', '-') + '.pdf'));
+end;
 
 { font dictionaries of ASubtype (e.g. '/Subtype/TrueType') lacking AKey
   - the dictionary is taken from the '<<' before the subtype to the first
@@ -976,7 +989,7 @@ begin
       PDF.Free;
     end;
     s := StreamToRaw(Stream);
-    FileFromString(s, WorkDir + UNICODE_PDF);
+    FileFromString(s, WorkDir + UnicodePdfName);
     CheckEqual(CountOf('/S/H1', s), 1, 'one H1');
     CheckEqual(CountOf('/S/P', s), 3, 'three P');
     Check(CountOf('/FontFile', s) >= 3, 'Latin, CJK and Arabic faces embedded');
