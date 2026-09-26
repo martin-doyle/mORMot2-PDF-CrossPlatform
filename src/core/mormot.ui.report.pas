@@ -4,12 +4,9 @@
 //   replacement rendered via LCL TCanvas, TPrinter and TPdfDocumentVcl
 unit mormot.ui.report;
 
-{$IFDEF FPC}
-  {$mode delphi}
-  {$H+}
-{$ENDIF}
-
 interface
+
+{$I mormot.defines.inc}
 
 {$IFDEF FPC}
 
@@ -498,9 +495,10 @@ type
     // - auto-advances CurrentY
     procedure DrawParagraph(X, MaxWidth, Y: Integer; const AText: string); overload;
 
-    /// draw list item with bullet prefix
-    // - APrefix: bullet character (default '• ')
-    procedure DrawListItem(X, Y: Integer; const AText: string; const APrefix: string = '• ');
+    /// draw list item with a U+2022 bullet prefix
+    procedure DrawListItem(X, Y: Integer; const AText: string); overload;
+    /// draw list item with a custom prefix, e.g. '1. '
+    procedure DrawListItem(X, Y: Integer; const AText, APrefix: string); overload;
 
     /// draw figure/table caption (small italic gray) — auto uses page margins
     procedure DrawCaption(const ACaption: string); overload;
@@ -673,6 +671,9 @@ const
   CELL_PADDING = 200;
   /// conversion factor: 1 point = 3.528 × 1/100mm
   PT_TO_100MM = 3528;
+  /// U+2022 BULLET and a space, U+2212 MINUS SIGN, as UTF-8 bytes
+  LIST_BULLET: RawUtf8 = #$E2#$80#$A2' ';
+  MINUS_SIGN: RawUtf8 = #$E2#$88#$92;
 
 { =========================================================================
   Helper functions
@@ -687,6 +688,15 @@ function PixelsToMM(Pixels: Integer; DPI: Integer): Integer;
 begin
   if DPI <= 0 then DPI := 96;
   Result := MulDiv(Pixels, 2540, DPI);
+end;
+
+{ The bytes as they are, in the LCL convention of this unit (string holds
+  UTF-8), whatever DefaultSystemCodePage says. Non-ASCII stays out of string
+  literals: under CODEPAGE UTF8 FPC converts them, a default parameter even at
+  the call site, in the caller's settings }
+function Utf8AsLclString(const Text: RawUtf8): string;
+begin
+  SetString(Result, PAnsiChar(pointer(Text)), Length(Text));
 end;
 
 { Convert PDF points (1/72 inch) to 1/100 mm — the unit of every TGDIPages
@@ -1508,7 +1518,12 @@ begin
   MoveToNextLine(Format.SpaceAfter);
 end;
 
-procedure TGDIPages.DrawListItem(X, Y: Integer; const AText: string; const APrefix: string = '• ');
+procedure TGDIPages.DrawListItem(X, Y: Integer; const AText: string);
+begin
+  DrawListItem(X, Y, AText, Utf8AsLclString(LIST_BULLET));
+end;
+
+procedure TGDIPages.DrawListItem(X, Y: Integer; const AText, APrefix: string);
 var
   Format: TReportFormat;
   LH: Integer;
@@ -2963,7 +2978,7 @@ begin
     TopPanel.BevelOuter := bvNone;
     BtnZoomOut := TButton.Create(Form);
     BtnZoomOut.Parent  := TopPanel;
-    BtnZoomOut.Caption := '−';
+    BtnZoomOut.Caption := Utf8AsLclString(MINUS_SIGN);
     BtnZoomOut.SetBounds(8, 4, 32, 28);
     BtnZoomOut.OnClick := PreviewDoZoomOut;
     EdtZoom := TEdit.Create(Form);

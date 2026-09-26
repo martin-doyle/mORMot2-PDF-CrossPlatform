@@ -216,6 +216,10 @@ Details on interfaces and registration: `.claude/skills/platform-backends.md`
     Compiler switches come from `{$I mormot.defines.inc}`, never from a bare
     `{$mode delphi}` (roadmap R-21)
 - `RawUtf8` instead of `string` for internal strings
+- **No non-ASCII in string literals** in `src/`: `mormot.defines.inc` sets
+  `{$CODEPAGE UTF8}`, and FPC converts such a literal — a default parameter
+  value even at the call site, in the caller's settings (R-21: `'• '` arrived
+  as `'?'`). Put the bytes in a `RawUtf8` constant (`#$E2#$80#$A2`) instead
 - No blank lines between `begin`/`end` blocks
 - Interfaces with reference counting (`TInterfacedObject`)
 - Error handling via `ESynException`

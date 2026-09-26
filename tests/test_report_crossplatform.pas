@@ -43,6 +43,7 @@ type
     procedure TestTaggedRepeatedHeaderAndTitle;
     procedure TestTableFooterRow;
     procedure TestTableGroupsAcrossPages;
+    procedure TestListItemBullet;
   end;
 
 implementation
@@ -612,6 +613,35 @@ begin
     Check(Report.ExportPdfStream(MS), 'row groups stay balanced across pages');
   finally
     MS.Free;
+    Report.Free;
+  end;
+end;
+
+procedure TReportTests.TestListItemBullet;
+var
+  Report: TGDIPages;
+  i: Integer;
+  t: RawByteString;
+begin
+  // the default bullet has to reach the command as UTF-8 bytes: as the
+  // default value '• ' of a parameter, compiled under CODEPAGE UTF8, it was
+  // converted at the call site and arrived as '?'
+  Report := TGDIPages.Create(nil);
+  try
+    Report.NewPage;
+    Report.DrawListItem(800, Report.CurrentY, 'Item');
+    Report.EndDoc;
+    t := '';
+    for i := 0 to High(Report.Pages[0].Commands) do
+      if Report.Pages[0].Commands[i].Kind = dckDrawText then
+      begin
+        t := Report.Pages[0].Commands[i].Text;
+        break;
+      end;
+    CheckEqual(8, Length(t), 'bullet, space and item');
+    Check((Length(t) >= 4) and (t[1] = #$E2) and (t[2] = #$80) and (t[3] = #$A2) and (t[4] = ' '),
+      'U+2022 as UTF-8');
+  finally
     Report.Free;
   end;
 end;
