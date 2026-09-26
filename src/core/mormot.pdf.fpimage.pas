@@ -18,11 +18,9 @@ unit mormot.pdf.fpimage;
 
 interface
 
-{$ifndef MSWINDOWS}
+{$I mormot.defines.inc}
 
-{$ifdef FPC}
-  {$mode delphi}
-{$endif FPC}
+{$ifndef MSWINDOWS}
 
 uses
   SysUtils,
