@@ -14,7 +14,7 @@ Windows, 288 on macOS and 268 on Linux (re-run on 2026-09-26).
 tagged Unicode test file passes PAC 2024 and veraPDF `ua1` from Delphi 7/Win32
 and FPC/Win64 alike. The macOS run found a heap-dependent `.ttc` defect in the
 FreeType backend, fixed (`fonts.md` §3). The Linux re-run is done up to
-veraPDF on its files (V). **Next:** R-21, then R-20.
+veraPDF on its files (V). **Next:** R-21, R-23, then R-20.
 
 ---
 
@@ -112,6 +112,28 @@ Delphi's and FPC's own and not affected.
 function that makes the branch unnecessary. The rule is in `CLAUDE.md`
 (Coding Conventions): mORMot2 first, `{$ifdef}` last, named after the feature.
 
+### R-23 — A Layer 1 Demo for Delphi — after R-21, before R-20
+
+**Why.** Layer 1 builds on Delphi 7 (R-19), but all seven demos go through
+layer 2 or 3 — `TPdfDocumentVcl` or `TGDIPages` — so none of them builds
+there. `test_runner` covers the engine; a Delphi user has nothing to start
+from.
+
+**Work.** A console demo on `TPdfDocument`/`TPdfCanvas` alone: text in an
+embedded TrueType face, lines and rectangles, tagged output (`H1`, `P`,
+`Figure` with alternate text). The source header states the coordinate system
+(PDF points, Y origin at the bottom). An image only if one path serves both
+compilers — `mormot.pdf.fpimage` is FPC-only. Built with FPC (`.lpi`, to
+`bin/<cpu-os>`) and Delphi 7 (`build_delphi7.bat`), writing
+`<demo>_<os>.pdf` like the other demos. Text goes in as the layer 1 API takes
+it, so the `string` encoding question stays with R-20.
+
+**Check:** veraPDF `ua1` and PAC on the files of both compilers, the same
+`pdftotext` output and structure tree.
+
+**For R-20:** the reference. A page drawn through the bridge under Delphi has
+to give the same text and structure as the same page through layer 1.
+
 ### R-20 — Delphi: the TCanvas Bridge and `TGDIPages` — priority 2
 
 **The obstacle, checked against the source 2026-09-25.** `TPdfVclCanvas =
@@ -191,6 +213,7 @@ the project still has none.
 | veraPDF on the Linux files after R-19 | re-run on 2026-09-26: 268 assertions green, all seven demos compared with the previous run — identical apart from the date and the new `/CIDToGIDMap /Identity` in `chinese_demo` and `rtl_demo`. Still open: `ua1` on `tests/bin/aarch64-linux/tagged_unicode_lowlevel.pdf` and the tagged demos, `3u` on `zugferd_demo` |
 | The `.ttc` fix on Linux | `TestTtcFaceExtraction` skips itself: the Linux machine has no `.ttc` installed (e.g. `fonts-noto-cjk` would bring one) |
 | Delphi beyond layer 1 | the TCanvas bridge and `TGDIPages` — R-20; only Delphi 7 has been built |
+| A build check after the demo and build changes | `abd8181`, `bfd3f30`, `2665675` touched project files, demo file names, titles, `{$R *.res}` and docs — no `src/`, so no validator re-run. Windows done. **Linux:** checked up to `bfd3f30`; still to do: rebuild with `-B` after the rename (`report_demo.lpi`, the three `.lpr` with `{$R *.res}`), `test_runner` 268. **macOS:** nothing built yet — every project with `-B`, `test_runner` 288, each demo writes `<demo>_osx.pdf` next to its executable, `report_demo --export` |
 
 **Comparing the platforms — but not pixel by pixel.** The demos resolve
 different families (Calibri/Cambria/Consolas, Liberation, Trebuchet MS/Georgia/
