@@ -9,13 +9,14 @@ tagged output passes PAC 2024 with accepted warnings only (W-1, a Figure in
 `ua1`. PDF/A-3U with PDF/UA-1 is verified (R-17). Fonts are embedded and subset
 on all three platforms; tables carry `THead`/`TBody`/`TFoot` row groups. All
 three platforms build with FPC; `test_runner` is green with 235 assertions on
-Windows (after R-21), 288 on macOS and 268 on Linux (before R-21).
+Windows and 294 on macOS (both after R-21), 268 on Linux (before R-21).
 **Layer 1 builds on Delphi 7** (R-19, done): 125 assertions on Win32, and the
 tagged Unicode test file passes PAC 2024 and veraPDF `ua1` from Delphi 7/Win32
 and FPC/Win64 alike. The macOS run found a heap-dependent `.ttc` defect in the
 FreeType backend, fixed (`fonts.md` §3). The Linux re-run is done up to
-veraPDF on its files (V). R-21 is done on Windows (235 assertions with FPC);
-Linux and macOS are to run. **Next:** R-23, then R-20.
+veraPDF on its files (V), and its post-R-21 files pass veraPDF. R-21 is done
+on Windows and macOS; on Linux only the assertion count is missing. **Next:**
+R-23, then R-20.
 
 ---
 
@@ -80,7 +81,7 @@ comparison is valid **within** one platform only — see V below.
 
 ## Open
 
-### R-21 — Compiler Switches From `mormot.defines.inc` — Linux and macOS open
+### R-21 — Compiler Switches From `mormot.defines.inc` — Linux count open
 
 **Done on Windows, 2026-09-26** (`6e503a9` … `4eaaff0`, one commit per unit):
 every unit in `src/` and the seven test units `test_runner` builds start with
@@ -111,10 +112,14 @@ output as before.
   Delphi 7 golden master, with cp1252 literals FPC rejects under
   `{$CODEPAGE UTF8}`.
 
+**macOS, 2026-09-26:** the four Unix units (`d9b05a3` … `538f768`) compile;
+`test_runner` 294/294, all projects built with `-B`, the seven demo PDFs equal
+to the pre-R-21 run apart from dates and a reworded `markdown_demo` paragraph.
+
 **Open:**
-- `test_runner` on Linux and macOS — expected 274 and 294, six more than
-  before. The four Unix units (`d9b05a3` … `538f768`) have not been compiled
-  at all yet; if one breaks, bisect them
+- `test_runner` count on Linux — expected 274. The Debian build ran (its PDFs
+  carry the post-R-21 file names and pass veraPDF, see V); the count is not
+  recorded yet
 - nothing else: `test_margins_analysis` and `test_wrap_analysis`, printing
   programs without a check that no project built, are gone; what they asked
   is now `TestParagraphWrapsWithinPageWidth` (and `TestA4WithMargins`)
@@ -204,12 +209,35 @@ then cut the comment. Comments only — `test_runner` gives the same assertion
 count, and the demo PDFs are byte-identical apart from date and `/ID`.
 The `///` API documentation inherited from the original mORMot2 units stays.
 
+### Windows Font Subsets Are Larger — priority 4
+
+Harmless — the subsets are valid and pass veraPDF — but the Windows demo PDFs
+are 2–5 times the size of the POSIX ones (`markdown_demo` 230 KB against
+46/51 KB, `report_demo` 79 KB against 14 KB), and the embedded fonts are
+nearly all of it. Measured on `report_demo` (Calibri, 2026-09-26), sfnt tables
+of one subset, uncompressed:
+
+| Table | Windows (`CreateFontPackage`) | Linux (`hb-subset`) |
+|---|---|---|
+| `glyf` | 61,902 | 4,044 |
+| `hmtx` / `loca` | 27,240 / 14,098 — every glyph ID | 384 / 194 |
+| `fpgm` + `prep` + `cvt ` | 14,304 | — |
+| total | 120,016 | 5,628 |
+
+Both keep the glyph IDs; `hb-subset` still cuts `hmtx`/`loca` after the
+highest kept ID and drops the hinting. Where to start: why `glyf` stays 15
+times larger (the keep list, or composite glyphs pulled in), then whether
+dropping the hinting tables is allowed after `CreateFontPackage`.
+
 ### V — Verification Outstanding
 
 All three platforms build and pass `test_runner` (235 assertions on Windows,
-288 on macOS, 268 on Linux — the last two before R-21). The tagged demos pass veraPDF `ua1`
+294 on macOS, 268 on Linux — the last before R-21). The tagged demos pass veraPDF `ua1`
 106/106 on all three and PAC 2024 — measured again on 2026-09-26 for the
-Windows and macOS files, `zugferd_demo` also `3u` 148/148 and Mustang. That was the stated gate for a first version tag, and
+files of all three platforms, `zugferd_demo` also `3u` 148/148 and Mustang;
+`tagged_unicode` passes `ua1` from Linux, macOS, FPC/Win64 and Delphi 7. The
+structure trees (roles and their counts) and page counts match across the
+platforms for every tagged demo. That was the stated gate for a first version tag, and
 the project still has none.
 
 | Open | Why it matters |
@@ -217,10 +245,9 @@ the project still has none.
 | HarfBuzz older than 2.9 | loads, but lacks `hb_subset_or_fail`. The **missing** library is covered by `tests/no_hbsubset.sh`; an old one needs an old distribution, e.g. Debian 11 |
 | The U-2 width fix on Linux | exercised on macOS only: no Linux Arabic face reaches the shaper width path (`fonts.md` §10), and `TestShapedGlyphWidthFromHmtx` skips itself there |
 | veraPDF in the routine runs | installed on macOS with `ua1`, `3a`, `3b`, `3u` (path in `CLAUDE.local.md`); run by hand on each platform's files, not scripted |
-| veraPDF on the Linux files after R-19 | re-run on 2026-09-26: 268 assertions green, all seven demos compared with the previous run — identical apart from the date and the new `/CIDToGIDMap /Identity` in `chinese_demo` and `rtl_demo`. Still open: `ua1` on `tests/bin/aarch64-linux/tagged_unicode_<os>_aarch64_free-pascal-<version>.pdf` (the test names its file after the build since R-21) and the tagged demos, `3u` on `zugferd_demo` |
 | The `.ttc` fix on Linux | `TestTtcFaceExtraction` skips itself: the Linux machine has no `.ttc` installed (e.g. `fonts-noto-cjk` would bring one) |
 | Delphi beyond layer 1 | the TCanvas bridge and `TGDIPages` — R-20; only Delphi 7 has been built |
-| A build check after the demo and build changes | `abd8181`, `bfd3f30`, `2665675` touched project files, demo file names, titles, `{$R *.res}` and docs — no `src/`, so no validator re-run. Windows done. **Linux:** checked up to `bfd3f30`; still to do: rebuild with `-B` after the rename (`report_demo.lpi`, the three `.lpr` with `{$R *.res}`), `test_runner` 268. **macOS:** nothing built yet — every project with `-B`, `test_runner` 288, each demo writes `<demo>_osx.pdf` next to its executable, `report_demo --export` |
+| A build check after the demo and build changes | `abd8181`, `bfd3f30`, `2665675` touched project files, demo file names, titles, `{$R *.res}` and docs — no `src/`, so no validator re-run. Windows done. macOS done (every project with `-B`, `report_demo --export`, each demo writes `<demo>_osx.pdf`). **Linux:** the demo PDFs arrive under the new names; the `test_runner` count is the one thing to record (R-21). The Windows ZUGFeRD file came as `zugferd_invoice_windows.pdf`, not `zugferd_demo_windows.pdf` — renamed by hand or an older build |
 
 **Comparing the platforms — but not pixel by pixel.** The demos resolve
 different families (Calibri/Cambria/Consolas, Liberation, Trebuchet MS/Georgia/
