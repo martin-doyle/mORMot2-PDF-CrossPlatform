@@ -15,7 +15,7 @@ unit mormot.ui.core;
 
 interface
 
-{$I ..\mormot.defines.inc}
+{$I mormot.defines.inc}
 
 uses
   {$ifdef OSWINDOWS}

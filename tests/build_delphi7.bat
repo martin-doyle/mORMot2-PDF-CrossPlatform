@@ -46,10 +46,9 @@ set "M=%MORMOT2%\src"
 set "UNITS=%PRJDIR%;%ROOT%\src\core;%ROOT%\src\platform\windows;%ROOT%\src\lib"
 set "UNITS=%UNITS%;%M%\core;%M%\lib;%M%\crypt;%M%\net;%M%\db;%M%\orm;%M%\rest;%M%\soa;%M%\misc"
 set "UNITS=%UNITS%;%DELPHI7%\Lib"
-rem "..\mormot.defines.inc" is resolved against the include path by FPC and
-rem against the unit's own folder by Delphi; %M%\core makes "..\" hit %M%
+rem %M% for mormot.defines.inc, which every unit of ours includes by name (R-21)
 rem %PRJDIR% for the project's own .inc files: the .dpr is compiled from %OUT%
-set "INCS=%PRJDIR%;%M%;%M%\core;%ROOT%\src\core"
+set "INCS=%PRJDIR%;%M%"
 
 rem -N and -E are relative: dcc32 7 splits them at a space even when quoted
 pushd "%OUT%"

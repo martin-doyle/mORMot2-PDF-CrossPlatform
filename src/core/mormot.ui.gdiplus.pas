@@ -17,7 +17,7 @@ unit mormot.ui.gdiplus;
 
 interface
 
-{$I ..\mormot.defines.inc}
+{$I mormot.defines.inc}
 
 {$ifdef OSPOSIX}
 
