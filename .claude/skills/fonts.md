@@ -95,6 +95,18 @@ embedded". Inflate every stream with `python3` and search the result instead.
 A `Syntax Warning: Mismatch between font type and embedded font file` from
 poppler means the descriptor key and the embedded flavour disagree.
 
+**Every `.ttc` face hinges on `TPdfFTContext.SfntChecked`.** `GetFontData(0)`
+extracts the loaded face once and caches it in `Sfnt`; with `SfntChecked` set
+and `Sfnt` empty it hands out FreeType's whole collection instead. The face then
+reads as neither CFF nor a single font, hb-subset fails, and the raw `ttcf`
+container lands in `/FontFile2` (veraPDF `ua1` 7.21.4.1). `CreateFont` left
+the flag to the heap until 2026-09-26 — `New()` initializes managed fields
+only — so this happened at random, by heap layout, on Linux and macOS. The
+signature: a PDF of megabytes, a CJK face without subset tag, a stream that
+begins with `ttcf`. Set every non-managed field of a `New()`ed record.
+`TestTaggedUnicode` asserts no `ttcf` stream and `/Subtype/OpenType` on every
+`OTTO` stream.
+
 ### POSIX subset input (`TPdfDocument.PrepareFontSubsets`)
 
 Built per **face bytes**, before the first font is serialized, as the union over

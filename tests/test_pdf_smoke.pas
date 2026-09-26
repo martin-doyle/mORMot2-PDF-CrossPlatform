@@ -917,6 +917,26 @@ begin
   end;
 end;
 
+{ streams whose data starts with ASignature (e.g. 'OTTO') and whose
+  dictionary - from the '<<' before 'stream' - lacks AKey }
+function StreamsWithout(const s, ASignature, AKey: RawByteString): integer;
+var
+  p, b: PtrInt;
+begin
+  result := 0;
+  p := PosEx('stream'#10 + ASignature, s);
+  while p > 0 do
+  begin
+    b := p;
+    while (b > 1) and
+          not ((s[b] = '<') and (s[b - 1] = '<')) do
+      dec(b);
+    if PosEx(AKey, copy(s, b, p - b)) = 0 then
+      inc(result);
+    p := PosEx('stream'#10 + ASignature, s, p + 1);
+  end;
+end;
+
 procedure TPdfSmokeTests.TestTaggedUnicode;
 var
   PDF: TPdfDocument;
@@ -972,6 +992,12 @@ begin
       entry in a Type 2 CID font" }
     CheckEqual(FontsWithout(s, '/Subtype/CIDFontType2', '/CIDToGIDMap/Identity'), 0,
       'every CIDFontType2 has CIDToGIDMap Identity');
+    { a .ttc face is embedded alone, a CFF face in /FontFile3 (fonts.md §3);
+      the defect behind this depended on the heap, so it may not show }
+    CheckEqual(CountOf('stream'#10'ttcf', s), 0,
+      'no whole .ttc collection embedded');
+    CheckEqual(StreamsWithout(s, 'OTTO', '/Subtype/OpenType'), 0,
+      'every CFF face is a /FontFile3 with Subtype OpenType');
   finally
     Stream.Free;
   end;

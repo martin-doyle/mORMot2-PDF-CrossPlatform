@@ -617,6 +617,7 @@ begin
   ctx^.Height       := ScaleDesignUnit(faceRec^.height,      ctx^.UnitsPerEM);
   ctx^.IsFixedWidth := (faceRec^.face_flags and FT_FACE_FLAG_FIXED_WIDTH) <> 0;
   ctx^.FaceIndex    := 0; // FT_New_Face() above always opens the first face
+  ctx^.SfntChecked  := false; // New() initializes managed fields only
   result := TPdfPlatformFontHandle(ctx);
 end;
 
