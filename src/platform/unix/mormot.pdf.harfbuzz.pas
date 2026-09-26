@@ -20,9 +20,7 @@ unit mormot.pdf.harfbuzz;
 
 interface
 
-{$ifdef FPC}
-  {$mode delphi}
-{$endif FPC}
+{$I mormot.defines.inc}
 
 {$ifndef MSWINDOWS}
 
