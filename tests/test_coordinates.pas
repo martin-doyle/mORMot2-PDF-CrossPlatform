@@ -1,12 +1,9 @@
 /// Page coordinate system, margins, and rendering tests
 unit test_coordinates;
 
-{$IFDEF FPC}
-  {$mode delphi}
-  {$H+}
-{$ENDIF}
-
 interface
+
+{$I mormot.defines.inc}
 
 uses
   {$ifdef FPC}

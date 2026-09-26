@@ -1,12 +1,9 @@
 /// TGDIPages coordinate system and margin validation tests
 unit test_report_coordinates;
 
-{$IFDEF FPC}
-  {$mode delphi}
-  {$H+}
-{$ENDIF}
-
 interface
+
+{$I mormot.defines.inc}
 
 uses
   {$ifdef FPC}

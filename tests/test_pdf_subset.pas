@@ -4,11 +4,9 @@
 // - every test skips when libharfbuzz-subset is not installed
 unit test_pdf_subset;
 
-{$ifdef FPC}
-  {$mode delphi}
-{$endif FPC}
-
 interface
+
+{$I mormot.defines.inc}
 
 uses
   Classes,

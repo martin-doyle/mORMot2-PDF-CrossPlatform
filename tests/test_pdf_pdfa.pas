@@ -3,11 +3,9 @@
 // - the output is uncompressed, so the objects stay searchable as text
 unit test_pdf_pdfa;
 
-{$ifdef FPC}
-  {$mode delphi}{$H+}
-{$endif FPC}
-
 interface
+
+{$I mormot.defines.inc}
 
 uses
   Classes,

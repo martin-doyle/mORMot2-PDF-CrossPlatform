@@ -4,11 +4,9 @@
 // - migrated to TSynTestCase framework for mORMot2 compatibility
 unit test_pdf_crossplatform;
 
-{$ifdef FPC}
-  {$mode delphi}
-{$endif FPC}
-
 interface
+
+{$I mormot.defines.inc}
 
 uses
   SysUtils,

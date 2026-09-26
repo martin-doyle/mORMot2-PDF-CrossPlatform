@@ -5,12 +5,10 @@
 // PDF_HASVCLCANVAS (test_defines.inc), which Delphi lacks until R-20
 unit test_pdf_smoke;
 
-{$ifdef FPC}
-  {$mode delphi}{$H+}
-{$endif FPC}
-{$I test_defines.inc}
-
 interface
+
+{$I mormot.defines.inc}
+{$I test_defines.inc}
 
 uses
   Classes,
