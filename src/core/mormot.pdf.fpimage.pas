@@ -1,17 +1,16 @@
-/// FPImage bitmap adapter for the cross-platform PDF engine
-// - implements IPdfBitmapAdapter using FCL's FPImage (included in FPC)
-// - supports PNG and JPEG loading and pixel access
-// - used by TPdfImage on non-Windows platforms instead of GDI BitBlt/GetDIBits
+/// FPImage Bitmap Adapter for the Cross-Platform PDF Engine
+// - this unit is a part of the Open Source Synopse mORMot framework 2,
+// licensed under a MPL/GPL/LGPL three license - see LICENSE.md
 unit mormot.pdf.fpimage;
 
 {
   *****************************************************************************
 
-    FPImage Bitmap Adapter (Unix/macOS)
-    - IPdfBitmapAdapter interface definition
-    - TPdfFPImageAdapter: load PNG/JPEG, enumerate pixels, convert to raw bytes
-    - Helper: ConvertFPImageToPdfStream() — produces the raw RGB byte stream
-      expected by TPdfImage/TPdfRawImage
+   FPImage Bitmap Adapter (POSIX)
+   - IPdfBitmapAdapter interface definition
+   - TPdfFPImageAdapter: load PNG/JPEG, enumerate pixels, convert to raw bytes
+   - TPdfFPImageAdapter.GetRawRGB: top-to-bottom RGB24 pixel bytes, instead
+     of GDI BitBlt/GetDIBits
 
   *****************************************************************************
 }
@@ -20,7 +19,7 @@ interface
 
 {$I mormot.defines.inc}
 
-{$ifndef MSWINDOWS}
+{$ifndef OSWINDOWS}
 
 uses
   SysUtils,
@@ -77,11 +76,11 @@ type
 /// create a new FPImage-based bitmap adapter
 function CreatePdfBitmapAdapter: IPdfBitmapAdapter;
 
-{$endif MSWINDOWS}
+{$endif OSWINDOWS}
 
 implementation
 
-{$ifndef MSWINDOWS}
+{$ifndef OSWINDOWS}
 
 uses
   FPWriteJPEG;
@@ -125,7 +124,7 @@ begin
     fImage.LoadFromStream(AStream, reader);
     result := true;
   except
-    // swallow load errors — caller should check result
+    // swallow load errors - caller should check result
   end;
   reader.Free;
 end;
@@ -177,7 +176,7 @@ begin
     for x := 0 to w - 1 do
     begin
       col  := fImage.Colors[x, y];
-      p^   := col.red shr 8;   inc(p);  // R (16-bit → 8-bit)
+      p^   := col.red shr 8;   inc(p);  // R (16-bit -> 8-bit)
       p^   := col.green shr 8; inc(p);  // G
       p^   := col.blue shr 8;  inc(p);  // B
     end;
@@ -218,6 +217,6 @@ begin
   result := TPdfFPImageAdapter.Create;
 end;
 
-{$endif MSWINDOWS}
+{$endif OSWINDOWS}
 
 end.

@@ -16,9 +16,9 @@ uses
   mormot.core.os,
   mormot.core.test,
   mormot.pdf.types,
-  {$ifndef MSWINDOWS}
+  {$ifndef OSWINDOWS}
   mormot.pdf.freetype,  // ExtractSfntFromTtc + FreeType face validation
-  {$endif MSWINDOWS}
+  {$endif OSWINDOWS}
   mormot.ui.pdf;        // registers the backend and PdfTextShaper itself
 
 type
@@ -31,13 +31,13 @@ type
     procedure TestFontMetrics;
     procedure TestWinAnsiHighRangeWidths;
     procedure TestTextShaperAdvances;
-    {$ifndef MSWINDOWS}
+    {$ifndef OSWINDOWS}
     procedure TestShapedGlyphWidthFromHmtx;
-    {$endif MSWINDOWS}
+    {$endif OSWINDOWS}
     procedure TestUseUniscribeIsPortable;
-    {$ifndef MSWINDOWS}
+    {$ifndef OSWINDOWS}
     procedure TestTtcFaceExtraction;
-    {$endif MSWINDOWS}
+    {$endif OSWINDOWS}
     procedure TestFontData;
     procedure TestPdfDocumentCreate;
     procedure TestPdfMultiPage;
@@ -220,7 +220,7 @@ begin
   end;
 end;
 
-{$ifndef MSWINDOWS}
+{$ifndef OSWINDOWS}
 procedure TPdfCrossPlatTests.TestShapedGlyphWidthFromHmtx;
 const
   // 'marhaba': with a font that attaches cursively (Geeza Pro) one glyph of
@@ -457,7 +457,7 @@ begin
     PdfPlatformDCProvider.DeleteDC(dc);
   end;
 end;
-{$endif MSWINDOWS}
+{$endif OSWINDOWS}
 
 procedure TPdfCrossPlatTests.TestUseUniscribeIsPortable;
 var
@@ -544,7 +544,7 @@ begin
   end;
 end;
 
-{$ifndef MSWINDOWS}
+{$ifndef OSWINDOWS}
 function FindAnyTtc(const ADir: string): TFileName;
 var
   sr: TSearchRec;
@@ -627,7 +627,7 @@ begin
     DeleteFile(tmp);
   end;
 end;
-{$endif MSWINDOWS}
+{$endif OSWINDOWS}
 
 procedure TPdfCrossPlatTests.TestFontData;
 var

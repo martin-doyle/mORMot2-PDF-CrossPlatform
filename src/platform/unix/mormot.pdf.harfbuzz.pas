@@ -1,20 +1,18 @@
-/// HarfBuzz text shaper for the cross-platform PDF engine
-// - implements IPdfTextShaper using the HarfBuzz library + FreeType2 backend
-// - registers PdfTextShaper in initialization when libharfbuzz is available
-// - used by mormot.ui.pdf on POSIX: no project uses clause needs it; shaping
-//   runs where TPdfDocument.UseUniscribe is set
-// - runtime dependency: libharfbuzz.so.0 (Linux) / libharfbuzz.0.dylib (macOS)
+/// HarfBuzz Text Shaper for the Cross-Platform PDF Engine
+// - this unit is a part of the Open Source Synopse mORMot framework 2,
+// licensed under a MPL/GPL/LGPL three license - see LICENSE.md
 unit mormot.pdf.harfbuzz;
 
 {
   *****************************************************************************
 
-    HarfBuzz Text Shaper for Unix/macOS
-    - Minimal HarfBuzz API bindings (dynamic loading via dlopen)
-    - THarfBuzzTextShaper implements IPdfTextShaper
-    - Shapes RTL/Arabic/complex-script text using OpenType GSUB/GPOS rules
-    - Advance widths returned in 1000/em units (design-unit scale)
-    - initialization registers PdfTextShaper when libharfbuzz is present
+   HarfBuzz Text Shaper for POSIX
+   - Minimal HarfBuzz API bindings (dynamic loading)
+   - THarfBuzzTextShaper implements IPdfTextShaper, using the FreeType face
+   - Shapes RTL/Arabic/complex-script text using OpenType GSUB/GPOS rules
+   - Advance widths returned in 1000/em units (design-unit scale)
+   - initialization registers PdfTextShaper when libharfbuzz.so.0 /
+     libharfbuzz.0.dylib loads; shaping runs where UseUniscribe is set
 
   *****************************************************************************
 }
@@ -23,7 +21,7 @@ interface
 
 {$I mormot.defines.inc}
 
-{$ifndef MSWINDOWS}
+{$ifndef OSWINDOWS}
 
 uses
   mormot.core.base,
@@ -34,11 +32,11 @@ uses
 /// load the HarfBuzz shared library dynamically; returns false if not found
 function LoadHarfBuzz: boolean;
 
-{$endif MSWINDOWS}
+{$endif OSWINDOWS}
 
 implementation
 
-{$ifndef MSWINDOWS}
+{$ifndef OSWINDOWS}
 
 // ---------------------------------------------------------------------------
 // HarfBuzz minimal type bindings
@@ -119,7 +117,7 @@ type
   THarfBuzzLib = record
     Handle:          TLibHandle;
     ft_font_create:  Thb_ft_font_create;
-    // optional — available since HarfBuzz 0.9.5; used to set FT_LOAD_NO_HINTING
+    // optional - available since HarfBuzz 0.9.5; used to set FT_LOAD_NO_HINTING
     ft_font_set_load_flags: Thb_ft_font_set_load_flags;
     font_destroy:    Thb_font_destroy;
     buffer_create:   Thb_buffer_create;
@@ -142,11 +140,11 @@ var
 
 function LoadHarfBuzz: boolean;
 const
-  {$ifdef DARWIN}
+  {$ifdef OSDARWIN}
   HBLIB = 'libharfbuzz.0.dylib';
   {$else}
   HBLIB = 'libharfbuzz.so.0';
-  {$endif DARWIN}
+  {$endif OSDARWIN}
 begin
   result := HarfBuzz.Loaded;
   if result then
@@ -154,7 +152,7 @@ begin
   HarfBuzz.Handle := LibraryOpen(HBLIB);
   if HarfBuzz.Handle = 0 then
   begin
-    {$ifdef DARWIN}
+    {$ifdef OSDARWIN}
     HarfBuzz.Handle := LibraryOpen('libharfbuzz.dylib');
     if HarfBuzz.Handle = 0 then
       HarfBuzz.Handle := LibraryOpen('/opt/homebrew/lib/libharfbuzz.0.dylib');
@@ -166,7 +164,7 @@ begin
       HarfBuzz.Handle := LibraryOpen('/usr/local/lib/libharfbuzz.dylib');
     {$else}
     HarfBuzz.Handle := LibraryOpen('libharfbuzz.so');
-    {$endif DARWIN}
+    {$endif OSDARWIN}
   end;
   if HarfBuzz.Handle = 0 then
     exit;
@@ -184,7 +182,7 @@ begin
     := LibraryResolve(HarfBuzz.Handle, 'hb_buffer_get_glyph_infos');
   @HarfBuzz.buffer_get_glyph_positions
     := LibraryResolve(HarfBuzz.Handle, 'hb_buffer_get_glyph_positions');
-  // optional symbol — do not abort if missing on older HarfBuzz builds
+  // optional symbol - do not abort if missing on older HarfBuzz builds
   @HarfBuzz.ft_font_set_load_flags
     := LibraryResolve(HarfBuzz.Handle, 'hb_ft_font_set_load_flags');
   if (@HarfBuzz.ft_font_create = nil) or
@@ -313,6 +311,6 @@ finalization
     HarfBuzz.Loaded := false;
   end;
 
-{$endif MSWINDOWS}
+{$endif OSWINDOWS}
 
 end.

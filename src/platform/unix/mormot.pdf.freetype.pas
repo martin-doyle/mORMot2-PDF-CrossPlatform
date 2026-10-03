@@ -1,21 +1,19 @@
-/// FreeType2 backend for the cross-platform PDF engine
-// - implements IPdfPlatformFont, IPdfSystemFonts and IPdfPlatformDC
-//   using the FreeType2 library and filesystem font discovery
-// - registers itself via RegisterPdfPlatform() in the initialization section
-// - on Linux/macOS: include this unit (or via {$ifndef OSWINDOWS}) so that
-//   the FreeType2 backend is registered before TPdfDocument.Create is called
+/// FreeType2 Backend for the Cross-Platform PDF Engine
+// - this unit is a part of the Open Source Synopse mORMot framework 2,
+// licensed under a MPL/GPL/LGPL three license - see LICENSE.md
 unit mormot.pdf.freetype;
 
 {
   *****************************************************************************
 
-    FreeType2 Platform Backend for Unix/macOS
-    - FreeType2 minimal API bindings (dynamic loading)
-    - Font discovery: /usr/share/fonts, ~/.fonts, macOS /Library/Fonts
-    - TPdfFreeTypeFontProvider  implements IPdfPlatformFont
-    - TPdfFreeTypeSystemFonts   implements IPdfSystemFonts
-    - TPdfFreeTypeDCProvider    implements IPdfPlatformDC
-    - initialization registers all three via RegisterPdfPlatform()
+   FreeType2 Platform Backend for POSIX
+   - FreeType2 minimal API bindings (dynamic loading)
+   - Font discovery: /usr/share/fonts, ~/.fonts, macOS /Library/Fonts
+   - TPdfFreeTypeFontProvider  implements IPdfPlatformFont
+   - TPdfFreeTypeSystemFonts   implements IPdfSystemFonts
+   - TPdfFreeTypeDCProvider    implements IPdfPlatformDC
+   - initialization registers all three via RegisterPdfPlatform(); the unit
+     is used by mormot.ui.pdf on POSIX, no program has to name it
 
   *****************************************************************************
 }
@@ -24,7 +22,7 @@ interface
 
 {$I mormot.defines.inc}
 
-{$ifndef MSWINDOWS}
+{$ifndef OSWINDOWS}
 
 uses
   SysUtils,
@@ -238,7 +236,7 @@ type
     function GetScreenLogPixels(ADC: TPdfPlatformDC): integer;
   end;
 
-{$endif MSWINDOWS}
+{$endif OSWINDOWS}
 
 // ---------------------------------------------------------------------------
 // Internal FT context stored behind TPdfPlatformFontHandle
@@ -282,10 +280,10 @@ function PdfFTSetEmSize1000(ACtx: PPdfFTContext): boolean;
 
 implementation
 
-{$ifndef MSWINDOWS}
+{$ifndef OSWINDOWS}
 
 // ---------------------------------------------------------------------------
-// Internal DC type (not exported — only used inside this unit)
+// Internal DC type (not exported - only used inside this unit)
 // ---------------------------------------------------------------------------
 
 type
@@ -300,11 +298,11 @@ type
 
 function LoadFreeType: boolean;
 const
-  {$ifdef DARWIN}
+  {$ifdef OSDARWIN}
   FTLIB = 'libfreetype.6.dylib';
   {$else}
   FTLIB = 'libfreetype.so.6';
-  {$endif DARWIN}
+  {$endif OSDARWIN}
 begin
   result := FreeType.Loaded;
   if result then
@@ -313,13 +311,13 @@ begin
   if FreeType.Handle = 0 then
   begin
     // Try without version suffix
-    {$ifdef DARWIN}
+    {$ifdef OSDARWIN}
     FreeType.Handle := LibraryOpen('libfreetype.dylib');
     {$else}
     FreeType.Handle := LibraryOpen('libfreetype.so');
-    {$endif DARWIN}
+    {$endif OSDARWIN}
   end;
-  {$ifdef DARWIN}
+  {$ifdef OSDARWIN}
   // On Apple Silicon (ARM64), Homebrew installs to /opt/homebrew which is not
   // in the default dyld search path - try explicit paths as last resort
   if FreeType.Handle = 0 then
@@ -330,7 +328,7 @@ begin
     FreeType.Handle := LibraryOpen('/usr/local/lib/libfreetype.6.dylib');
   if FreeType.Handle = 0 then
     FreeType.Handle := LibraryOpen('/usr/local/lib/libfreetype.dylib');
-  {$endif DARWIN}
+  {$endif OSDARWIN}
   if FreeType.Handle = 0 then
     exit;
   @FreeType.Init          := LibraryResolve(FreeType.Handle, 'FT_Init_FreeType');
@@ -561,7 +559,7 @@ begin
   // Build a font map so CreateFont can find files
   if FreeType.Loaded then
   begin
-    {$ifdef DARWIN}
+    {$ifdef OSDARWIN}
     ScanFontsDir('/Library/Fonts', fFontMap);
     ScanFontsDir('/System/Library/Fonts', fFontMap);
     ScanFontsDir(GetEnvironmentVariable('HOME') + '/Library/Fonts', fFontMap);
@@ -571,7 +569,7 @@ begin
     ScanFontsDir(GetEnvironmentVariable('HOME') + '/.fonts', fFontMap);
     ScanFontsDir(GetEnvironmentVariable('HOME') + '/.local/share/fonts', fFontMap);
     ScanFontsDir('/system/fonts', fFontMap); // Android
-    {$endif DARWIN}
+    {$endif OSDARWIN}
   end;
 end;
 
@@ -663,7 +661,7 @@ begin
   AMetrics.tmInternalLeading := 0;
   AMetrics.tmExternalLeading := ScaleDesignUnit(fr^.height, ctx^.UnitsPerEM)
                                 - AMetrics.tmHeight;
-  // Average char width ≈ em-width / 2 (rough estimate)
+  // Average char width ~ em-width / 2 (rough estimate)
   AMetrics.tmAveCharWidth := ctx^.Ascent div 2;
   AMetrics.tmMaxCharWidth := ctx^.Ascent;
   AMetrics.tmWeight       := 400; // FW_NORMAL; caller sets bold separately
@@ -743,7 +741,7 @@ begin
     // so the byte has to be translated first: without this, 128..159 are read
     // as the unassigned C1 controls, miss the CMAP and silently return the
     // .notdef advance. That is what put the bullet (#$95 -> U+2022) and the
-    // em dash (#$97 -> U+2014) into /Widths with a wrong value (U-1b).
+    // em dash (#$97 -> U+2014) into /Widths with a wrong value.
     if code <= high(byte) then
       code := WinAnsiConvert.AnsiToWide[code];
     // Use FT_LOAD_NO_SCALE to get raw design units (like faceRec^.ascender),
@@ -763,7 +761,7 @@ begin
       // the engine uses abcA + abcB + abcC as the advance width, and that sum
       // ends up in /Widths. Scaling the three parts on their own rounds three
       // times, so the sum could miss the scaled advance by up to 1.5 units -
-      // enough to break ISO 14289-1 7.21.5, which allows 1 (U-1a). Scale the
+      // enough to break ISO 14289-1 7.21.5, which allows 1. Scale the
       // advance once, and give abcB whatever the two bearings leave over, so
       // the sum is exact by construction.
       total := ScaleDesignUnit(adv, ctx^.UnitsPerEM);
@@ -814,9 +812,9 @@ begin
     end;
   end;
   len := ABufferSize;
-  // The PDF engine forms table tags as PCardinal(name)^ — a 4-char ASCII
-  // name read as a little-endian DWORD (e.g. 'cmap' → $70616D63).
-  // FreeType uses big-endian tags (FT_MAKE_TAG: 'cmap' → $636D6170).
+  // The PDF engine forms table tags as PCardinal(name)^ - a 4-char ASCII
+  // name read as a little-endian DWORD (e.g. 'cmap' -> $70616D63).
+  // FreeType uses big-endian tags (FT_MAKE_TAG: 'cmap' -> $636D6170).
   // bswap32 converts between the two; bswap32(0)=0 so tag=0
   // ("return whole font file") is passed through correctly.
   err := FreeType.LoadSfntTable(ctx^.Face, bswap32(ATableTag), AOffset,
@@ -843,7 +841,7 @@ end;
 
 procedure TPdfFreeTypeSystemFonts.BuildFontMap;
 begin
-  {$ifdef DARWIN}
+  {$ifdef OSDARWIN}
   ScanFontsDir('/Library/Fonts', fFontMap);
   ScanFontsDir('/System/Library/Fonts', fFontMap);
   ScanFontsDir(GetEnvironmentVariable('HOME') + '/Library/Fonts', fFontMap);
@@ -853,7 +851,7 @@ begin
   ScanFontsDir(GetEnvironmentVariable('HOME') + '/.fonts', fFontMap);
   ScanFontsDir(GetEnvironmentVariable('HOME') + '/.local/share/fonts', fFontMap);
   ScanFontsDir('/system/fonts', fFontMap); // Android
-  {$endif DARWIN}
+  {$endif OSDARWIN}
 end;
 
 procedure TPdfFreeTypeSystemFonts.EnumTrueTypeFonts(ADC: TPdfPlatformDC;
@@ -911,6 +909,6 @@ finalization
     FreeType.Loaded := false;
   end;
 
-{$endif MSWINDOWS}
+{$endif OSWINDOWS}
 
 end.

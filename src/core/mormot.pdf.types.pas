@@ -1,21 +1,19 @@
-/// Cross-Platform PDF engine - shared types, records and platform interfaces
-// - this unit is a part of the mORMot2 PDF cross-platform portierung
-// - defines platform-neutral records mirroring Windows GDI structures
-// - defines interfaces for font metrics, font creation and DC management
-// - concrete implementations are in mormot.pdf.gdi (Windows) and
-//   mormot.pdf.freetype (Unix/macOS)
+/// Cross-Platform PDF Engine Shared Types and Platform Interfaces
+// - this unit is a part of the Open Source Synopse mORMot framework 2,
+// licensed under a MPL/GPL/LGPL three license - see LICENSE.md
 unit mormot.pdf.types;
 
 {
   *****************************************************************************
 
-    Cross-Platform PDF Platform Abstraction Layer
-    - Platform-neutral record types (mirrors of Windows GDI structures)
-    - IPdfPlatformFont interface (font creation, metrics, glyph data)
-    - IPdfSystemFonts interface (font enumeration)
-    - IPdfPlatformDC interface (device context abstraction)
-    - IPdfFontSubsetter interface (optional font subsetting)
-    - Global registration via RegisterPdfPlatform()
+   Cross-Platform PDF Platform Abstraction Layer
+   - Platform-neutral record types (mirrors of Windows GDI structures)
+   - IPdfPlatformFont interface (font creation, metrics, glyph data)
+   - IPdfSystemFonts interface (font enumeration)
+   - IPdfPlatformDC interface (device context abstraction)
+   - IPdfTextShaper and IPdfFontSubsetter interfaces (optional)
+   - Global registration via RegisterPdfPlatform(); implemented by
+     mormot.pdf.gdi (Windows) and mormot.pdf.freetype (POSIX)
 
   *****************************************************************************
 }
@@ -30,19 +28,19 @@ uses
   mormot.core.unicode;
 
 const
-  /// PDF standard Type 1 font names — supported by all PDF readers without embedding
+  /// PDF standard Type 1 font names - supported by all PDF readers without embedding
   // - use with TPdfDocument.StandardFontsReplace := true
   PDF_FONT_STD_SANS  = 'Helvetica';
   PDF_FONT_STD_SERIF = 'Times';
   PDF_FONT_STD_MONO  = 'Courier';
 
-  /// platform TrueType font names — for embedding, and for tagged output
+  /// platform TrueType font names - for embedding, and for tagged output
   // - Calibri/Cambria/Consolas on Windows, Trebuchet MS/Georgia/Andale Mono
   // on macOS, Liberation Sans/Serif/Mono on Linux, the /system/fonts faces
   // Roboto/Noto Serif/Droid Sans Mono on Android
-  PDF_FONT_TTF_SANS  = {$ifdef MSWINDOWS}'Calibri'{$else}{$ifdef DARWIN}'Trebuchet MS'{$else}{$ifdef OSANDROID}'Roboto'{$else}'Liberation Sans'{$endif}{$endif}{$endif};
-  PDF_FONT_TTF_SERIF = {$ifdef MSWINDOWS}'Cambria'{$else}{$ifdef DARWIN}'Georgia'{$else}{$ifdef OSANDROID}'Noto Serif'{$else}'Liberation Serif'{$endif}{$endif}{$endif};
-  PDF_FONT_TTF_MONO  = {$ifdef MSWINDOWS}'Consolas'{$else}{$ifdef DARWIN}'Andale Mono'{$else}{$ifdef OSANDROID}'Droid Sans Mono'{$else}'Liberation Mono'{$endif}{$endif}{$endif};
+  PDF_FONT_TTF_SANS  = {$ifdef OSWINDOWS}'Calibri'{$else}{$ifdef OSDARWIN}'Trebuchet MS'{$else}{$ifdef OSANDROID}'Roboto'{$else}'Liberation Sans'{$endif}{$endif}{$endif};
+  PDF_FONT_TTF_SERIF = {$ifdef OSWINDOWS}'Cambria'{$else}{$ifdef OSDARWIN}'Georgia'{$else}{$ifdef OSANDROID}'Noto Serif'{$else}'Liberation Serif'{$endif}{$endif}{$endif};
+  PDF_FONT_TTF_MONO  = {$ifdef OSWINDOWS}'Consolas'{$else}{$ifdef OSDARWIN}'Andale Mono'{$else}{$ifdef OSANDROID}'Droid Sans Mono'{$else}'Liberation Mono'{$endif}{$endif}{$endif};
 
 /// font names matching the embedding mode
 // - Embedded=true: the platform TrueType fonts (PDF_FONT_TTF_*)
@@ -55,14 +53,14 @@ type
   // - pdf13 (default) through pdf17 (ISO 32000-1)
   TPdfFileFormat = (pdf13, pdf14, pdf15, pdf16, pdf17);
 
-  /// structure role for Tagged PDF (ISO 32000-1 §14) accessibility tags
+  /// structure role for Tagged PDF (ISO 32000-1 14) accessibility tags
   // - psrDocument=0; psrH1..psrH6=1..6; psrP=7; psrSpan=8
   // - psrFigure=9 for image/graphic elements
   // - psrTable=10, psrTR=11, psrTH=12, psrTD=13 for table structure
   // - psrL=14, psrLI=15, psrLbl=16, psrLBody=17 for list structure
   // - psrTHead=18, psrTBody=19, psrTFoot=20 group the rows of a table
   // (ISO 32000-1 14.8.4.3.4): a totals row in a TFoot is told apart from the
-  // data rows by assistive technology (ROADMAP R-14)
+  // data rows by assistive technology
   // - psrTHRow=21 is a TH which heads its row (/Scope /Row), e.g. the label
   // of a totals row; psrTH heads its column
   // - TPdfStructRole(Level) for heading Level 1..6 gives psrH1..psrH6

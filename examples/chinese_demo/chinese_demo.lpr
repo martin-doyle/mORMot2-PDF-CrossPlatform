@@ -37,15 +37,15 @@ uses
 {$R *.res}
 
 const
-  {$ifdef MSWINDOWS}
+  {$ifdef OSWINDOWS}
   CJK_FONT = 'Microsoft YaHei';
   {$else}
-  {$ifdef DARWIN}
+  {$ifdef OSDARWIN}
   CJK_FONT = 'Hiragino Sans GB';
   {$else}
   CJK_FONT = 'Droid Sans Fallback';
-  {$endif DARWIN}
-  {$endif MSWINDOWS}
+  {$endif OSDARWIN}
+  {$endif OSWINDOWS}
 
   // UTF-8 encoded strings, drawn with TextOutUtf8: TextOut reads a string as
   // the compiler holds it, the ANSI code page on Delphi 7
@@ -156,9 +156,9 @@ begin
   WriteLn('CreateFontPackage with a glyph keep list on Windows (R-15). Both keep');
   WriteLn('the glyph numbering, so Identity-H and /ToUnicode stay valid.');
   WriteLn('Set EmbeddedWholeTtf := true to embed the complete face instead.');
-  {$ifdef DARWIN}
+  {$ifdef OSDARWIN}
   WriteLn('');
   WriteLn('Hiragino Sans GB is OpenType/CFF, so its subset is embedded as');
   WriteLn('/FontFile3 with /Subtype /OpenType, as a CIDFontType0 (R-15c).');
-  {$endif DARWIN}
+  {$endif OSDARWIN}
 end.

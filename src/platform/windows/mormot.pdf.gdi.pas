@@ -1,19 +1,17 @@
-/// Windows GDI backend for the cross-platform PDF engine
-// - implements IPdfPlatformFont, IPdfSystemFonts and IPdfPlatformDC
-//   using Windows GDI API calls
-// - registers itself via RegisterPdfPlatform() in the initialization section
-// - include this unit in the uses clause (or via {$ifdef OSWINDOWS}) so that
-//   the GDI backend is registered before TPdfDocument.Create is called
+/// Windows GDI Backend for the Cross-Platform PDF Engine
+// - this unit is a part of the Open Source Synopse mORMot framework 2,
+// licensed under a MPL/GPL/LGPL three license - see LICENSE.md
 unit mormot.pdf.gdi;
 
 {
   *****************************************************************************
 
-    Windows GDI Platform Backend
-    - TPdfGdiFontProvider   implements IPdfPlatformFont
-    - TPdfGdiSystemFonts    implements IPdfSystemFonts
-    - TPdfGdiDCProvider     implements IPdfPlatformDC
-    - initialization registers all three via RegisterPdfPlatform()
+   Windows GDI Platform Backend
+   - TPdfGdiFontProvider   implements IPdfPlatformFont
+   - TPdfGdiSystemFonts    implements IPdfSystemFonts
+   - TPdfGdiDCProvider     implements IPdfPlatformDC
+   - initialization registers all three via RegisterPdfPlatform(); the unit
+     is used by mormot.ui.pdf on Windows, no program has to name it
 
   *****************************************************************************
 }
@@ -22,7 +20,7 @@ interface
 
 {$I mormot.defines.inc}
 
-{$ifdef MSWINDOWS}
+{$ifdef OSWINDOWS}
 
 uses
   Windows,
@@ -66,11 +64,11 @@ type
     function GetScreenLogPixels(ADC: TPdfPlatformDC): integer;
   end;
 
-{$endif MSWINDOWS}
+{$endif OSWINDOWS}
 
 implementation
 
-{$ifdef MSWINDOWS}
+{$ifdef OSWINDOWS}
 
 { TPdfGdiFontProvider }
 
@@ -265,6 +263,6 @@ initialization
     TPdfGdiSystemFonts.Create,
     TPdfGdiDCProvider.Create);
 
-{$endif MSWINDOWS}
+{$endif OSWINDOWS}
 
 end.

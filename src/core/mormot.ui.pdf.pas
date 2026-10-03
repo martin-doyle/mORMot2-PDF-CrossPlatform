@@ -1,4 +1,4 @@
-/// PDF file generation on Windows
+/// Cross-Platform PDF File Generation
 // - this unit is a part of the Open Source Synopse mORMot framework 2,
 // licensed under a MPL/GPL/LGPL three license - see LICENSE.md
 unit mormot.ui.pdf;
@@ -6,11 +6,12 @@ unit mormot.ui.pdf;
 {
   *****************************************************************************
 
-    High Performance PDF Engine for Windows
+    High Performance Cross-Platform PDF Engine
     - Shared types and functions
     - Internal classes mapping PDF objects
     - TPdfDocument TPdfPage main rendering classes
-    - TPdfDocumentGdi for GDI/TCanvas rendering support
+    - TPdfDocumentGdi for GDI/TCanvas rendering support (Windows)
+    - platform backends: GDI on Windows, FreeType and HarfBuzz on POSIX
 
   *****************************************************************************
 }
@@ -618,8 +619,8 @@ function PdfCoord(MM: single): integer;
 /// true when this platform can subset a face and keep its glyph IDs
 // - a subset that renumbers glyphs would break Identity-H and the /ToUnicode
 // round-trip, so tagged output only subsets where this returns true:
-// PdfFontSubsetter on POSIX (R-12), CreateFontPackage driven by a glyph keep
-// list on Windows (R-15) - elsewhere the whole face is embedded
+// PdfFontSubsetter on POSIX, CreateFontPackage driven by a glyph keep
+// list on Windows - elsewhere the whole face is embedded
 function PdfCanSubsetRetainingGids: boolean;
 
 {$ifdef OSWINDOWS}
@@ -708,7 +709,7 @@ type
 
   /// handle PDF security with AES-128-CBC (PDF 1.6, Standard Security Handler R=4)
   // - uses the same MD5-based key derivation as elRC4_128, but AES-128-CBC cipher
-  // - output size is 16 (IV) + ceil(input/16)*16 bytes — use GetEncryptedSize()
+  // - output size is 16 (IV) + ceil(input/16)*16 bytes - use GetEncryptedSize()
   TPdfEncryptionAES128 = class(TPdfEncryption)
   protected
     fUserPass, fOwnerPass: TPdfBuffer32;
@@ -1560,7 +1561,7 @@ type
     /// fill the XMP metadata stream of a Tagged PDF without PDF/A
     // - called from SaveToStreamDirectEnd, since a document streamed page by
     // page creates this stream on its first AddPage, i.e. after
-    // SaveToStreamDirectBegin (ROADMAP B-8)
+    // SaveToStreamDirectBegin
     procedure WriteTaggedMetadata;
     /// release the current document content
     procedure FreeDoc;
@@ -1798,7 +1799,7 @@ type
     // - declared on every platform on purpose, so that portable code can set
     // it without a conditional: USE_UNISCRIBE is defined inside this unit and
     // does NOT reach the units that use it, so an {$ifdef USE_UNISCRIBE}
-    // around the assignment would silently compile to nothing (ROADMAP R-16)
+    // around the assignment would silently compile to nothing
     // - HarfBuzz shapes a run when RightToLeftText is set or the run holds a
     // script that needs shaping (Arabic, Hebrew, Indic, Thai, ...): like with
     // Uniscribe, Latin text stays in the simple font. Without RightToLeftText
@@ -1901,7 +1902,7 @@ type
     // - PDF/A levels auto-raise this value (pdfa1x -> pdf14, pdfa2x/3x -> pdf17)
     property FileFormat: TPdfFileFormat
       read fFileFormat write fFileFormat;
-    /// enable Tagged PDF (ISO 32000-1 §14) accessibility structure tags
+    /// enable Tagged PDF (ISO 32000-1 14) accessibility structure tags
     // - adds /MarkInfo, /Lang and /StructTreeRoot to the document catalog
     // - must be set before the first AddPage call
     // - H1..H6 headings and paragraph text are wrapped in BDC/EMC operators
@@ -2018,7 +2019,7 @@ type
     /// true between BeginArtifact and EndArtifact
     fArtifactOpen: boolean;
     /// true while a path object is wrapped in /Artifact BMC by
-    // BeginPathArtifact, until its painting operator (ROADMAP B-9)
+    // BeginPathArtifact, until its painting operator
     fPathArtifact: boolean;
     /// current line width, to widen a Figure's /BBox by half a stroke
     fLineWidth: single;
@@ -2055,7 +2056,7 @@ type
     // closes the sequence of BeginPathArtifact - called by the operators
     // which end a path object, i.e. painting and 'n'
     procedure EndPathArtifact;
-    // extend the /BBox of every Figure open on the struct stack (B-13)
+    // extend the /BBox of every Figure open on the struct stack
     procedure ExtendFigure(x1, y1, x2, y2: single);
     // extend it by one path point, widened by half the line width
     procedure ExtendFigurePoint(x, y: single);
@@ -2443,7 +2444,7 @@ type
     /// open a Tagged PDF struct element without any marked-content region
     // - for a paragraph whose inline runs own the regions: a plain run adds
     // one to this element via ContinueStructContent, a styled run becomes a
-    // nested Span, and /K then lists both in reading order (ROADMAP B-3)
+    // nested Span, and /K then lists both in reading order
     // - must be paired with EndStructContent, as BeginStructContent is
     procedure BeginStructGroup(ARole: TPdfStructRole);
     /// open one more marked-content region for the innermost open element
@@ -3283,8 +3284,7 @@ type
   // - TGDIPages lays its pages out long before any TPdfDocument exists, so it
   // used to measure with an LCL TCanvas while the PDF engine placed the glyphs:
   // two font engines, two sets of metrics, hence a layout differing per
-  // platform and inline advances quantised to whole screen pixels - see the
-  // B-5 analysis in docs/ROADMAP.md
+  // platform and inline advances quantised to whole screen pixels
   // - resolves a font name the way TPdfCanvas.SetFont does: the base-14 AFM
   // width tables when aStandardFonts is set and the name is one of
   // Helvetica/Times/Courier (including their 'Arial'/'Times New Roman'/
@@ -5108,7 +5108,7 @@ begin
         W.fDoc.fEncryption.EncodeBuffer(buf^, buf^, buflen)
       else
       begin
-        // AES: output is larger — use a separate temporary buffer
+        // AES: output is larger - use a separate temporary buffer
         tmpEnc.Init(integer(encLen));
         needTmpEnc := true;
         W.fDoc.fEncryption.EncodeBuffer(buf^, tmpEnc.buf^, buflen);
@@ -5882,7 +5882,7 @@ begin
   // *positioned* advance, so a glyph with a GPOS cursive adjustment comes back
   // shortened by the same amount it is offset. The viewer advances the pen by
   // /W, so wherever the two differ the difference has to be made up in the TJ
-  // array - otherwise correcting /W would move the text (U-2).
+  // array - otherwise correcting /W would move the text.
   SetLength(Widths, length(Glyphs));
   for i := 0 to high(Glyphs) do
   begin
@@ -5901,7 +5901,7 @@ begin
     end;
   if not hasOffsets then
   begin
-    // fast path: nothing to correct — single Tj
+    // fast path: nothing to correct - single Tj
     Add('<');
     for i := 0 to high(Glyphs) do
       AddHex4(Glyphs[i]);
@@ -5911,7 +5911,7 @@ begin
   begin
     // per-glyph positioning via TJ.
     // PDF TJ: positive kern = shift left by kern/1000 text units.
-    // HarfBuzz x_offset > 0 = shift right → TJ kern = -x_offset.
+    // HarfBuzz x_offset > 0 = shift right -> TJ kern = -x_offset.
     // Between glyph i-1 and i: kern = Offsets[i-1] - Offsets[i], plus the
     // advance error (Widths[i-1] - Advances[i-1]) the viewer has just applied.
     Add('[');
@@ -6508,7 +6508,7 @@ const
   TTFCFP_FLAGS_COMPRESS = 2;
   TTFMFP_SUBSET = 0;
   TTFCFP_FLAGS_TTC = 4;
-  // the keep list holds glyph indices instead of code points (ROADMAP R-15)
+  // the keep list holds glyph indices instead of code points
   // - glyphs produced by GSUB (shaped Arabic) and glyphs addressed through
   // Identity-H have no code point of their own, so a code point keep list
   // dropped them and the subset came out missing the characters actually drawn
@@ -6518,7 +6518,7 @@ const
 
 /// derive the six-letter subset tag from the subset bytes themselves
 // - implemented further down next to PrepareFontSubsets, but the Windows
-// subset path in PrepareForSaving needs the same scheme (R-15 step 5)
+// subset path in PrepareForSaving needs the same scheme
 function SubsetTag(const aSubset: PdfString): PdfString; forward;
 
 function PdfCanSubsetRetainingGids: boolean;
@@ -6526,7 +6526,7 @@ begin
   result := PdfFontSubsetter <> nil;
   {$ifdef USE_UNISCRIBE}
   // CreateFontPackage keeps the glyph numbering when its keep list is a glyph
-  // list, which is what the Windows subset path passes since R-15
+  // list, which is what the Windows subset path passes
   result := result or HasCreateFontPackage;
   {$endif USE_UNISCRIBE}
 end;
@@ -6832,7 +6832,7 @@ begin
   // WinAnsiFont.FindOrAddUsedWideChar must be called explicitly: inside
   // "with UnicodeFont do", an unqualified call would resolve to
   // UnicodeFont.FindOrAddUsedWideChar, returning an index into UnicodeFont's
-  // large CMAP array — using that index on the much smaller WinAnsiFont.fUsedWide
+  // large CMAP array - using that index on the much smaller WinAnsiFont.fUsedWide
   // causes an out-of-bounds read and returns Glyph=0 (notdef box).
   with UnicodeFont do // UnicodeFont.fUsedWide[] = available glyphs from TPdfTtf
     for i := 0 to fUsedWideChar.Count - 1 do
@@ -6926,7 +6926,7 @@ var
   w:       integer;
   synChar: WideChar;
 begin
-  // Step 1: already registered in WinAnsi tracking arrays — nothing to do
+  // Step 1: already registered in WinAnsi tracking arrays - nothing to do
   for i := 0 to fUsedWideChar.Count - 1 do
     if fUsedWide[i].Glyph = aGlyph then
       exit;
@@ -6939,14 +6939,14 @@ begin
           idx := WinAnsiFont.FindOrAddUsedWideChar(WideChar(fUsedWideChar.Values[i]));
           exit; // width from CMAP hmtx data
         end;
-  // Step 3: GSUB-only glyph not in CMAP — register a PUA slot for it.
+  // Step 3: GSUB-only glyph not in CMAP - register a PUA slot for it.
   // The width must come from the font's 'hmtx' table, NOT from the shaper:
   // HarfBuzz returns the *positioned* advance, which for a glyph carrying a
   // GPOS x_offset differs from the font's own advance. /W has to state what
   // the embedded font program states (ISO 14289-1 7.21.5), and the offset is
   // rendered separately as a TJ adjustment by the caller - writing the shaped
   // advance here made both wrong at once, cancelling out on screen while the
-  // dictionary disagreed with the face (U-2). Geeza Pro glyph 273: 'hmtx'
+  // dictionary disagreed with the face. Geeza Pro glyph 273: 'hmtx'
   // says 407, HarfBuzz says 317 with x_offset -91.
   // Fall back to the shaper's value only if the tables cannot be read, which
   // is still far better than /DW.
@@ -7491,7 +7491,7 @@ begin
         TPdfName(WinAnsiFont.Data.ValueByName('BaseFont')).Value);
       // 9.6.4: a subset font carries its tag, and the Type0 has to agree with
       // its descendant - the WinAnsi peer is prepared first, so its BaseFont
-      // is final here whichever path subset it (R-12 or R-15); without a
+      // is final here whichever path subset it (hb-subset or CreateFontPackage); without a
       // subset both names are the plain face name and this is a no-op
       TPdfName(Data.ValueByName('BaseFont')).Value :=
         TPdfName(WinAnsiFont.Data.ValueByName('BaseFont')).Value;
@@ -7597,7 +7597,7 @@ begin
         // the WinAnsi peer of a face drawing CJK or Arabic only: selected with
         // Tf, but no character shown. FirstChar, LastChar and Widths are still
         // required for a simple TrueType font (ISO 32000-1 table 111) - PAC
-        // stops without them. The peer itself should go (roadmap)
+        // stops without them. Leaving the peer out would be the cleaner fix
         Data.AddItem('FirstChar', 32);
         Data.AddItem('LastChar', 32);
         WR.Add('[').AddWithSpace(fWinAnsiWidth[' ']);
@@ -8437,7 +8437,7 @@ begin
     // no MarkInfo or StructTreeRoot here: the Tagged setup in AddPage writes
     // both, with /Lang and DisplayDocTitle - an empty direct StructTreeRoot
     // here made it skip that setup, and SerializeStructTree then referenced
-    // the direct object from a second dictionary, which freed it twice (R-17)
+    // the direct object from a second dictionary, which freed it twice
     needFileID := true;
   end;
   if needFileID then
@@ -8523,7 +8523,7 @@ begin
       fStructTree.fSaveAtTheEnd := true;
       fStructTree.AddItem('Type', 'StructTreeRoot');
       fRoot.Data.AddItem('StructTreeRoot', fStructTree);
-      // XMP metadata stream (PDF/UA-1) — only when PDF/A has not already set it
+      // XMP metadata stream (PDF/UA-1) - only when PDF/A has not already set it
       if (fPdfA = pdfaNone) and (fMetaData = nil) then
       begin
         fMetaData := TPdfStream.Create(Self);
@@ -8887,7 +8887,7 @@ begin
   end;
 end;
 
-{ TPdfStructElement — internal tagged PDF helper (not a PDF object) }
+{ TPdfStructElement - internal tagged PDF helper (not a PDF object) }
 
 type
   TPdfStructElement = class
@@ -8911,7 +8911,7 @@ type
     Kids: TSynList;
     /// document-order rank of each Kids[] entry, against MCIDSeqs[]
     // - an element may own both regions and kids, e.g. a P whose plain runs
-    // are its own regions and whose styled runs are Span kids (ROADMAP B-3),
+    // are its own regions and whose styled runs are Span kids,
     // and /K must then list both in reading order
     KidSeqs: TIntegerDynArray;
     /// source of the MCIDSeqs[]/KidSeqs[] ranks
@@ -8945,7 +8945,7 @@ const
 
   /// roles which only group other elements: they own no marked-content region
   // - a container must not emit BDC/EMC, otherwise the MCID sequence would
-  // contain regions without any content (see ROADMAP B-1)
+  // contain regions without any content
   PDF_STRUCT_CONTAINER: array[TPdfStructRole] of boolean = (
     true,                                     // Document
     false, false, false, false, false, false, // H1..H6
@@ -9033,7 +9033,7 @@ var
   page: TPdfPage;
   maxMCID: integer;
 
-  // one /MCR dict for MCIDs[aIndex] — /Pg is written when the region sits on
+  // one /MCR dict for MCIDs[aIndex] - /Pg is written when the region sits on
   // another page than the element itself (a block split by a page break)
   function NewMCR(aElem: TPdfStructElement; aIndex: integer): TPdfDictionary;
   var
@@ -9116,7 +9116,7 @@ begin
   fXRef.AddObject(docDic);
   parentTreeDic := TPdfDictionary.Create(fXRef);
   fXRef.AddObject(parentTreeDic);
-  // Step 3: fill each StructElem — /P points at the real parent, so the
+  // Step 3: fill each StructElem - /P points at the real parent, so the
   // nesting recorded by BeginStructContent survives into the tag tree
   for i := 0 to fStructElems.Count - 1 do
   begin
@@ -9137,14 +9137,14 @@ begin
     if elem.AltText <> '' then
       elem.Dic.AddItemTextUtf8('Alt', elem.AltText);
     // PDF/UA-1 7.5: a header cell has to name the cells it heads (PAC: "no
-    // associated subcells") - psrTH heads its column (ROADMAP B-11),
+    // associated subcells") - psrTH heads its column,
     // psrTHRow its row, e.g. the label of a totals line
     if elem.Role = psrTH then
       elem.Dic.AddItem('A', TPdfRawText.Create('<</O/Table/Scope/Column>>'))
     else if elem.Role = psrTHRow then
       elem.Dic.AddItem('A', TPdfRawText.Create('<</O/Table/Scope/Row>>'))
     // PDF/UA-1 7.3: a Figure on one page needs its bounding box (PAC: "Figure
-    // element on a single page with no bounding box", ROADMAP B-13)
+    // element on a single page with no bounding box")
     else if (elem.Role = psrFigure) and
             elem.HasBBox and
             FigureOnOnePage(elem) then
@@ -9976,7 +9976,7 @@ procedure TPdfDocument.SetTagged(Value: boolean);
 begin
   // the font mode decides which metrics the whole document is measured with,
   // so switching it once pages exist would break lines with one face and set
-  // them with another (see ROADMAP P-6)
+  // them with another
   if Value and
      (fRawPages.Count > 0) then
     raise ESynException.Create('TPdfDocument.Tagged must be set before the ' +
@@ -9991,9 +9991,9 @@ begin
   fStandardFontsReplace := false;
   fEmbeddedTtf := true;
   // PDF/UA allows subsets as long as every glyph drawn survives and still
-  // maps back to Unicode: PdfFontSubsetter keeps the glyph IDs on POSIX
-  // (R-12), and CreateFontPackage does the same on Windows now that its keep
-  // list is a glyph list (R-15) - set EmbeddedWholeTtf afterwards to override
+  // maps back to Unicode: PdfFontSubsetter keeps the glyph IDs on POSIX,
+  // and CreateFontPackage does the same on Windows with its glyph keep
+  // list - set EmbeddedWholeTtf afterwards to override
   fEmbeddedWholeTtf := not PdfCanSubsetRetainingGids;
 end;
 
@@ -11293,7 +11293,7 @@ end;
 
 procedure TPdfCanvas.ExecuteXObject(const xObject: PdfString);
 begin
-  // an image outside a Figure region is decoration as well (ROADMAP B-9)
+  // an image outside a Figure region is decoration as well
   BeginPathArtifact;
   if fContents <> nil then
     fContents.Writer.Add('/').Add(xObject).Add(' Do'#10);
@@ -12725,7 +12725,7 @@ begin
 end;
 
 procedure TPdfEncryptionAES128.EncodeBuffer(const BufIn; var BufOut; Count: cardinal);
-// PDF 1.6 "Algorithm 3.1a" — AES-128-CBC per-object encryption
+// PDF 1.6 "Algorithm 3.1a" - AES-128-CBC per-object encryption
 // Output layout: IV (16 bytes) || AES-CBC( paddedPlaintext )
 const
   AES_SALT: array[0..3] of byte = ($73, $41, $6C, $54); // 'sAlt'

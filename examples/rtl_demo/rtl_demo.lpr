@@ -43,10 +43,10 @@ uses
 {$R *.res}
 
 const
-  {$ifdef MSWINDOWS}
+  {$ifdef OSWINDOWS}
   ARABIC_FONT = 'Tahoma';
   {$else}
-  {$ifdef DARWIN}
+  {$ifdef OSDARWIN}
   ARABIC_FONT = 'Geeza Pro';
   {$else}
   // Noto Naskh Arabic covers Arabic Unicode block with proper contextual forms.
@@ -54,8 +54,8 @@ const
   // If not found, the engine falls back to FontFallBackName (usually DejaVu Sans
   // which has no Arabic glyphs — squares will appear instead).
   ARABIC_FONT = 'Noto Naskh Arabic';
-  {$endif DARWIN}
-  {$endif MSWINDOWS}
+  {$endif OSDARWIN}
+  {$endif OSWINDOWS}
 
   // UTF-8 encoded strings, drawn with TextOutUtf8: TextOut reads a string as
   // the compiler holds it, the ANSI code page on Delphi 7
@@ -243,13 +243,13 @@ begin
   WriteLn('');
   WriteLn('Section 1a: isolated U+0628 BA - CMAP lookup (DEFAULT_CHARSET fix).');
   WriteLn('Section 1b: multiple isolated chars - advance widths from CMAP (no overlap).');
-  {$ifdef MSWINDOWS}
+  {$ifdef OSWINDOWS}
   WriteLn('Section 2a: single char via Uniscribe - GetAndMarkGlyphAsUsed Step 2 fix.');
   WriteLn('Section 2b: Arabic words with Uniscribe shaping and RTL direction.');
   {$else}
   WriteLn('Section 2a: single char via HarfBuzz - GetAndMarkGlyphAsUsedWithWidth.');
   WriteLn('Section 2b: Arabic words with HarfBuzz shaping and RTL direction.');
   WriteLn('            Requires: libharfbuzz + ', ARABIC_FONT, ' font.');
-  {$endif MSWINDOWS}
+  {$endif OSWINDOWS}
   WriteLn('            Letters should connect and not overlap.');
 end.

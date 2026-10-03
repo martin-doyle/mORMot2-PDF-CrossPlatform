@@ -17,9 +17,9 @@ uses
   mormot.core.unicode,
   mormot.core.test,
   mormot.pdf.types,
-  {$ifndef MSWINDOWS}
+  {$ifndef OSWINDOWS}
   mormot.pdf.hbsubset,
-  {$endif MSWINDOWS}
+  {$endif OSWINDOWS}
   mormot.ui.pdf;
 
 type
@@ -393,14 +393,14 @@ end;
 
 procedure TPdfSubsetTests.TestSubsetterRegistered;
 begin
-  {$ifdef MSWINDOWS}
+  {$ifdef OSWINDOWS}
   Check(PdfFontSubsetter = nil, 'Windows subsets via CreateFontPackage');
   {$else}
   if LoadHarfBuzzSubset then
     Check(PdfFontSubsetter <> nil, 'libharfbuzz-subset loaded but not registered')
   else
     Check(true, 'SKIP: libharfbuzz-subset not installed');
-  {$endif MSWINDOWS}
+  {$endif OSWINDOWS}
 end;
 
 procedure TPdfSubsetTests.TestSubsetRetainsGids;
@@ -672,13 +672,13 @@ begin
   finally
     PdfFontSubsetter := saved;
   end;
-  {$ifdef MSWINDOWS}
+  {$ifdef OSWINDOWS}
   Check(true, 'Windows subsets through CreateFontPackage, not through this');
   {$else}
   Check(FirstFontFile(sub) = FirstFontFile(whole),
     'without a subsetter the whole face is embedded, as before R-12');
   CheckEqual(FirstSubsetTag(sub), '', 'and no subset tag is written');
-  {$endif MSWINDOWS}
+  {$endif OSWINDOWS}
 end;
 
 procedure TPdfSubsetEngineTests.TestTaggedSubsetKeepsToUnicode;

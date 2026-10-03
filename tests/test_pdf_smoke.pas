@@ -954,11 +954,11 @@ end;
 
 const
   // the faces the chinese_demo and rtl_demo use on each platform
-  {$ifdef MSWINDOWS}
+  {$ifdef OSWINDOWS}
   CJK_FONT    = 'Microsoft YaHei';
   ARABIC_FONT = 'Tahoma';
   {$else}
-  {$ifdef DARWIN}
+  {$ifdef OSDARWIN}
   CJK_FONT    = 'Hiragino Sans GB';
   ARABIC_FONT = 'Geeza Pro';
   {$else}
@@ -968,8 +968,8 @@ const
   CJK_FONT    = 'Droid Sans Fallback';
   {$endif OSANDROID}
   ARABIC_FONT = 'Noto Naskh Arabic';
-  {$endif DARWIN}
-  {$endif MSWINDOWS}
+  {$endif OSDARWIN}
+  {$endif OSWINDOWS}
   /// 字体嵌入测试 - "font embedding test"
   CJK_TEXT = {$ifdef HASCODEPAGE}
     #$5B57#$4F53#$5D4C#$5165#$6D4B#$8BD5 {$else}

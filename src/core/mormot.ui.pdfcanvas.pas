@@ -1,24 +1,21 @@
-/// Cross-platform VCL/LCL canvas recording for the PDF engine
-// - provides TPdfDocumentVcl and TPdfVclCanvas as cross-platform replacements
-//   for TPdfDocumentGdi / TMetaFileCanvas + TPdfEnum on non-Windows systems
-// - on Windows, use TPdfDocumentGdi (the original) — it is faster and more
-//   complete (Uniscribe, GdiPlus, EMF comments, opacity...)
-// - on Unix/macOS, use TPdfDocumentVcl with identical TCanvas API
+/// Cross-Platform TCanvas Recording for the PDF Engine
+// - this unit is a part of the Open Source Synopse mORMot framework 2,
+// licensed under a MPL/GPL/LGPL three license - see LICENSE.md
 unit mormot.ui.pdfcanvas;
 
 {
   *****************************************************************************
 
-    Cross-Platform Recording Canvas
-    - TPdfVclCanvas   — TCanvas descendant that translates draw calls to PDF
-    - TPdfDocumentVcl — TPdfDocument descendant exposing VclCanvas property
-
-    Architecture:
-      Windows:    TCanvas → TMetaFile (EMF) → TPdfEnum → TPdfCanvas → PDF
-      CrossPlat:  TCanvas → TPdfVclCanvas  ──────────→ TPdfCanvas → PDF
-
-    The TCanvas drawing methods are overridden here. State (pen color/width,
-    brush color/style, font) is synchronized lazily before each draw operation.
+   Cross-Platform Recording Canvas
+   - TPdfVclCanvas: TCanvas descendant that translates draw calls to PDF
+   - TPdfDocumentVcl: TPdfDocument descendant exposing its VclCanvas
+   
+     Windows:    TCanvas -> TMetaFile (EMF) -> TPdfEnum -> TPdfCanvas -> PDF
+     CrossPlat:  TCanvas -> TPdfVclCanvas ----------------> TPdfCanvas -> PDF
+   
+     On Windows, TPdfDocumentGdi stays available (EMF, GDI+, opacity).
+     The TCanvas drawing methods are overridden here; pen, brush and font
+     are synchronized lazily before each draw operation.
 
   *****************************************************************************
 }
@@ -29,7 +26,7 @@ interface
 
 // the LCL declares the TCanvas drawing methods virtual, Delphi 7's VCL does
 // not: there they are reintroduced, and only a TPdfVclCanvas reference
-// reaches them - a call through TCanvas draws on the measuring DC (R-20)
+// reaches them - a call through TCanvas draws on the measuring DC
 {$ifdef FPC}
   {$define PDF_CANVASVIRTUAL}
 {$endif FPC}
@@ -62,7 +59,7 @@ type
   TPdfPageMode = mormot.ui.pdf.TPdfPageMode;
 
   /// Re-export TPdfFontMeasurer so TGDIPages can lay out its pages with the
-  // metrics of the PDF font engine without pulling all of mormot.ui.pdf — that
+  // metrics of the PDF font engine without pulling all of mormot.ui.pdf - that
   // unit re-exports Windows-style TRect/TPoint which clash with the LCL ones
   TPdfFontMeasurer = mormot.ui.pdf.TPdfFontMeasurer;
 
@@ -128,7 +125,7 @@ type
     // - TCanvas.TextOut only takes integers, so a caller that knows its layout
     // more precisely than whole screen pixels would lose that precision at the
     // 0.75 pt (1 px @ 96 DPI) grid; TGDIPages uses this overload to place text
-    // at the position it actually computed (ROADMAP B-5)
+    // at the position it actually computed
     procedure TextOutFrac(X, Y: single; const AText: string);
     /// TextOutFrac for UTF-8 text, the same on every compiler
     // - string is UTF-8 under FPC but ANSI under Delphi 7: RawUtf8 callers
@@ -138,7 +135,7 @@ type
     // - TCanvas.TextWidth measures with the widgetset's own resolution of
     // Font.Name and rounds to whole screen pixels (0.75 pt @ 96 DPI), while
     // the glyphs are placed with the PDF font metrics: a bounding box derived
-    // from it was up to 27% too narrow, and differed per platform (ROADMAP B-4)
+    // from it was up to 27% too narrow, and differed per platform
     // - falls back to the LCL when no PDF face resolves for Font.Name
     function TextWidthFrac(const AText: string): single;
     /// TextWidthFrac for UTF-8 text, see TextOutUtf8
@@ -159,7 +156,7 @@ type
       {$ifdef PDF_CANVASVIRTUAL}override{$else}reintroduce{$endif};
     /// Rectangle at sub-pixel coordinates
     // - TCanvas.Rectangle only takes integers, so an edge derived from
-    // TextWidthFrac would be snapped back to the 1 px grid (ROADMAP B-4)
+    // TextWidthFrac would be snapped back to the 1 px grid
     procedure RectangleFrac(X1, Y1, X2, Y2: single);
     procedure Ellipse(X1, Y1, X2, Y2: integer);
       {$ifdef PDF_CANVASVIRTUAL}override{$else}reintroduce{$endif};
@@ -196,7 +193,7 @@ type
     destructor Destroy; override;
     /// add a new page and prepare the VclCanvas for drawing on it
     function AddPage: TPdfPage; reintroduce;
-    /// open a marked content sequence for Tagged PDF (ISO 32000-1 §14)
+    /// open a marked content sequence for Tagged PDF (ISO 32000-1 14)
     // - call before drawing content, EndStructContent must follow
     // - no-op when Tagged = false
     // - AAltText is written as /Alt for Figure elements (image accessibility)
@@ -204,7 +201,7 @@ type
       const AAltText: RawUtf8 = '');
     /// open a struct element without any marked-content region
     // - a plain inline run then adds one via ContinueStructContent, a styled
-    // run becomes a nested Span (ROADMAP B-3)
+    // run becomes a nested Span
     procedure BeginStructGroup(ARole: TPdfStructRole);
     /// open one more marked-content region for the innermost open element
     procedure ContinueStructContent;
@@ -233,7 +230,7 @@ type
     /// set the stroke opacity for subsequent drawing operations
     // - Value is clamped to [0..1]: 0=fully transparent, 1=fully opaque
     procedure SetStrokeAlpha(Value: single);
-    /// the recording canvas — use this to draw on the current page
+    /// the recording canvas - use this to draw on the current page
     // - identical API to TPdfDocumentGdi.VclCanvas
     // - keep the TPdfVclCanvas type: under Delphi, a call through a plain
     // TCanvas reference bypasses the bridge and writes nothing into the PDF
@@ -376,7 +373,7 @@ begin
   if fStateValid and (Font.Name = fLastFontName) and
      (Font.Size = fLastFontSize) and (Font.Style = fLastFontStyle) then
   begin
-    // SetFont is expensive — skip it when font attributes are unchanged,
+    // SetFont is expensive - skip it when font attributes are unchanged,
     // but always reapply the fill color because shape draws may have changed it
     if Font.Color <> fLastFontColor then
       fLastFontColor := Font.Color;
@@ -445,7 +442,7 @@ begin
   if fMeasurer = nil then
     fMeasurer := TPdfFontMeasurer.Create;
   { the export flag decides which font the PDF will really use, so it decides
-    which metrics a measurement has to use - same rule as TGDIPages (B-5) }
+    which metrics a measurement has to use - same rule as TGDIPages }
   result := fMeasurer.SetFont(StringToUtf8(Font.Name),
     fsBold in Font.Style, fsItalic in Font.Style, fPdfDoc.StandardFontsReplace);
 end;
@@ -563,7 +560,7 @@ procedure TPdfVclCanvas.DoMoveTo(X, Y: integer);
 begin
   // nothing to write: TFPCustomCanvas.MoveTo already stores PenPos, and an
   // 'm' written here would open a path which the pen settings of the next
-  // LineTo end up inside - PAC: "Operator 'RG' not allowed" (ROADMAP B-12)
+  // LineTo end up inside - PAC: "Operator 'RG' not allowed"
 end;
 {$else}
 procedure TPdfVclCanvas.MoveTo(X, Y: integer);
@@ -602,7 +599,7 @@ begin
   SyncBrush;
   // TPdfCanvas.RoundRect(x1, y1, x2, y2, cx, cy) where y1=bottom, y2=top in PDF coords
   // X3, Y3 are the corner ellipse dimensions (GDI convention); pass them directly
-  // as cx/cy — this matches the existing EMF handler (TPdfCanvas.RoundRectI) behavior
+  // as cx/cy - this matches the existing EMF handler (TPdfCanvas.RoundRectI) behavior
   fPdfCanvas.RoundRect(
     PxToPtX(X1), PxToPtY(Y2),
     PxToPtX(X2), PxToPtY(Y1),

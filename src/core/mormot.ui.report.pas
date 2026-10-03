@@ -1,9 +1,19 @@
-/// Cross-platform report engine — TGDIPages (FPC/Lazarus and Delphi)
-// - a command-list-based replacement of the original GDI/EMF TGDIPages,
-//   rendered via TCanvas and TPdfDocumentVcl
-// - no forms and no printer here: preview and printing are in
-//   mormot.ui.reportpreview
+/// Cross-Platform Report Engine
+// - this unit is a part of the Open Source Synopse mORMot framework 2,
+// licensed under a MPL/GPL/LGPL three license - see LICENSE.md
 unit mormot.ui.report;
+
+{
+  *****************************************************************************
+
+   Cross-Platform Report Engine
+   - TGDIPages: records drawing commands, lays out pages, exports PDF
+   - Rendered on any TCanvas, and into PDF through TPdfDocumentVcl
+   - No forms and no printer: preview and printing are in
+     mormot.ui.reportpreview
+
+  *****************************************************************************
+}
 
 interface
 
@@ -25,7 +35,7 @@ uses
   mormot.core.unicode,
   mormot.pdf.types,     // PDF_FONT_STD_* + TPdfStructRole (Tagged PDF)
   mormot.ui.pdfcanvas;  // cross-platform PDF engine (uses FreeType2 on POSIX)
-              // also re-exports TPdfFontMeasurer (layout metrics, ROADMAP B-5)
+              // also re-exports TPdfFontMeasurer (layout metrics)
 
 { what the ExportPdf* options take, re-exported: a report program uses this
   unit only - mormot.ui.pdf beside it hides psA4 or TRect, depending on the
@@ -62,7 +72,7 @@ const
   pmUseAttachments = mormot.ui.pdfcanvas.pmUseAttachments;
 
 { =========================================================================
-  Phase 1 – Types and structure
+  Phase 1 - Types and structure
   ========================================================================= }
 
 const
@@ -71,7 +81,7 @@ const
   /// token replaced by the page number inside header/footer texts
   PAGENUMBER = '<<pagenumber>>';
 
-  { §5.4 Font-Fallback: platform-appropriate font names for TrueType embedding
+  { Font fallback: platform-appropriate font names for TrueType embedding
     - the names live in mormot.pdf.types (PDF_FONT_TTF_*), because they are
       a platform question, not a report one; kept here for existing callers
     - for standard PDF Type1 fonts (no embedding): PDF_FONT_STD_SANS/SERIF/MONO }
@@ -101,7 +111,7 @@ type
 
   /// atomic drawing commands stored per page (all lengths in 1/100 mm)
   TDrawCmdKind = (
-    dckDrawText,      // text at (X,Y) — Align 0=left, 1=right, 2=center
+    dckDrawText,      // text at (X,Y) - Align 0=left, 1=right, 2=center
     dckDrawLine,      // line from (X,Y) to (X2,Y2); LineWidth in screen pixels
     dckDrawRect,      // empty rectangle outline
     dckFillRect,      // filled rectangle (no border)
@@ -112,17 +122,17 @@ type
     dckTableRow,      // table row with cells (Text holds cell data, Color = header flag)
     dckEndTable,      // mark end of table
     dckHeading,       // heading (Level 1..6, Title in Text)
-    dckBeginTR,       // begin table row (Color: 0 = data, 1 = header, 2 = repeated header) — for Tagged PDF structure
-    dckEndTR,         // end table row — for Tagged PDF structure
-    dckBeginList,     // begin list — for Tagged PDF structure (psrL)
-    dckEndList,       // end list — for Tagged PDF structure
-    dckBeginLI,       // begin list item — for Tagged PDF structure (psrLI)
-    dckEndLI          // end list item — for Tagged PDF structure
+    dckBeginTR,       // begin table row (Color: 0 = data, 1 = header, 2 = repeated header) - for Tagged PDF structure
+    dckEndTR,         // end table row - for Tagged PDF structure
+    dckBeginList,     // begin list - for Tagged PDF structure (psrL)
+    dckEndList,       // end list - for Tagged PDF structure
+    dckBeginLI,       // begin list item - for Tagged PDF structure (psrLI)
+    dckEndLI          // end list item - for Tagged PDF structure
   );
 
   /// style of an inline text run, mapped to a Tagged PDF Span element
   // - isPlain runs carry no semantics of their own: their marked content
-  // belongs directly to the enclosing paragraph (ROADMAP B-3)
+  // belongs directly to the enclosing paragraph
   TInlineStyle = (
     isPlain, isStrong, isEm, isCode, isLink);
 
@@ -242,8 +252,8 @@ type
   /// cross-platform report engine
   // - records drawing operations as TDrawCommand lists (one list per page)
   // - renders on any TCanvas via RenderPageToCanvas
-  // - public surface is API-compatible with the Delphi TGdiPages for the
-  //   methods listed in MIGRATION_PLAN.md §8 (Beibehaltung der öffentl. API)
+  // - not the Delphi TGdiPages of the trunk (a TScrollBox): a non-visual
+  // TComponent with an API of its own
   TGDIPages = class(TComponent)
   private
     { --- page storage --- }
@@ -293,17 +303,17 @@ type
     fTableHeaderRepeat: boolean; // true while DrawTableRow repeats the header row
     // open THead/TBody/TFoot of the table being exported, psrTable = none:
     // a field, not a local of RenderPageToCanvas, because a table continues
-    // across pages while its row group stays open (R-14)
+    // across pages while its row group stays open
     fRenderRowGroup:   TPdfStructRole;
 
     { --- List state (Tagged PDF L/LI grouping) --- }
     fInList:           boolean;       // true between dckBeginList and dckEndList
     fRecordingListItem: boolean;      // true while DrawListItem records its text
 
-    { --- Phase 2: 1×1 bitmap for LCL text measurement (preview fallback) --- }
+    { --- Phase 2: 1x1 bitmap for LCL text measurement (preview fallback) --- }
     fMeasureBitmap: TBitmap;
 
-    { --- B-5: layout metrics taken from the PDF engine, not from the LCL --- }
+    { --- layout metrics taken from the PDF engine, not from the LCL --- }
     fMeasurer:        TPdfFontMeasurer;
 
     { --- saved state stack --- }
@@ -322,7 +332,7 @@ type
     fRenderBlockId:    Integer;  // block whose struct element is currently reused
     fRenderBlockElem:  Integer;  // its index, for TPdfDocumentVcl.ResumeStructContent
     fRenderBlockOpen:  boolean;  // true while its marked-content region is open
-    { --- inline runs sharing one visual line (Tagged PDF, ROADMAP B-3) --- }
+    { --- inline runs sharing one visual line (Tagged PDF) --- }
     fInlineBlockId:    Integer;  // block id of the line being filled, 0 = none
     fEmitInline:       boolean;  // true while an inline overload emits
     fEmitInlineStyle:  TInlineStyle;  // style of the run being emitted
@@ -346,23 +356,23 @@ type
     fActivePdfDoc:        TPdfDocumentVcl;  // non-nil during tagged PDF export only
 
 
-    { === CACHING: Zentrale Berechnung (einmal, viel verwendet) === }
-    { --- Seiten-Geometrie Cache (berechnet in NewPage) --- }
-    fPrintableWidth: Integer;       { fPageWidth (ohne Margins) in 1/100mm }
-    fPrintableHeight: Integer;      { fPageHeight (ohne Margins) in 1/100mm }
+    { === caching: computed once, used often === }
+    { --- page geometry cache (computed in NewPage) --- }
+    fPrintableWidth: Integer;       { fPageWidth (without margins) in 1/100mm }
+    fPrintableHeight: Integer;      { fPageHeight (without margins) in 1/100mm }
     fWrappingWidthPx: Integer;      { Printable width in pixels @ 96 DPI }
 
-    { --- Font-Metriken Cache (berechnet in SetFont) --- }
+    { --- font metrics cache (computed in SetFont) --- }
     fCachedFontName: RawUtf8;        { Tracked font name for cache validation }
     fCachedFontSize: Integer;       { Tracked font size for cache validation }
     fCachedFontStyle: TFontStyles;  { Tracked font style for cache validation }
-    fCachedLineHeightPx: Integer;   { Zeilenhöhe in Pixeln @ 96 DPI }
-    fCachedLineHeightMM: Integer;   { Zeilenhöhe in 1/100mm }
-    fLineHeightFactor:   single;    { multiplier applied to raw TextHeight — default 1.1 }
+    fCachedLineHeightPx: Integer;   { line height in pixels at 96 DPI }
+    fCachedLineHeightMM: Integer;   { line height in 1/100mm }
+    fLineHeightFactor:   single;    { multiplier applied to raw TextHeight - default 1.1 }
 
-    { --- Rendering Cache (berechnet in RenderPageToCanvas) --- }
-    fRenderScaleX: Double;          { Scaling factor für Pixel-Konvertierung }
-    fRenderScaleY: Double;          { Scaling factor für Pixel-Konvertierung }
+    { --- rendering cache (computed in RenderPageToCanvas) --- }
+    fRenderScaleX: Double;          { scaling factor for the pixel conversion }
+    fRenderScaleY: Double;          { scaling factor for the pixel conversion }
     fRenderOffsetX: Integer;        { Pixel offset for left margin }
     fRenderOffsetY: Integer;        { Pixel offset for top margin }
 
@@ -389,7 +399,7 @@ type
     procedure EmitTextCmd(X, Y: Integer; const S: RawUtf8; Align: Integer);
     /// draw one fully styled table row - shared by DrawTableHeader/Footer
     // - ARowKind travels in dckBeginTR.Color: 1 = header, 2 = its repetition
-    // on a continuation page (an artifact, B-11), 3 = footer
+    // on a continuation page (an artifact), 3 = footer
     procedure DrawTableStyledRow(const Cells: array of RawUtf8;
       ARowKind: Integer; const AFontName: RawUtf8; AFontSize: Integer;
       AFontStyle: TFontStyles; ABkColor: TColor);
@@ -403,7 +413,7 @@ type
     /// draw text keeping sub-pixel precision when ACanvas is the PDF bridge
     procedure EmitCanvasText(ACanvas: TCanvas; X, Y: Integer;
                              const S: RawUtf8);
-    { Zentrale Skalierungsfunktionen - IMMER nutzen für Koordinaten-Umwandlung }
+    { the scaling functions - always use them to convert coordinates }
     function  ScaleX(V: Integer): Integer;  // Convert 1/100mm to render pixels
     function  ScaleY(V: Integer): Integer;  // Convert 1/100mm to render pixels
     procedure SetFontStyleProperty(Style: TFontStyles);
@@ -429,7 +439,7 @@ type
     property  FontStyle: TFontStyles read fFontStyle write SetFontStyleProperty;
     /// text color (RGB) for TextOut and other text operations
     property  TextColor: TColor      read fTextColor  write fTextColor;
-    /// line height multiplier applied to the raw font TextHeight — default 1.1
+    /// line height multiplier applied to the raw font TextHeight - default 1.1
     // - increase to e.g. 1.5 for more leading; decrease towards 1.0 for tighter spacing
     // - changing this property invalidates the cached line height immediately
     property LineHeightFactor: single read fLineHeightFactor write SetLineHeightFactor;
@@ -447,13 +457,13 @@ type
     property PaperSize:    TGdiPagePaperSize   read fPaperSize    write fPaperSize;
     /// page orientation (poPortrait or poLandscape) - default poPortrait
     property Orientation:  TReportOrientation  read fOrientation  write fOrientation;
-    /// left margin in 1/100 mm units - default 2000 (20mm) — updates page dimensions
+    /// left margin in 1/100 mm units - default 2000 (20mm) - updates page dimensions
     property MarginLeft:   Integer             read fMarginLeft   write SetMarginLeft;
-    /// right margin in 1/100 mm units - default 2000 (20mm) — updates page dimensions
+    /// right margin in 1/100 mm units - default 2000 (20mm) - updates page dimensions
     property MarginRight:  Integer             read fMarginRight  write SetMarginRight;
-    /// top margin in 1/100 mm units - default 2000 (20mm) — updates page dimensions
+    /// top margin in 1/100 mm units - default 2000 (20mm) - updates page dimensions
     property MarginTop:    Integer             read fMarginTop    write SetMarginTop;
-    /// bottom margin in 1/100 mm units - default 2000 (20mm) — updates page dimensions
+    /// bottom margin in 1/100 mm units - default 2000 (20mm) - updates page dimensions
     property MarginBottom: Integer             read fMarginBottom write SetMarginBottom;
 
     { --- header/footer (Phase 3) --- }
@@ -508,14 +518,14 @@ type
     /// draw block quote (italic gray with left margin)
     // - overloaded: auto uses page margins
     procedure DrawQuote(const AText: RawUtf8); overload;
-    /// draw block quote (italic gray with left margin) — legacy version with explicit positioning
+    /// draw block quote (italic gray with left margin) - legacy version with explicit positioning
     // - MaxWidth: maximum line width in 1/100 mm
     procedure DrawQuote(X, MaxWidth, Y: Integer; const AText: RawUtf8); overload;
 
-    /// draw paragraph with word wrapping — auto uses page margins
+    /// draw paragraph with word wrapping - auto uses page margins
     // - auto-advances CurrentY
     procedure DrawParagraph(const AText: RawUtf8); overload;
-    /// draw paragraph with word wrapping — legacy version with explicit positioning
+    /// draw paragraph with word wrapping - legacy version with explicit positioning
     // - MaxWidth: maximum line width in 1/100 mm
     // - auto-advances CurrentY
     procedure DrawParagraph(X, MaxWidth, Y: Integer; const AText: RawUtf8); overload;
@@ -525,9 +535,9 @@ type
     /// draw list item with a custom prefix, e.g. '1. '
     procedure DrawListItem(X, Y: Integer; const AText, APrefix: RawUtf8); overload;
 
-    /// draw figure/table caption (small italic gray) — auto uses page margins
+    /// draw figure/table caption (small italic gray) - auto uses page margins
     procedure DrawCaption(const ACaption: RawUtf8); overload;
-    /// draw figure/table caption (small italic gray) — legacy version with explicit positioning
+    /// draw figure/table caption (small italic gray) - legacy version with explicit positioning
     // - MaxWidth: maximum line width in 1/100 mm
     procedure DrawCaption(X, MaxWidth, Y: Integer; const ACaption: RawUtf8); overload;
 
@@ -548,7 +558,7 @@ type
     property CurrentPageIndex: Integer read GetCurrentPageIndex;
     /// number of completed pages
     property PageCount:        Integer  read GetPageCount;
-    /// direct access to page data by index — mainly for unit tests
+    /// direct access to page data by index - mainly for unit tests
     property Pages[Index: Integer]: TPageData read GetPage;
 
     { --- drawing (Phase 3) --- }
@@ -631,11 +641,11 @@ type
     property ExportPdfCreator:     RawUtf8     read fExportPdfCreator     write fExportPdfCreator;
     /// PDF version written to the file header; default is pdf13 (backward-compatible)
     property ExportPdfFileFormat:  TPdfFileFormat read fExportPdfFileFormat write fExportPdfFileFormat;
-    /// enable Tagged PDF (ISO 32000-1 §14) on export; adds structure tags H1-H6 and P
+    /// enable Tagged PDF (ISO 32000-1 14) on export; adds structure tags H1-H6 and P
     // - PDF/UA needs embedded fonts, so setting this forces ExportPdfEmbeddedTTF
     // and clears ExportPdfStandardFonts
     // - those flags decide which metrics the layout is measured with, so this
-    // has to be set before the first drawing command (ROADMAP P-6)
+    // has to be set before the first drawing command
     property ExportPdfTagged: boolean read fExportPdfTagged write SetExportPdfTagged;
     /// BCP-47 language tag for the Tagged PDF /Lang entry (default 'en')
     property ExportPdfLanguage: RawUtf8 read fExportPdfLanguage write fExportPdfLanguage;
@@ -690,11 +700,11 @@ const
   /// paper heights (portrait) in 1/100 mm
   PAPER_HEIGHT: array[TGdiPagePaperSize] of Integer = (
     29700, 21000, 42000, 27940, 35560);
-  // internal alias — matches the public REPORT_FONT_SANS constant
+  // internal alias - matches the public REPORT_FONT_SANS constant
   FONT_SANS  = REPORT_FONT_SANS;
   /// cell padding for table cells in 1/100 mm (2mm)
   CELL_PADDING = 200;
-  /// conversion factor: 1 point = 3.528 × 1/100mm
+  /// conversion factor: 1 point = 3.528 x 1/100mm
   PT_TO_100MM = 3528;
   /// U+2022 BULLET and a space
   LIST_BULLET: RawUtf8 =
@@ -729,9 +739,9 @@ begin
   FillChar(Result, SizeOf(Result), 0);
 end;
 
-{ Convert PDF points (1/72 inch) to 1/100 mm — the unit of every TGDIPages
+{ Convert PDF points (1/72 inch) to 1/100 mm - the unit of every TGDIPages
   coordinate. Kept as a single late rounding step, so sub-unit differences do
-  not accumulate over the lines of a page (ROADMAP B-5). }
+  not accumulate over the lines of a page. }
 function PointsToMM100(Points: single): Integer;
 begin
   Result := Round(Points * (2540 / 72));
@@ -749,7 +759,7 @@ begin
 end;
 
 { =========================================================================
-  TGDIPages – construction
+  TGDIPages - construction
   ========================================================================= }
 
 constructor TGDIPages.Create(AOwner: TComponent);
@@ -822,7 +832,7 @@ begin
 end;
 
 { =========================================================================
-  Internal helpers — format registry initialization
+  Internal helpers - format registry initialization
   ========================================================================= }
 
 procedure TGDIPages.InitializeFormatRegistry;
@@ -985,7 +995,7 @@ begin
 end;
 
 { =========================================================================
-  Internal helpers — page geometry
+  Internal helpers - page geometry
   ========================================================================= }
 
 procedure TGDIPages.UpdatePageDimensions;
@@ -1050,13 +1060,13 @@ begin
 end;
 
 { =========================================================================
-  Phase 2 – Text measurement
+  Phase 2 - Text measurement
 
   Layout is measured with the PDF font engine, not with the LCL: the glyphs are
   placed by TPdfCanvas later on, so measuring with a widgetset canvas made the
-  two disagree — every advance was rounded to a whole screen pixel and each
-  platform returned a different text height for the same nominal font
-  (ROADMAP B-5). The LCL canvas remains as an explicit fallback for fonts the
+  two disagree - every advance was rounded to a whole screen pixel and each
+  platform returned a different text height for the same nominal font.
+  The LCL canvas remains as an explicit fallback for fonts the
   PDF engine cannot resolve, and for the on-screen preview.
   ========================================================================= }
 
@@ -1082,7 +1092,7 @@ begin
   if SetupPdfMeasureFont then
     Result := fMeasurer.TextWidth(S, fFontSize)
   else
-    Result := -1; { no PDF metrics for this font — caller falls back to the LCL }
+    Result := -1; { no PDF metrics for this font - caller falls back to the LCL }
 end;
 
 function TGDIPages.MeasureTextWidthPx(const S: RawUtf8): Integer;
@@ -1110,8 +1120,8 @@ begin
     absorbed the widgetset's own leading and quantised to whole screen pixels:
     11 pt text with LineHeightFactor=1.1 advanced by 16.5 pt on Linux and
     14.25 pt on macOS instead of 12.1 pt. Note that a face whose
-    ascender+descender exceeds 1.1 em now needs a larger LineHeightFactor —
-    this is the deliberate layout change of ROADMAP B-5. }
+    ascender+descender exceeds 1.1 em now needs a larger LineHeightFactor -
+    this is a deliberate layout change. }
   Result := PointsToMM100(fFontSize * fLineHeightFactor);
 end;
 
@@ -1139,7 +1149,7 @@ begin
 end;
 
 { =========================================================================
-  Phase 3 – Page recording
+  Phase 3 - Page recording
   ========================================================================= }
 
 procedure TGDIPages.NewPage;
@@ -1149,8 +1159,8 @@ begin
     CloseOpenList;
   UpdatePageDimensions;
 
-  { === Cache zentrale Seitengeometrie ===}
-  fPrintableWidth := fPageWidth;    { Bereits ohne Margins in UpdatePageDimensions }
+  { === cache the page geometry === }
+  fPrintableWidth := fPageWidth;    { already without margins, see UpdatePageDimensions }
   fPrintableHeight := fPageHeight;
   fWrappingWidthPx := MMToPixels(fPrintableWidth, 96);
 
@@ -1201,7 +1211,7 @@ begin
   fFontName := Name;
   fFontSize := Size;
 
-  { === Cache Font-Metriken wenn sich Font ändert === }
+  { === cache the font metrics when the font changes === }
   if (fCachedFontName <> Name) or (fCachedFontSize <> Size) or
      (fCachedFontStyle <> fFontStyle) then
   begin
@@ -1320,8 +1330,8 @@ procedure TGDIPages.EmitCanvasText(ACanvas: TCanvas; X, Y: Integer;
 begin
   { TCanvas.TextOut takes integer pixels, which on PDF export snaps every
     position to the 0.75 pt (1 px @ 96 DPI) grid. The PDF bridge can do better,
-    so place the text where the layout actually put it (ROADMAP B-5). The
-    preview keeps the integer path — it draws on a pixel grid anyway. }
+    so place the text where the layout actually put it. The
+    preview keeps the integer path - it draws on a pixel grid anyway. }
   if ACanvas is TPdfVclCanvas then
     TPdfVclCanvas(ACanvas).TextOutUtf8(ScaleXF(X), ScaleYF(Y), S)
   else
@@ -1340,13 +1350,13 @@ end;
 
 function TGDIPages.ScaleX(V: Integer): Integer;
 begin
-  { ZENTRALE Skalierungsfunktion für X-Koordinaten: 1/100mm → Render-Pixel }
+  { scaling function for X coordinates: 1/100mm -> render pixels }
   Result := Round(V * fRenderScaleX) + fRenderOffsetX;
 end;
 
 function TGDIPages.ScaleY(V: Integer): Integer;
 begin
-  { ZENTRALE Skalierungsfunktion für Y-Koordinaten: 1/100mm → Render-Pixel }
+  { scaling function for Y coordinates: 1/100mm -> render pixels }
   Result := Round(V * fRenderScaleY) + fRenderOffsetY;
 end;
 
@@ -1355,7 +1365,7 @@ begin
   if fFontStyle <> Style then
   begin
     fFontStyle := Style;
-    { === Invalidiere Font-Cache - wird neu berechnet bei nächstem SetFont === }
+    { === invalidate the font cache - recomputed by the next SetFont === }
     fCachedLineHeightPx := 0;
     fCachedLineHeightMM := 0;
   end;
@@ -1365,7 +1375,7 @@ procedure TGDIPages.SetMarginLeft(Value: Integer);
 begin
   fMarginLeft := Value;
   UpdatePageDimensions;
-  { === Update Cache nach Margin-Änderung === }
+  { === update the cache after a margin change === }
   fPrintableWidth := fPageWidth;
   fWrappingWidthPx := MMToPixels(fPrintableWidth, 96);
 end;
@@ -1374,7 +1384,7 @@ procedure TGDIPages.SetMarginRight(Value: Integer);
 begin
   fMarginRight := Value;
   UpdatePageDimensions;
-  { === Update Cache nach Margin-Änderung === }
+  { === update the cache after a margin change === }
   fPrintableWidth := fPageWidth;
   fWrappingWidthPx := MMToPixels(fPrintableWidth, 96);
 end;
@@ -1383,7 +1393,7 @@ procedure TGDIPages.SetMarginTop(Value: Integer);
 begin
   fMarginTop := Value;
   UpdatePageDimensions;
-  { === Update Cache nach Margin-Änderung === }
+  { === update the cache after a margin change === }
   fPrintableHeight := fPageHeight;
 end;
 
@@ -1391,7 +1401,7 @@ procedure TGDIPages.SetMarginBottom(Value: Integer);
 begin
   fMarginBottom := Value;
   UpdatePageDimensions;
-  { === Update Cache nach Margin-Änderung === }
+  { === update the cache after a margin change === }
   fPrintableHeight := fPageHeight;
 end;
 
@@ -1510,7 +1520,7 @@ end;
 procedure TGDIPages.DrawQuote(const AText: RawUtf8);
 begin
   { X=0: start at left edge of printable area }
-  { Nutze zentral berechnete fPrintableWidth - kein Buffer-Hack nötig }
+  { the precomputed fPrintableWidth - no buffer hack needed }
   DrawQuote(0, fPrintableWidth, fCurrentY, AText);
 end;
 
@@ -1536,7 +1546,7 @@ end;
 procedure TGDIPages.DrawParagraph(const AText: RawUtf8);
 begin
   { X=0: start at left edge of printable area }
-  { Nutze zentral berechnete fPrintableWidth - kein Buffer-Hack nötig }
+  { the precomputed fPrintableWidth - no buffer hack needed }
   DrawParagraph(0, fPrintableWidth, fCurrentY, AText);
 end;
 
@@ -1577,7 +1587,7 @@ begin
     MoveToNextLine(Format.SpaceBefore);
   { Tagged PDF: consecutive items share one psrL, each item gets its own psrLI.
     The bullet stays inside the item text, so the rendering is unchanged and
-    the item is tagged as psrLBody — psrLbl would need a separate TextOut. }
+    the item is tagged as psrLBody - psrLbl would need a separate TextOut. }
   if not fInList then
   begin
     Cmd := NewCommand;
@@ -1737,7 +1747,7 @@ begin
         AdjustedX := (fPrintableWidth - TextWidthMM) div 2  { center on page }
       else
         AdjustedX := X - (TextWidthMM div 2);               { center at X position }
-    // 0 = left — no adjustment
+    // 0 = left - no adjustment
   end;
 
   Cmd.X         := NormalizeX(AdjustedX);
@@ -1765,7 +1775,7 @@ begin
   end;
 
   { All runs of one visual line share a BlockId, so the tagged PDF export
-    produces a single P with the styled runs as Span kids (ROADMAP B-3) }
+    produces a single P with the styled runs as Span kids }
   if fInlineBlockId = 0 then
   begin
     Inc(fNextBlockId);
@@ -1856,12 +1866,12 @@ var
   PrevBlockId: Integer;
 begin
   { All lines emitted below belong to one logical paragraph: they share a
-    BlockId, so the tagged PDF export produces a single P (ROADMAP B-2). }
+    BlockId, so the tagged PDF export produces a single P. }
   PrevBlockId := fCurrentBlockId;
   Inc(fNextBlockId);
   fCurrentBlockId := fNextBlockId;
   fInlineBlockId := 0;  { a block-level paragraph ends any open inline line }
-  { Break lines in PDF points — the unit the glyphs are actually placed in.
+  { Break lines in PDF points - the unit the glyphs are actually placed in.
     Widths are accumulated unrounded and only the emitted Y is converted to
     1/100 mm, so no per-word rounding error can add up over a paragraph. }
   MaxPt  := MaxWidthMM * (72 / 2540);
@@ -2059,9 +2069,9 @@ begin
                       (ARowKind = 3) and
                       fTableLayout.FooterRowHeader;
     try
-      { WICHTIG: Für Rechtsbündigkeit muss Textlänge SCHON in X-Position eingerechnet sein! }
+      { right alignment: the text width has to be in the X position already }
       case AlignValue of
-        1: { Right: X = right_edge - text_width, dann wird Text linksbündig gerendert }
+        1: { Right: X = right_edge - text_width, then the text is drawn left-aligned }
           EmitTextCmd(NormalizeX(CellX + CellWidth - CELL_PADDING - MeasureTextWidthMM(Cells[i])), NormalizeY(CellY), Cells[i], 0);
         2: { Center: use middle of cell }
           EmitTextCmd(NormalizeX(CellX + CellWidth div 2), NormalizeY(CellY), Cells[i], AlignValue);
@@ -2099,7 +2109,7 @@ begin
     fTableSavedHeaders[i] := Headers[i];
 
   { 1 = header row, 2 = its repetition on a continuation page, which the
-    tagged export marks as an artifact instead of tagging it again (B-11) }
+    tagged export marks as an artifact instead of tagging it again }
   if fTableHeaderRepeat then
     kind := 2
   else
@@ -2172,7 +2182,7 @@ begin
   { Calculate row height with padding above and small padding below text }
   RowHeight := LineHeightMM + CELL_PADDING;
 
-  { Check for page break — repeat column headers on the continuation page }
+  { Check for page break - repeat column headers on the continuation page }
   if fCurrentY + RowHeight > fPageHeight then
   begin
     ForceNewPage;
@@ -2244,9 +2254,9 @@ begin
     else
       AlignValue := 0;
     end;
-    { WICHTIG: Für Rechtsbündigkeit muss Textlänge SCHON in X-Position eingerechnet sein! }
+    { right alignment: the text width has to be in the X position already }
     case AlignValue of
-      1: { Right: X = right_edge - text_width, dann wird Text linksbündig gerendert }
+      1: { Right: X = right_edge - text_width, then the text is drawn left-aligned }
         EmitTextCmd(NormalizeX(CellX + CellWidth - CELL_PADDING - MeasureTextWidthMM(Values[i])), NormalizeY(CellY), Values[i], 0);
       2: { Center: use middle of cell }
         EmitTextCmd(NormalizeX(CellX + CellWidth div 2), NormalizeY(CellY), Values[i], AlignValue);
@@ -2356,9 +2366,9 @@ begin
     else
       AlignValue := 0;
     end;
-    { WICHTIG: Für Rechtsbündigkeit muss Textlänge SCHON in X-Position eingerechnet sein! }
+    { right alignment: the text width has to be in the X position already }
     case AlignValue of
-      1: { Right: X = right_edge - text_width, dann wird Text linksbündig gerendert }
+      1: { Right: X = right_edge - text_width, then the text is drawn left-aligned }
         EmitTextCmd(NormalizeX(CellX + CellWidth - CELL_PADDING - MeasureTextWidthMM(CellText)), NormalizeY(CellY), CellText, 0);
       2: { Center: use middle of cell }
         EmitTextCmd(NormalizeX(CellX + CellWidth div 2), NormalizeY(CellY), CellText, AlignValue);
@@ -2391,7 +2401,7 @@ begin
 end;
 
 { =========================================================================
-  Phase 3 – RenderPageToCanvas
+  Phase 3 - RenderPageToCanvas
   ========================================================================= }
 
 procedure TGDIPages.RenderPageToCanvas(ACanvas: TCanvas;
@@ -2416,7 +2426,7 @@ var
 
   { Delphi 7's TCanvas drawing methods are static: a call through ACanvas
     would bypass the bridge, so whatever has to reach the PDF goes through
-    Bridge (R-20) }
+    Bridge }
   procedure CanvasTextOut(X, Y: Integer; const S: RawUtf8);
   begin
     if Bridge <> nil then
@@ -2529,7 +2539,7 @@ var
 
   { open the struct element matching the current dckDrawText command
     - an inline line opens it without a region: every run of the line adds
-      its own, so plain runs and Span kids stay in reading order (B-3) }
+      its own, so plain runs and Span kids stay in reading order }
   procedure BeginTextStructContent;
   begin
     if Cmd.IsInline then
@@ -2547,7 +2557,7 @@ begin
   Page := fPages[PageIndex];
   if (Page.PageWidth <= 0) or (Page.PageHeight <= 0) then Exit;
 
-  { === Cache Rendering-Parameter einmalig am Anfang === }
+  { === cache the rendering parameters once === }
   fRenderScaleX := DestWidth  / (Page.PageWidth  + Page.MarginLeft + Page.MarginRight);
   fRenderScaleY := DestHeight / (Page.PageHeight + Page.MarginTop  + Page.MarginBottom);
   fRenderOffsetX := Round(Page.MarginLeft * fRenderScaleX);
@@ -2555,7 +2565,7 @@ begin
 
   { Font scaling: at base DPI without zoom, FontScale=1.0.
     When DestHeight differs from base (e.g. preview zoom), scale fonts proportionally.
-    SourceDPI>0 (PDF export): BaseHeight uses same DPI as DestHeight → FontScale=1.0 always. }
+    SourceDPI>0 (PDF export): BaseHeight uses same DPI as DestHeight -> FontScale=1.0 always. }
   if SourceDPI > 0 then
     BaseHeight := MMToPixels(Page.PageHeight + Page.MarginTop + Page.MarginBottom, SourceDPI)
   else
@@ -2625,7 +2635,7 @@ begin
                 not Cmd.IsInline);
               fRenderBlockOpen := true;
             end;
-            { else the region is still open — emit the line only }
+            { else the region is still open - emit the line only }
           end
           else
           begin
@@ -2640,8 +2650,8 @@ begin
             end;
           end;
         { a styled inline run becomes a Span kid of the enclosing paragraph,
-          a plain run one more region of the paragraph itself — both are
-          listed in /K in reading order (ROADMAP B-3) }
+          a plain run one more region of the paragraph itself - both are
+          listed in /K in reading order }
         SpanOpen := (fActivePdfDoc <> nil) and
                     Cmd.IsInline and
                     fRenderBlockOpen and
@@ -2761,7 +2771,7 @@ begin
             { rows live in a THead/TBody/TFoot group (ISO 32000-1 14.8.4.3.4):
               open the one this row belongs to, closing the previous group.
               A repeated header (Color = 2) is an artifact and is handled
-              above, so it never interrupts the open TBody (R-14) }
+              above, so it never interrupts the open TBody }
             OpenRowGroup(RowGroupOf(Cmd.Color));
             fActivePdfDoc.BeginStructContent(psrTR);
           end;
@@ -2825,7 +2835,7 @@ begin
 end;
 
 { =========================================================================
-  Phase 6 – ExportPdfStream / ExportPDF via TPdfDocumentVcl
+  Phase 6 - ExportPdfStream / ExportPDF via TPdfDocumentVcl
   ========================================================================= }
 
 procedure TGDIPages.SetExportPdfTagged(Value: boolean);
@@ -2834,7 +2844,7 @@ begin
     exit;
   { the export font flags feed SetupPdfMeasureFont, i.e. they decide how the
     recorded pages were broken into lines - switching them afterwards would set
-    the text with a face it was not measured with (ROADMAP B-5 / P-6) }
+    the text with a face it was not measured with }
   if Value and
      (fPageCount > 0) then
     raise ESynException.Create('TGDIPages.ExportPdfTagged must be set before ' +
@@ -2896,7 +2906,7 @@ begin
       if PdfSubject = '' then PdfSubject := fSubject;
       PDF.Info.Title   := Utf8ToString(TrimU(fTitle));
       { PDF/UA needs a title (dc:title, DisplayDocTitle): without one, the
-        first H1 names the document (ROADMAP B-10) }
+        first H1 names the document }
       if fExportPdfTagged and
          (PDF.Info.Title = '') then
         for i := 0 to fHeadingCount - 1 do
@@ -2928,7 +2938,7 @@ begin
       if fExportPdfPageMode <> pmUseNone then
         PDF.Root.PageMode := fExportPdfPageMode;
       PDF.SaveToStreamDirectBegin(aDest);
-      { logical block state is per export run (see ROADMAP B-2) }
+      { logical block state is per export run }
       fRenderBlockId   := 0;
       fRenderBlockElem := -1;
       fRenderBlockOpen := false;
@@ -2968,7 +2978,7 @@ begin
     end;
     Result := True;
   except
-    // swallow exception — caller checks Result
+    // swallow exception - caller checks Result
   end;
 end;
 

@@ -303,8 +303,23 @@ Process, agreed in the forum:
   under the mORMot licence (Sven)~~ done: `Gesamtbeispiel` of XRechnung for
   Delphi; the demo reads several VAT rates, billing period, due date and
   bank accounts now
-- Licence headers, `OSWINDOWS`/`OSDARWIN`, the defines include, formatting,
-  ASCII-only sources, roadmap references out of the comments (Sven)
+- ~~Licence headers, `OSWINDOWS`/`OSDARWIN`, ASCII-only sources, roadmap
+  references out of the comments (Sven)~~ done before Phase 1: every own
+  unit has the mORMot header and description block, comments are English
+  ASCII without roadmap references; code unchanged (compared without
+  comments, the define names normalized). One effect for Delphi: mORMot2
+  defines `OSDARWIN` from Delphi's `MACOS` too, while FPC's `DARWIN` was
+  never set there - Delphi on macOS (untested, not a target) now takes the
+  macOS branches: font names, `.dylib` names, font folders. Still open,
+  each at its own time:
+  - **the defines include** by relative path (`..\mormot.defines.inc`)
+    once the units sit in the trunk's `src/pdf`; by name until then
+  - **formatting** to the trunk's style (`result`/`exit`/`integer`, no
+    column alignment, `begin`/`else` layout) as a PR of its own right
+    before the phase that moves the unit: `mormot.ui.pdf` and
+    `mormot.ui.pdfcanvas` before Phase 2, `mormot.ui.report` before
+    Phase 4. `mormot.pdf.types` and the backends get it as they become
+    `mormot.lib.font*` in Phase 1 - no work on code about to be replaced
 
 ## Open Decisions
 

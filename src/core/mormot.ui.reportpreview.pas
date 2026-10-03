@@ -1,7 +1,19 @@
-/// Preview window and printing for TGDIPages (FPC/Lazarus)
-// - kept apart from mormot.ui.report, so the report core needs no forms and
-// no printer: a console program records, lays out and exports without them
+/// Preview Window and Printing for TGDIPages
+// - this unit is a part of the Open Source Synopse mORMot framework 2,
+// licensed under a MPL/GPL/LGPL three license - see LICENSE.md
 unit mormot.ui.reportpreview;
+
+{
+  *****************************************************************************
+
+   Preview Window and Printing for TGDIPages (LCL)
+   - ShowReportPreview: the preview window
+   - PrintReport: printing through the LCL printer
+   - Kept apart from mormot.ui.report, so that a console program records,
+     lays out and exports a report without forms or printer
+
+  *****************************************************************************
+}
 
 interface
 

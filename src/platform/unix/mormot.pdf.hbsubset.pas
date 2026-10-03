@@ -1,18 +1,17 @@
-/// HarfBuzz font subsetter for the cross-platform PDF engine
-// - implements IPdfFontSubsetter using libharfbuzz-subset
-// - registers PdfFontSubsetter in initialization when the library is present
-// - runtime dependency: libharfbuzz-subset.so.0 + libharfbuzz.so.0 (Linux) /
-//   libharfbuzz-subset.0.dylib + libharfbuzz.0.dylib (macOS), HarfBuzz 2.9+
+/// HarfBuzz Font Subsetter for the Cross-Platform PDF Engine
+// - this unit is a part of the Open Source Synopse mORMot framework 2,
+// licensed under a MPL/GPL/LGPL three license - see LICENSE.md
 unit mormot.pdf.hbsubset;
 
 {
   *****************************************************************************
 
-    HarfBuzz Font Subsetter for Unix/macOS
-    - Minimal hb-subset API bindings (dynamic loading via dlopen)
-    - THarfBuzzFontSubsetter implements IPdfFontSubsetter
-    - Glyph IDs are retained, so the PDF engine needs no glyph remapping
-    - initialization registers PdfFontSubsetter when the library is present
+   HarfBuzz Font Subsetter for POSIX
+   - Minimal hb-subset API bindings (dynamic loading)
+   - THarfBuzzFontSubsetter implements IPdfFontSubsetter
+   - Glyph IDs are retained, so the PDF engine needs no glyph remapping
+   - initialization registers PdfFontSubsetter when libharfbuzz-subset and
+     libharfbuzz (HarfBuzz 2.9+) load
 
   *****************************************************************************
 }
@@ -21,7 +20,7 @@ interface
 
 {$I mormot.defines.inc}
 
-{$ifndef MSWINDOWS}
+{$ifndef OSWINDOWS}
 
 uses
   mormot.core.base,
@@ -51,11 +50,11 @@ var
 // e.g. with a HarfBuzz older than 2.9 which lacks hb_subset_or_fail()
 function LoadHarfBuzzSubset: boolean;
 
-{$endif MSWINDOWS}
+{$endif OSWINDOWS}
 
 implementation
 
-{$ifndef MSWINDOWS}
+{$ifndef OSWINDOWS}
 
 // ---------------------------------------------------------------------------
 // hb-subset minimal type bindings
@@ -155,7 +154,7 @@ begin
   result := HbSubset.Loaded;
   if result then
     exit;
-  {$ifdef DARWIN}
+  {$ifdef OSDARWIN}
   HbSubset.Handle := LoadFirst(['libharfbuzz.0.dylib',
     '/opt/homebrew/lib/libharfbuzz.0.dylib',
     '/usr/local/lib/libharfbuzz.0.dylib']);
@@ -166,7 +165,7 @@ begin
   HbSubset.Handle := LoadFirst(['libharfbuzz.so.0', 'libharfbuzz.so']);
   HbSubset.SubsetHandle := LoadFirst(['libharfbuzz-subset.so.0',
     'libharfbuzz-subset.so']);
-  {$endif DARWIN}
+  {$endif OSDARWIN}
   if (HbSubset.Handle = 0) or
      (HbSubset.SubsetHandle = 0) then
   begin
@@ -321,6 +320,6 @@ finalization
   PdfFontSubsetter := nil; // release interface ref before unloading library
   UnloadHarfBuzzSubset;
 
-{$endif MSWINDOWS}
+{$endif OSWINDOWS}
 
 end.
