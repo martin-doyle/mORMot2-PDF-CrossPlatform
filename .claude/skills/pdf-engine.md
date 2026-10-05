@@ -468,9 +468,15 @@ writes `/S /TH` with `/Scope /Row` (PDF/UA-1 7.5); `psrTH` heads its column.
 TPdfStructRole = (psrDocument, psrH1, psrH2, psrH3, psrH4, psrH5, psrH6,
                   psrP, psrSpan,
                   psrFigure,               // for images — carries /Alt text
-                  psrTable, psrTR, psrTH, psrTD); // table structure
+                  psrTable, psrTR, psrTH, psrTD, // table structure
+                  psrL, psrLI, psrLbl, psrLBody, // lists
+                  psrTHead, psrTBody, psrTFoot,  // row groups
+                  psrTHRow,                // TH with /Scope /Row
+                  psrLink);                // link text + its annotation (OBJR)
 // Ordinal: psrDocument=0, psrH1=1..psrH6=6, psrP=7, psrSpan=8
-//          psrFigure=9, psrTable=10, psrTR=11, psrTH=12, psrTD=13
+//          psrFigure=9, psrTable=10, psrTR=11, psrTH=12, psrTD=13,
+//          psrL=14..psrLBody=17, psrTHead=18..psrTFoot=20, psrTHRow=21,
+//          psrLink=22 - new roles are appended, never inserted
 // TPdfStructRole(Level) for heading Level 1..6 gives psrH1..psrH6
 ```
 
@@ -567,6 +573,21 @@ When `Tagged = true`:
   it passes the bridge and `TGDIPages` unchanged
 - **Low-level API, caller's duties:** PDF/UA wants one bookmark per heading. Create the document with `AUseOutlines = true` and call `CreateOutline(Title, Level, TopPosition)` after each heading (`TopPosition` in PDF points from the page bottom); the engine cannot do it for you, because `BeginStructContent(psrHx)` never sees the heading text. `TGDIPages` does it itself. Text drawn inside a `Figure` is part of the image: a reader gets the `/Alt` instead, so the `/Alt` has to describe that text too. PAC 2024 gives the hint "Possibly inappropriate use of figure structure element" on every Figure - path or image, with or without text or `/BBox` (measured) - so it is accepted (ROADMAP W-1)
 - A `Figure` on one page gets `/A <</O/Layout/BBox[l b r t]>>`. `TPdfCanvas` collects it from the path points (widened by half the line width), from `TextOut`/`TextOutW` (width from the font engine; descent approximated as ¼ size) and from `DrawXObject`. Points drawn under a `ConcatToCTM` that is still active are ignored, because they are not in page space
+- **Links (R-29):** `psrLink` (appended, ordinal 22) holds the link text;
+  `CreateHyperLink`/`CreateLink` called while a `Link` element is the
+  innermost open one attach the annotation to it (`AttachAnnotToLink`,
+  `TPdfStructElement.Annots`). `SerializeStructTree` then writes it as an
+  `<</Type/OBJR/Pg …/Obj …>>` kid, merged into `/K` in document order with
+  the MCRs and kids, gives the annotation `/StructParent` — keys after the
+  page keys, starting at `max(page count, last page with MCIDs + 1)` — and
+  maps that key to the `Link` element in `/ParentTree`. Tagged output also
+  gets `/Tabs /S` on a page with an annotation and `/Contents` on every link
+  (the `Description` parameter, else the url or bookmark name) — the four
+  veraPDF 7.18 rules of the former R-18. A link annotation outside a `Link`
+  element is the caller's error and fails `ua1`. Pattern:
+  `BeginStructGroup(psrP)`, `BeginStructContent(psrLink)`, text,
+  `CreateHyperLink(Rect, Url)`, `EndStructContent` twice. PDF/A-3 needs no
+  appearance stream for a link (veraPDF `3u` passes)
 - **Artifacts:** a path object (`m l c v y re` … paint/`n`) or an image `Do` drawn while no struct region is open is wrapped in `/Artifact BMC … EMC` automatically. Inside a region (e.g. `Figure`) it stays real content. For other skipped content, e.g. a repeated table header or a running page header, use `Canvas.BeginArtifact`/`EndArtifact` (also on `TPdfDocumentVcl`). Do not open a struct element inside it: `BeginArtifact` inside a region and an unmatched `EndArtifact` raise `EPdfInvalidOperation`
 
 ### High-Level: TPdfDocumentVcl wrapper

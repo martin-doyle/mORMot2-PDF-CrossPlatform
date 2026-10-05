@@ -371,7 +371,7 @@ itself is in each demo's `uReport.pas`; the form only passes its options.
   image from a chart library in a `Figure` with `/Alt`, its values as a table
   besides. `layer1_demo`'s figure is deliberately a set of shapes, not a
   chart. A chart example only on request (ROADMAP "Charts")
-- **Links in tagged output**: no `Link` role, `OBJR` or `/StructParent` for annotations — `CreateHyperLink` in tagged output fails veraPDF `ua1` on four 7.18 rules (measured). `TGDIPages.DrawLink` draws link-styled text as a `Span` and drops the URL: conformant, not clickable (roadmap R-29, item 7)
+- **Links in tagged output** (R-29, branch `feature/invoice-demo`): `psrLink`; a `CreateHyperLink` inside a `Link` element becomes its `OBJR` kid, with `/StructParent`, `/Contents` and `/Tabs /S`. `TGDIPages.DrawLink` writes a real link. A link annotation outside a `Link` element fails veraPDF `ua1` — see `.claude/skills/pdf-engine.md` (Links)
 - **Delphi** (R-19, R-21, R-23, R-25, R-27 done; R-20 steps 1–6 done): layer 1,
   the TCanvas bridge and the `TGDIPages` core build on Delphi 7 and Delphi
   2010 (Unicode Delphi), Win32; `test_runner` 279/279 on both. All six console

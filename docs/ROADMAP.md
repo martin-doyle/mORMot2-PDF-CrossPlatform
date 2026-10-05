@@ -71,6 +71,11 @@ v0.10.0 (2026-09-30).
   with its alternate text; `SetHeaderColumns`/`SetFooterColumns` give
   running texts in columns of several lines, in a font of their own, page 1
   apart if wanted. Opt-in, the output of existing code is unchanged
+- **New (tagged links, R-29):** `DrawLink` writes a clickable link, in
+  tagged output a `Link` element with its annotation; layer 1: `psrLink`,
+  and `CreateHyperLink` inside it is tagged as PDF/UA-1 7.18 asks
+  (`OBJR`, `/StructParent`, `/Contents`, `/Tabs /S`). Before, `DrawLink`
+  dropped its URL and `CreateHyperLink` failed veraPDF `ua1` in tagged output
 - **Fixed (Linux/macOS):** a `TBitmap` drawn into a PDF came out as stripes
   on Cocoa: the pixels were read with the stride of a Windows bitmap. The
   LCL path now reads them through `TLazIntfImage`
@@ -452,25 +457,10 @@ is compact, but it is two tables in the structure tree. Two ways to get one:
    apart). Left open: centre or right alignment of a column
 6. **List items**: `DrawListItem` writes the bullet into `LBody` (no `Lbl`)
    and does not wrap, so a long item runs past the margin
-7. **Tagged links** (was R-18; asked for on 2026-10-04, also layer 1).
-   `CreateHyperLink` writes a link annotation, but the engine has no `Link`
-   structure element: `TPdfStructRole` has no `psrLink`, and nothing writes
-   the object reference (`OBJR`) to the annotation, its `/StructParent` or
-   the parent-tree entry behind it. **Measured 2026-09-24 (macOS):** a tagged
-   document with one `CreateHyperLink(…, 'mailto:…')` fails veraPDF `ua1` on
-   four rules, 102/106 — 7.18.1-2 (annotation without `/Contents`), 7.18.3-1
-   (page without `/Tabs /S`), 7.18.5-1 (link not tagged as a `Link`
-   element), 7.18.5-2 (link without an alternate description). So
-   `CreateHyperLink` does not belong in tagged output until this is done.
-   `TGDIPages.DrawLink` is safe but not a link: measured with
-   `DrawLink('example.com', 'https://example.com')`, tagged export, the text
-   is drawn link-styled and tagged as a `Span` inside the line's `P`, the URL
-   is dropped (no annotation, no `/URI`), and `ua1` passes 106/106.
-   `markdown_demo` calls it without a URL at all. Work: the role, `OBJR` and
-   `/StructParent` for annotations, the parent-tree entries, `/Contents` and
-   `/Tabs /S`; then `mailto:` links for the e-mail addresses of
-   `zugferd_demo` and `invoice_demo`, and `DrawLink` writing a real
-   annotation for its URL. Done, it clears W-2
+7. ~~**Tagged links**~~ (was R-18) done 2026-10-05: `psrLink` with the
+   annotation as `OBJR`, `/StructParent`, `/Contents`, `/Tabs /S`;
+   `DrawLink` writes a real link; `invoice_demo` links its e-mail
+   addresses (veraPDF `ua1` and `3u` pass). Clears W-2 for `invoice_demo`
 8. **Keep a heading with what follows**: `DrawHeading` only checks that the
    heading itself fits, so "Zahlung" can end page 1 and its table start
    page 2. Wanted: the heading moves to the next page unless at least one
@@ -590,10 +580,10 @@ Accepted; not investigated further.
 PAC 2024 passes the demo but keeps one quality hint: "Link in text does not
 have a Link element". It points at `seller@email.de` and `buyer@info.de`,
 which the invoice data carries and the page draws as plain text. Not a
-PDF/UA failure — veraPDF `ua1` passes 106/106 and PAC is green. A real link
-would need a tagged link annotation, which the engine cannot write yet
-(R-29, item 7), so the hint is accepted, like W-1. `invoice_demo` draws its
-addresses the same way.
+PDF/UA failure — veraPDF `ua1` passes 106/106 and PAC is green. The engine
+can write tagged links since R-29 item 7 (branch `feature/invoice-demo`,
+where `invoice_demo` uses them); `zugferd_demo` gets them when the branch
+is merged and the demo is touched again.
 
 ### `RunRedirect` Hangs on POSIX — mORMot2 fix, unprioritised
 

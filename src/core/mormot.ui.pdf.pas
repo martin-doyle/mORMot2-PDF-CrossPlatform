@@ -1560,6 +1560,8 @@ type
     /// build and write the Tagged PDF structure tree into the document
     // - called from SaveToStreamDirectEnd when Tagged=true
     procedure SerializeStructTree;
+    /// make a link annotation the OBJR kid of the Link element open now
+    procedure AttachAnnotToLink(aAnnot: TPdfDictionary; aPageIndex: integer);
     /// fill the XMP metadata stream of a Tagged PDF without PDF/A
     // - called from SaveToStreamDirectEnd, since a document streamed page by
     // page creates this stream on its first AddPage, i.e. after
@@ -1651,13 +1653,20 @@ type
     // - if the bookmark name is not existing (i.e. if it no such name has been
     // defined yet via the CreateBookMark method), it's added to the internal
     // fMissingBookmarks list, and will be linked at CreateBookMark method call
+    // - Description is written as /Contents; tagged output then needs one
+    // and falls back to aBookmarkName
     function CreateLink(const ARect: TPdfRect; const aBookmarkName: RawUtf8;
       BorderStyle: TPdfAnnotationBorder = abSolid;
-      BorderWidth: integer = 1): TPdfDictionary;
+      BorderWidth: integer = 1; const Description: RawUtf8 = ''): TPdfDictionary;
     /// wrapper to create a hyper-link, with a specific URL value
+    // - Description is written as /Contents, the url when it is empty in
+    // tagged output
+    // - in tagged output call it inside BeginStructContent(psrLink) ..
+    // EndStructContent, around the text of the link: the annotation then
+    // becomes the object reference of that Link element (PDF/UA-1 7.18.5)
     function CreateHyperLink(const ARect: TPdfRect; const url: RawUtf8;
       BorderStyle: TPdfAnnotationBorder = abSolid;
-      BorderWidth: integer = 0): TPdfDictionary;
+      BorderWidth: integer = 0; const Description: RawUtf8 = ''): TPdfDictionary;
     /// create an Outline entry at a specified position of the current page
     // - the outline tree is created from the specified numerical level (0=root),
     // just after the item added via the previous CreateOutline call
@@ -8254,16 +8263,28 @@ begin
     p.AddItem('Annots', a);
   end;
   a.AddItem(ann);
+  if fTagged then
+  begin
+    // PDF/UA-1 7.18.3: a page with annotations orders them by structure
+    if p.ValueByName('Tabs') = nil then
+      p.AddItem('Tabs', 'S');
+    AttachAnnotToLink(ann, p.fStructParents);
+  end;
   result := ann;
 end;
 
 function TPdfDocument.CreateLink(const ARect: TPdfRect;
   const aBookmarkName: RawUtf8; BorderStyle: TPdfAnnotationBorder;
-  BorderWidth: integer): TPdfDictionary;
+  BorderWidth: integer; const Description: RawUtf8): TPdfDictionary;
 var
   aDest: TPdfDestination;
 begin
   result := CreateAnnotation(asLink, ARect, BorderStyle, BorderWidth);
+  // PDF/UA-1 7.18.1: an annotation needs a description
+  if Description <> '' then
+    result.AddItemTextUtf8('Contents', Description)
+  else if fTagged then
+    result.AddItemTextUtf8('Contents', aBookmarkName);
   aDest := fBookmarks.GetObjectFrom(aBookmarkName);
   if aDest = nil then
     fMissingBookmarks.AddObject(aBookmarkName, result)
@@ -8272,11 +8293,17 @@ begin
 end;
 
 function TPdfDocument.CreateHyperLink(const ARect: TPdfRect; const url: RawUtf8;
-  BorderStyle: TPdfAnnotationBorder; BorderWidth: integer): TPdfDictionary;
+  BorderStyle: TPdfAnnotationBorder; BorderWidth: integer;
+  const Description: RawUtf8): TPdfDictionary;
 var
   aURIObj: TPdfDictionary;
 begin
   result := CreateAnnotation(asLink, ARect, BorderStyle, BorderWidth);
+  // PDF/UA-1 7.18.1: an annotation needs a description
+  if Description <> '' then
+    result.AddItemTextUtf8('Contents', Description)
+  else if fTagged then
+    result.AddItemTextUtf8('Contents', url);
   aURIObj := TPdfDictionary.Create(fXRef);
   aURIObj.fSaveAtTheEnd := true;
   aURIObj.AddItem('Type', 'Action');
@@ -8923,6 +8950,12 @@ type
     /// alternative text, written as /Alt on the element (PDF/UA needs it on a
     // Figure); the marked-content region carries its own copy
     AltText: RawUtf8;
+    /// link annotations created while this Link element was open, written
+    // as /OBJR kids; their page index and document-order rank alongside
+    Annots: array of TPdfDictionary;
+    AnnotPages: TIntegerDynArray;
+    AnnotSeqs: TIntegerDynArray;
+    AnnotCount: integer;
     /// indirect dictionary, assigned in SerializeStructTree
     Dic: TPdfDictionary;
     /// true once BBox* hold the extent of what was drawn inside a Figure
@@ -8933,6 +8966,7 @@ type
     destructor Destroy; override;
     procedure AddKid(aKid: TPdfStructElement);
     procedure AddMCID(aMCID, aPageIndex: integer);
+    procedure AddAnnot(aAnnot: TPdfDictionary; aPageIndex: integer);
     procedure ExtendBBox(x1, y1, x2, y2: single);
   end;
 
@@ -8943,7 +8977,8 @@ const
     'Table', 'TR', 'TH', 'TD',
     'L', 'LI', 'Lbl', 'LBody',
     'THead', 'TBody', 'TFoot',
-    'TH');
+    'TH',
+    'Link');
 
   /// roles which only group other elements: they own no marked-content region
   // - a container must not emit BDC/EMC, otherwise the MCID sequence would
@@ -8956,7 +8991,8 @@ const
     true, true, false, false,                 // Table, TR, TH, TD
     true, true, false, false,                 // L, LI, Lbl, LBody
     true, true, true,                         // THead, TBody, TFoot
-    false);                                   // TH (psrTHRow)
+    false,                                    // TH (psrTHRow)
+    false);                                   // Link
 
 destructor TPdfStructElement.Destroy;
 begin
@@ -9026,9 +9062,37 @@ begin
   inc(MCIDCount);
 end;
 
+procedure TPdfStructElement.AddAnnot(aAnnot: TPdfDictionary;
+  aPageIndex: integer);
+begin
+  if AnnotCount = length(Annots) then
+  begin
+    SetLength(Annots, AnnotCount + 4);
+    SetLength(AnnotPages, AnnotCount + 4);
+    SetLength(AnnotSeqs, AnnotCount + 4);
+  end;
+  Annots[AnnotCount] := aAnnot;
+  AnnotPages[AnnotCount] := aPageIndex;
+  AnnotSeqs[AnnotCount] := SeqNext;
+  inc(SeqNext);
+  inc(AnnotCount);
+end;
+
+procedure TPdfDocument.AttachAnnotToLink(aAnnot: TPdfDictionary;
+  aPageIndex: integer);
+var
+  top: TPdfStructElement;
+begin
+  if fStructStack.Count = 0 then
+    exit;
+  top := TPdfStructElement(fStructStack.List[fStructStack.Count - 1]);
+  if top.Role = psrLink then
+    top.AddAnnot(aAnnot, aPageIndex);
+end;
+
 procedure TPdfDocument.SerializeStructTree;
 var
-  i, j, pageIdx, maxPage, mcid: integer;
+  i, j, pageIdx, maxPage, mcid, key: integer;
   elem: TPdfStructElement;
   docDic, parentTreeDic, attr: TPdfDictionary;
   kidsArr, numsArr, pageArr, mcrArr: TPdfArray;
@@ -9063,13 +9127,31 @@ var
 
   // /K of an element which has kids: kid references and own MCR dicts merged
   // in document order - a leaf without kids got its MCR in Step 3 instead
+  // the /OBJR dict for Annots[aIndex]: a link annotation as a kid of its
+  // Link element (PDF/UA-1 7.18.5)
+  function NewOBJR(aElem: TPdfStructElement; aIndex: integer): TPdfDictionary;
+  var
+    pg: integer;
+  begin
+    result := TPdfDictionary.Create(fXRef);
+    result.AddItem('Type', 'OBJR');
+    pg := aElem.AnnotPages[aIndex];
+    if cardinal(pg) < cardinal(fRawPages.Count) then
+      result.AddItem('Pg', TPdfPage(fRawPages.List[pg]));
+    result.AddItem('Obj', aElem.Annots[aIndex]);
+  end;
+
+  // /K of an element which has kids or annotations: kid references, own MCR
+  // dicts and OBJR dicts merged in document order - a leaf with neither got
+  // its MCR in Step 3 instead
   procedure WriteKids(aElem: TPdfStructElement);
   var
-    k, m, kidCount: integer;
+    k, m, a, kidCount, seqK, seqM, seqA: integer;
     arr: TPdfArray;
     kid: TPdfStructElement;
   begin
     if (aElem.Kids = nil) and
+       (aElem.AnnotCount = 0) and
        not PDF_STRUCT_CONTAINER[aElem.Role] then
       exit;
     if aElem.Kids = nil then
@@ -9079,22 +9161,39 @@ var
     arr := TPdfArray.Create(fXRef);
     k := 0;
     m := 0;
+    a := 0;
     while (k < kidCount) or
-          (m < aElem.MCIDCount) do
-      if (k < kidCount) and
-         ((m >= aElem.MCIDCount) or
-          (aElem.KidSeqs[k] < aElem.MCIDSeqs[m])) then
+          (m < aElem.MCIDCount) or
+          (a < aElem.AnnotCount) do
+    begin
+      seqK := MaxInt;
+      seqM := MaxInt;
+      seqA := MaxInt;
+      if k < kidCount then
+        seqK := aElem.KidSeqs[k];
+      if m < aElem.MCIDCount then
+        seqM := aElem.MCIDSeqs[m];
+      if a < aElem.AnnotCount then
+        seqA := aElem.AnnotSeqs[a];
+      if (seqK < seqM) and
+         (seqK < seqA) then
       begin
         kid := TPdfStructElement(aElem.Kids.List[k]);
         arr.AddItem(kid.Dic);
         WriteKids(kid);
         inc(k);
       end
-      else
+      else if seqM < seqA then
       begin
         arr.AddItem(NewMCR(aElem, m));
         inc(m);
+      end
+      else
+      begin
+        arr.AddItem(NewOBJR(aElem, a));
+        inc(a);
       end;
+    end;
     aElem.Dic.AddItem('K', arr);
   end;
 
@@ -9158,7 +9257,8 @@ begin
       elem.Dic.AddItem('A', attr);
     end;
     if (not PDF_STRUCT_CONTAINER[elem.Role]) and
-       (elem.Kids = nil) then
+       (elem.Kids = nil) and
+       (elem.AnnotCount = 0) then
       if elem.MCIDCount = 1 then
         // a single region: /K is the MCR dict itself
         elem.Dic.AddItem('K', NewMCR(elem, 0))
@@ -9237,11 +9337,31 @@ begin
     numsArr.AddItem(TPdfNumber.Create(pageIdx));
     numsArr.AddItem(pageArr);
   end;
+  // each link annotation gets a key of its own after those of the pages,
+  // which every page holds, content or not: /StructParent on the annotation,
+  // its Link element in the tree (PDF/UA-1 7.18.5, ISO 32000-1 14.7.4.4)
+  key := fRawPages.Count;
+  if key <= maxPage then
+    key := maxPage + 1;
+  for i := 0 to fStructElems.Count - 1 do
+  begin
+    elem := TPdfStructElement(fStructElems[i]);
+    for j := 0 to elem.AnnotCount - 1 do
+    begin
+      elem.Annots[j].AddItem('StructParent', key);
+      numsArr.AddItem(TPdfNumber.Create(key));
+      numsArr.AddItem(elem.Dic);
+      inc(key);
+    end;
+  end;
   parentTreeDic.AddItem('Nums', numsArr);
   // Step 6: fill StructTreeRoot with K, ParentTree, ParentTreeNextKey
   fStructTree.AddItem('K', docDic);
   fStructTree.AddItem('ParentTree', parentTreeDic);
-  fStructTree.AddItem('ParentTreeNextKey', maxPage + 1);
+  if key > maxPage + 1 then
+    fStructTree.AddItem('ParentTreeNextKey', key)
+  else
+    fStructTree.AddItem('ParentTreeNextKey', maxPage + 1);
 end;
 
 procedure TPdfDocument.RegisterFont(aFont: TPdfFont);

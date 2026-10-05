@@ -161,6 +161,7 @@ type
     IsInline:    boolean;    // true = inline run continuing the current line
     InlineStyle: TInlineStyle; // style of an inline run (Tagged PDF Span role)
     RowHeader:   boolean;    // dckDrawText: a table cell heading its row (TH)
+    LinkTarget:  RawUtf8;    // dckDrawText: the URL of a DrawLink, '' = none
   end;
 
   /// ordered list of drawing commands for one page
@@ -357,6 +358,7 @@ type
     fEmitInline:       boolean;  // true while an inline overload emits
     fEmitInlineStyle:  TInlineStyle;  // style of the run being emitted
     fEmitRowHeader:    boolean;  // true while a row-heading cell is emitted
+    fEmitLinkTarget:   RawUtf8;  // the URL while DrawLink emits
     fInParagraph:    Integer;  // depth counter for nested paragraph begin/end
 
     { --- Phase 6: PDF export options --- }
@@ -1707,9 +1709,13 @@ begin
   SetFont(fFontName, fFontSize);
   FontStyle := FontStyle + [fsUnderline];
   TextColor := clBlue;
-  DrawText(X, Y, AText);
+  fEmitLinkTarget := ATarget;
+  try
+    DrawText(X, Y, AText);
+  finally
+    fEmitLinkTarget := '';
+  end;
   RestoreLayout;
-  { Future: could add PDF annotation with ATarget as URL }
 end;
 
 procedure TGDIPages.DrawLink(const AText: RawUtf8; const ATarget: RawUtf8);
@@ -1719,13 +1725,14 @@ begin
   FontStyle := FontStyle + [fsUnderline];
   TextColor := clBlue;
   fEmitInlineStyle := isLink;
+  fEmitLinkTarget := ATarget;
   try
     DrawText(AText);
   finally
     fEmitInlineStyle := isPlain;
+    fEmitLinkTarget := '';
   end;
   RestoreLayout;
-  { Future: could add PDF annotation with ATarget as URL }
 end;
 
 procedure TGDIPages.DrawQuote(const AText: RawUtf8);
@@ -1943,6 +1950,7 @@ begin
   Cmd.IsInline     := fEmitInline;
   Cmd.InlineStyle  := fEmitInlineStyle;
   Cmd.RowHeader    := fEmitRowHeader;
+  Cmd.LinkTarget   := fEmitLinkTarget;
   { Measure text width ONCE at recording time in normalized units }
   TextWidthMM := MeasureTextWidthMM(S);
   Cmd.TextWidthMM := TextWidthMM;
@@ -2661,6 +2669,7 @@ var
   InHeaderRow:    boolean;        // true if current TR is a header row
   InListItem:     boolean;        // true between dckBeginLI and dckEndLI
   SpanOpen:       boolean;        // true while a Span wraps the current run
+  LinkOpen:       boolean;        // true while a Link wraps the current text
   ArtifactDoc:    TPdfDocumentVcl; // fActivePdfDoc, set aside in an artifact row
   Bridge:         TPdfVclCanvas;   // ACanvas when it is the PDF bridge, else nil
 
@@ -2927,7 +2936,12 @@ begin
           else
           begin
             CloseRenderBlock(false);
-            BeginTextStructContent;
+            if (Cmd.LinkTarget <> '') and
+               not Cmd.IsInline then
+              { a link on its own: P > Link, the text in the Link }
+              fActivePdfDoc.BeginStructGroup(TextStructRole)
+            else
+              BeginTextStructContent;
             if Cmd.BlockId <> 0 then
             begin
               { keep the element open for the next line of this paragraph }
@@ -2943,11 +2957,20 @@ begin
                     Cmd.IsInline and
                     fRenderBlockOpen and
                     (Cmd.InlineStyle <> isPlain);
+        LinkOpen := (fActivePdfDoc <> nil) and
+                    (Cmd.LinkTarget <> '') and
+                    (SpanOpen or not Cmd.IsInline);
         if SpanOpen then
         begin
           fActivePdfDoc.SuspendStructContent;
-          fActivePdfDoc.BeginStructContent(psrSpan);
+          { a run with a URL is a Link, which owns its annotation }
+          if LinkOpen then
+            fActivePdfDoc.BeginStructContent(psrLink)
+          else
+            fActivePdfDoc.BeginStructContent(psrSpan);
         end
+        else if LinkOpen then
+          fActivePdfDoc.BeginStructContent(psrLink)
         else if (fActivePdfDoc <> nil) and
                 Cmd.IsInline and
                 fRenderBlockOpen then
@@ -2961,7 +2984,17 @@ begin
           - Just render at the adjusted X position }
         EmitCanvasText(ACanvas, Cmd.X, Cmd.Y,
           SubstitutePlaceholders(Cmd.Text, PageIndex));
-        if SpanOpen then
+        { the annotation while the Link is open, so it becomes its OBJR;
+          none inside an artifact, which has no element to own it }
+        if (Cmd.LinkTarget <> '') and
+           (Bridge <> nil) and
+           (ArtifactDoc = nil) then
+          Bridge.CreateHyperLinkFrac(ScaleXF(Cmd.X), ScaleYF(Cmd.Y),
+            ScaleXF(Cmd.X + Cmd.TextWidthMM),
+            ScaleYF(Cmd.Y + MulDiv(Cmd.FontSize, 2540 * 12, 72 * 10)),
+            Cmd.LinkTarget, Cmd.Text);
+        if SpanOpen or
+           (LinkOpen and not Cmd.IsInline) then
           fActivePdfDoc.EndStructContent;
         if (fActivePdfDoc <> nil) and
            not fRenderBlockOpen then

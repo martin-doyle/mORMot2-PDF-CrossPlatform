@@ -63,6 +63,8 @@ type
   // data rows by assistive technology
   // - psrTHRow=21 is a TH which heads its row (/Scope /Row), e.g. the label
   // of a totals row; psrTH heads its column
+  // - psrLink=22 holds the text of a link and, as an object reference, the
+  // link annotation created while it is open (PDF/UA-1 7.18.5)
   // - TPdfStructRole(Level) for heading Level 1..6 gives psrH1..psrH6
   // - new roles are appended at the end: TPdfStructRole(Level) and the
   // dckBeginTR logic in mormot.ui.report depend on the existing ordinals
@@ -72,7 +74,8 @@ type
                     psrTable, psrTR, psrTH, psrTD,
                     psrL, psrLI, psrLbl, psrLBody,
                     psrTHead, psrTBody, psrTFoot,
-                    psrTHRow);
+                    psrTHRow,
+                    psrLink);
 
   /// platform-neutral font handle
   // - on Windows: HGDIOBJ (GDI font handle)

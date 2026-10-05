@@ -171,6 +171,11 @@ type
     /// StretchDraw by its four edges - for a caller whose TRect is the one of
     // the Types unit, e.g. mormot.ui.report, which cannot see this one
     procedure StretchDrawBounds(X1, Y1, X2, Y2: integer; AGraphic: TGraphic);
+    /// a link annotation over the pixel rectangle X1,Y1 (top left) .. X2,Y2
+    // - in tagged output call it while a psrLink element is open, see
+    // TPdfDocument.CreateHyperLink
+    procedure CreateHyperLinkFrac(X1, Y1, X2, Y2: single;
+      const Url, Description: RawUtf8);
   public
     constructor Create(APdfDoc: TPdfDocumentVcl; APdfCanvas: TPdfCanvas);
     destructor Destroy; override;
@@ -726,6 +731,22 @@ begin
   r.Right := X2;
   r.Bottom := Y2;
   StretchDraw(r, AGraphic);
+end;
+
+procedure TPdfVclCanvas.CreateHyperLinkFrac(X1, Y1, X2, Y2: single;
+  const Url, Description: RawUtf8);
+var
+  pageH: single;
+begin
+  pageH := fPdfDoc.DefaultPageHeight; // as PxToPtY: PDF Y=0 is at the bottom
+  if pageH <= 0 then
+    pageH := 841;
+  fPdfDoc.CreateHyperLink(PdfRect(
+    (X1 + fScale.OriginX) * fScale.ScaleX,
+    pageH - (Y1 + fScale.OriginY) * fScale.ScaleY,
+    (X2 + fScale.OriginX) * fScale.ScaleX,
+    pageH - (Y2 + fScale.OriginY) * fScale.ScaleY),
+    Url, abSolid, 0, Description);
 end;
 
 // ---------------------------------------------------------------------------

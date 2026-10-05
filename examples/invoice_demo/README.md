@@ -6,8 +6,8 @@ embedded `factur-x.xml`, laid out for a screen reader user.
 `zugferd_demo` stays the reference demo until this one is accepted.
 
 **Layer 3.** `uses mormot.ui.report`. Besides the existing API it uses what
-R-29 added on this branch: frames, artifacts, paper coordinates, images and
-running texts in columns.
+R-29 added on this branch: frames, artifacts, paper coordinates, images,
+running texts in columns and tagged links.
 
 ## Why
 
@@ -57,6 +57,9 @@ H2  Hinweise           embedded data, sample data
   row, drawn without grid or fill; the labels are column headers.
 - **The bank accounts are a list.** "List with 2 items" tells at once that
   there is a choice.
+- **E-mail addresses are links** (`mailto:`), in the information block and
+  under "Kunde" and "Rechnungssteller": a `Link` element with its annotation,
+  which clears the PAC hint "Link in text does not have a Link element".
 
 ## Questions for the review
 
@@ -78,9 +81,10 @@ H2  Hinweise           embedded data, sample data
 
 Collected in [ROADMAP R-29](../../docs/ROADMAP.md), together with the two
 ways to make label/value data one table. In this demo they show as follows:
-`DrawSection` adds the space above an H2 itself, a heading can end a page
-without its section ("keep with next" is open), and each bank account must
-fit into one line.
+`DrawSection` adds the space above an H2 itself and moves a heading to the
+next page when less than two lines fit below it ("keep with next" is open);
+a pair of frames is moved the same way, since a frame does not break the
+page; each bank account must fit into one line.
 
 ## Build and run
 

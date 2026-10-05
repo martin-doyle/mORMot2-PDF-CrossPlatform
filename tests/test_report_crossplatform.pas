@@ -53,6 +53,7 @@ type
     procedure TestPageTextColumns;
     procedure TestPaperCoordinates;
     procedure TestDrawBitmap;
+    procedure TestDrawLink;
   end;
 
 implementation
@@ -1281,6 +1282,53 @@ begin
     Bmp.Free;
     Report.Free;
   end;
+end;
+
+procedure TReportTests.TestDrawLink;
+
+  function MakePdf(Tagged: boolean): RawUtf8;
+  var
+    Report: TGDIPages;
+    MS: TMemoryStream;
+  begin
+    result := '';
+    Report := TGDIPages.Create(nil);
+    MS := TMemoryStream.Create;
+    try
+      Report.ExportPdfTagged := Tagged;
+      Report.NewPage;
+      Report.SetFont('Helvetica', 10);
+      { inline: one P with a Link kid; standalone: P > Link }
+      Report.DrawText('Mail: ');
+      Report.DrawLink('info@example.com', 'mailto:info@example.com');
+      Report.MoveToNextLine(600);
+      Report.DrawLink(0, Report.CurrentY, 'example.com', 'https://example.com');
+      Report.MoveToNextLine(600);
+      Report.DrawLink(0, Report.CurrentY, 'no target');
+      Report.EndDoc;
+      Check(Report.ExportPdfStream(MS), 'export with links');
+      FastSetString(result, MS.Memory, MS.Size);
+    finally
+      MS.Free;
+      Report.Free;
+    end;
+  end;
+
+var
+  s: RawUtf8;
+begin
+  s := MakePdf(true);
+  CheckEqual(PdfStructRoles(s), 'Document 1'#10'Link 2'#10'P 3'#10,
+    'a link with a URL is a Link, inline and standalone');
+  s := InflatePdf(s);
+  CheckEqual(2, CountOf(s, '/Type/OBJR'), 'each Link owns its annotation');
+  Check(PosEx('/URI(mailto:info@example.com)', s) > 0, 'the mailto target');
+  Check(PosEx('/URI(https://example.com)', s) > 0, 'the http target');
+  CheckEqual(2, CountOf(s, '/Subtype/Link'), 'no annotation without a target');
+  { untagged: still clickable }
+  s := InflatePdf(MakePdf(false));
+  CheckEqual(2, CountOf(s, '/Subtype/Link'), 'untagged export keeps the links');
+  CheckEqual(0, CountOf(s, '/OBJR'), 'without a structure tree');
 end;
 
 end.

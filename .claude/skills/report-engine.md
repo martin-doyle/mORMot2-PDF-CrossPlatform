@@ -175,7 +175,7 @@ Report.DrawText(' and ');
 Report.DrawEm('italic');              // italic inline text
 Report.DrawText(' text.');
 Report.DrawCode('snippet');           // monospace inline text
-Report.DrawLink('Link text', 'http://...'); // hyperlink text
+Report.DrawLink('Link text', 'http://...'); // a real link: annotation, Link element
 Report.MoveToNextLine(800);
 
 // Overloads with coordinates:
@@ -383,6 +383,15 @@ in `fBitmaps` and records `dckDrawBitmap` (alternate text in `Cmd.Text`);
 `TPdfVclCanvas.StretchDrawBounds` (a call through `ACanvas.StretchDraw` never
 reached the PDF). With `ExportPdfTagged` an empty `AltText` raises, except
 inside `BeginArtifact`, where `fActivePdfDoc = nil` skips the `Figure`.
+
+**Links.** `DrawLink(Text, Target)` and `DrawLink(X, Y, Text, Target)` store
+the target in `TDrawCommand.LinkTarget` (via `fEmitLinkTarget`). On export the
+text gets a `Link` element — the inline run instead of a `Span` inside its
+`P`, the coordinate overload as `P > Link` (P opened as a group) — and
+`TPdfVclCanvas.CreateHyperLinkFrac` adds the annotation over the text
+(`TextWidthMM` wide, 1.2 × the font size high) while the `Link` is open.
+Untagged export: the annotation alone, still clickable. Inside an artifact
+no annotation, nothing could own it. No target: link-styled text only.
 
 **Artifacts.** `BeginArtifact`/`EndArtifact` record `dckBeginArtifact`/
 `dckEndArtifact`; a tagged export handles them like a repeated header row:

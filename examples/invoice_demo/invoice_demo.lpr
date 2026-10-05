@@ -560,7 +560,22 @@ begin
     if Lines[n] <> '' then
       Report.DrawParagraph(Lines[n]);
   DefineFormat(Report, 'P', Sans, 10, [], clBlack, 0, 250);
-  Report.AddVerticalSpace(2);
+end;
+
+// "Label: address" with the address as a mailto link - a Link element in
+// the structure tree, which PAC asks for on any text that looks like one
+procedure DrawMailLine(Report: TGDIPages; const Sans: RawUtf8; Size: integer;
+  const LabelText, Mail: RawUtf8);
+begin
+  if Mail = '' then
+    exit;
+  Report.SaveLayout;
+  Report.SetFont(Sans, Size);
+  Report.CurrentX := 0;
+  Report.DrawText(LabelText + ': ');
+  Report.DrawLink(Mail, 'mailto:' + Mail);
+  Report.RestoreLayout;
+  Report.MoveToNextLine(Size * 2540 * 11 div 720); // LineHeightFactor 1.1
 end;
 
 // label above value, in one row: a table whose column headers are the
@@ -608,10 +623,14 @@ begin
 end;
 
 // an H2 with room above it: DrawHeading takes size and style from the
-// format, but not SpaceBefore
+// format, but not SpaceBefore. A heading with less than two lines of room
+// below it goes to the next page, so it never ends a page alone (R-29
+// "keep with next" is open)
 procedure DrawSection(Report: TGDIPages; const Title: RawUtf8);
 begin
   Report.AddVerticalSpace(4);
+  if Report.CurrentY + 2000 > Report.PageHeight then
+    Report.ForceNewPage;
   Report.DrawHeading(2, Title);
 end;
 
@@ -747,7 +766,7 @@ begin
   DrawField(Report, 'Vertrag', Inv.Contract);
   DrawField(Report, 'Ansprechpartner', Inv.SellerContact);
   DrawField(Report, 'Telefon', Inv.SellerPhone);
-  DrawField(Report, 'E-Mail', Inv.SellerEmail);
+  DrawMailLine(Report, Sans, 8, 'E-Mail', Inv.SellerEmail);
   DefineFormat(Report, 'P', Sans, 10, [], clBlack, 0, 250);
   Report.EndFrame; // CurrentY: below the subject, where the body starts
   // the items; the table breaks the page and repeats its header on its own
@@ -815,7 +834,11 @@ begin
   end;
   // the parties in full, side by side: what the letterhead, the address
   // field and the footer show as decoration is tagged here, once
+  // a frame does not break the page: start the pair on the next one when
+  // the space left is short of what the longer block takes
   Report.AddVerticalSpace(4);
+  if Report.CurrentY + 5000 > Report.PageHeight then
+    Report.ForceNewPage;
   Y := Report.CurrentY;
   Report.BeginFrame(0, Y, Report.PageWidth div 2 - 500);
   Report.DrawHeading(2, 'Kunde');
@@ -823,8 +846,9 @@ begin
     TrimU(Inv.BuyerPostcode + ' ' + Inv.BuyerCity), Inv.BuyerCountry,
     Labeled('USt-IdNr. ', Inv.BuyerVatId),
     Labeled('Ansprechpartner: ', Join([Inv.BuyerContact,
-      Labeled('Tel. ', Inv.BuyerPhone), Inv.BuyerContactEmail])),
-    Labeled('E-Mail: ', Inv.BuyerEmail)]);
+      Labeled('Tel. ', Inv.BuyerPhone)]))]);
+  DrawMailLine(Report, Sans, 10, 'E-Mail', Inv.BuyerContactEmail);
+  DrawMailLine(Report, Sans, 10, 'Rechnungen an', Inv.BuyerEmail);
   Report.EndFrame;
   Report.BeginFrame(Report.PageWidth div 2 + 500, Y,
     Report.PageWidth div 2 - 500);
@@ -838,7 +862,8 @@ begin
       Labeled('Steuernummer ', Inv.SellerTaxNumber)]),
     Inv.SellerDescription, Inv.Note,
     Labeled('Ansprechpartner: ', Join([Inv.SellerContact,
-      Labeled('Tel. ', Inv.SellerPhone), Inv.SellerEmail]))]);
+      Labeled('Tel. ', Inv.SellerPhone)]))]);
+  DrawMailLine(Report, Sans, 10, 'E-Mail', Inv.SellerEmail);
   Report.EndFrame;
   // where the data comes from
   DrawSection(Report, 'Hinweise');

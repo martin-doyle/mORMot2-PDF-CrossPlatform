@@ -44,6 +44,7 @@ type
     procedure TestTaggedPdfA;
     procedure TestTaggedDecorationIsArtifact;
     procedure TestTaggedArtifactMisuseRaises;
+    procedure TestTaggedLink;
     {$ifdef PDF_HASVCLCANVAS}
     procedure TestLineToWritesCompletePath;
     {$endif PDF_HASVCLCANVAS}
@@ -355,6 +356,48 @@ begin
       left, code);
     Check((bb > 0) and (code = 0) and (abs(left - 7.125) < 0.01),
       'the /BBox starts at the left edge of the drawing minus half the pen');
+  finally
+    Stream.Free;
+  end;
+end;
+
+procedure TPdfSmokeTests.TestTaggedLink;
+var
+  PDF: TPdfDocument;
+  Stream: TMemoryStream;
+  s: RawByteString;
+begin
+  Stream := TMemoryStream.Create;
+  try
+    PDF := TPdfDocument.Create(false, 0, pdfaNone);
+    try
+      PDF.CompressionMethod := cmNone;
+      PDF.Tagged := true;
+      PDF.AddPage;
+      UseSansFont(PDF);
+      { P > Link: the text in the Link, the annotation created while it is
+        open becomes its object reference (PDF/UA-1 7.18.5) }
+      PDF.Canvas.BeginStructGroup(psrP);
+      PDF.Canvas.BeginStructContent(psrLink);
+      DrawUtf8Text(PDF, 72, PAGE_H - 72, 'info@example.com');
+      PDF.CreateHyperLink(PdfRect(72, PAGE_H - 60, 180, PAGE_H - 75),
+        'mailto:info@example.com');
+      PDF.Canvas.EndStructContent;
+      PDF.Canvas.EndStructContent;
+      PDF.SaveToStream(Stream);
+    finally
+      PDF.Free;
+    end;
+    s := StreamToRaw(Stream);
+    Check(Pos(RawByteString('/S/Link'), s) > 0, 'a Link element');
+    Check(Pos(RawByteString('/Type/OBJR'), s) > 0, 'with an object reference');
+    Check(Pos(RawByteString('/StructParent 1'), s) > 0,
+      'the annotation has the key after the page');
+    Check(Pos(RawByteString('/ParentTreeNextKey 2'), s) > 0,
+      'and the parent tree counts it');
+    Check(Pos(RawByteString('/Tabs/S'), s) > 0, 'the page orders by structure');
+    Check(Pos(RawByteString('/Contents(mailto:info@example.com)'), s) > 0,
+      'the url is the description when none is given');
   finally
     Stream.Free;
   end;
