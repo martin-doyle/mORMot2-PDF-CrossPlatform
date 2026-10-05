@@ -1,9 +1,10 @@
 /// Accessible Invoice Demo - mORMot2 PDF Cross-Platform
-// The invoice of zugferd_demo, laid out for a screen reader user: a heading
-// per section, so that the headings list and the bookmarks lead to the
-// invoice data, the parties, the items and the payment; the key data as
-// tables with column headers; the bank accounts as a list; letterhead and
-// page footer as artifacts, since every fact in them is tagged in the body.
+// The invoice of zugferd_demo as a business letter after DIN 5008 form B,
+// laid out for a screen reader user: letterhead, address field,
+// information block and subject at their positions, a heading per section
+// below, so that the headings list and the bookmarks lead through it; all
+// decoration - letterhead, logo, return line, marks, running texts - is an
+// artifact, its facts tagged once under "Rechnungssteller".
 // A proposal for review - zugferd_demo stays the reference demo.
 //
 // Worth noting:
@@ -12,10 +13,9 @@
 //   drawn from what ReadInvoice finds in it and the file is embedded
 // - the labels are ASCII German without umlauts ("Kunde", "Zahlbar bis");
 //   every umlaut on the page comes from the UTF-8 XML
-// - customer and seller stand side by side in two frames (BeginFrame); the
-//   return address line above the customer is an artifact (BeginArtifact).
-//   A label/value table with row headers would still need an engine
-//   change - see README.md
+// - the letter parts are frames at paper positions (BeginFrame, PaperX,
+//   PaperY); the subject is recorded first, so it is read first
+// - the logo is painted in code (NewLogo) - the demo ships no image file
 //
 // Switches, to tell the sources of a checker failure apart:
 //   --no-attachment   leave factur-x.xml out (the page is still read from it)
@@ -501,18 +501,19 @@ end;
 
 { ---------- the page ---------- }
 
-// the item columns; 18000 = A4 (21000) minus the two 15 mm margins.
+// the item columns, shares of the printable width.
 // Built at runtime: Delphi 7 has no constants for dynamic array fields
-function ItemTableLayout: TTableLayout;
+function ItemTableLayout(Width: integer): TTableLayout;
 begin
   Finalize(result);
   FillChar(result, SizeOf(result), 0);
   SetLength(result.ColumnWidths, 5);
-  result.ColumnWidths[0] := 8400;  // Bezeichnung
-  result.ColumnWidths[1] := 1800;  // Menge
-  result.ColumnWidths[2] := 2800;  // Einzelpreis
-  result.ColumnWidths[3] := 1600;  // USt
-  result.ColumnWidths[4] := 3400;  // Betrag
+  result.ColumnWidths[1] := Width div 10;          // Menge
+  result.ColumnWidths[2] := Width * 3 div 20;      // Einzelpreis
+  result.ColumnWidths[3] := Width div 11;          // USt
+  result.ColumnWidths[4] := Width * 3 div 16;      // Betrag
+  result.ColumnWidths[0] := Width - result.ColumnWidths[1] -
+    result.ColumnWidths[2] - result.ColumnWidths[3] - result.ColumnWidths[4];
   SetLength(result.ColumnAligns, 5);
   result.ColumnAligns[0] := tcaLeft;
   result.ColumnAligns[1] := tcaRight;
@@ -591,7 +592,7 @@ begin
   SetLength(Layout.ColumnAligns, count);
   for n := 0 to count - 1 do
   begin
-    Layout.ColumnWidths[n] := 18000 div count;
+    Layout.ColumnWidths[n] := Report.PageWidth div count;
     Layout.ColumnAligns[n] := tcaLeft;
   end;
   // no grid, no fill: it reads as a line of labelled values
@@ -614,22 +615,55 @@ begin
   Report.DrawHeading(2, Title);
 end;
 
+// a stand-in logo: the demo has no image file, so it paints one
+function NewLogo: TBitmap;
+begin
+  result := TBitmap.Create;
+  result.PixelFormat := pf24bit;
+  result.Width := 120;
+  result.Height := 120;
+  result.Canvas.Brush.Color := clWhite;
+  result.Canvas.FillRect(Rect(0, 0, 120, 120));
+  result.Canvas.Pen.Style := psClear;
+  result.Canvas.Brush.Color := $8B4513;  // dark blue (BGR)
+  result.Canvas.Ellipse(0, 0, 120, 120);
+  result.Canvas.Brush.Color := $F0E0D8;  // the table header's light blue
+  result.Canvas.Rectangle(35, 35, 85, 85);
+end;
+
+// "Label: value" as one P, nothing when the value is missing
+procedure DrawField(Report: TGDIPages; const LabelText, Value: RawUtf8);
+begin
+  if Value <> '' then
+    Report.DrawParagraph(LabelText + ': ' + Value);
+end;
+
+{ The positions of DIN 5008 form B, from the paper edge in 1/100 mm:
+  letterhead above 45 mm, address field 20 mm from the left and 45 mm from
+  the top (85 x 45 mm: 17.7 mm for remarks with the return address line at
+  their foot, then the address), information block from 125 mm left and
+  50 mm down, subject line at 98.46 mm, fold marks at 105 and 210 mm, hole
+  mark at 148.5 mm. PaperX/PaperY turn them into the coordinates of the
+  Draw* methods. The page body takes over below the subject }
 procedure DrawInvoice(Report: TGDIPages; const Inv: TInvoice; const Sans: RawUtf8);
 var
   n, k, Y: integer;
   Item: TInvoiceItem;
   Name, Text, Due: RawUtf8;
+  Logo: TBitmap;
 begin
-  DefineFormat(Report, 'H1', Sans, 20, [fsBold], clBlack, 0, 300);
+  DefineFormat(Report, 'H1', Sans, 16, [fsBold], clBlack, 0, 200);
   DefineFormat(Report, 'H2', Sans, 13, [fsBold], clBlack, 0, 0);
   DefineFormat(Report, 'P', Sans, 10, [], clBlack, 0, 250);
   DefineFormat(Report, 'LI', Sans, 10, [], clBlack, 0, 100);
   Report.SetFont(Sans, 10);
-  Report.DrawHeading(1, 'Rechnung ' + Inv.Number);
-  // the answer to "how much, by when" before any detail
   Due := Inv.DuePayable;
   if Due = '' then
     Due := Inv.GrandTotal;
+  // the subject first in the structure tree, though it stands below the
+  // address: it names the document, and a screen reader starts there
+  Report.BeginFrame(0, Report.PaperY(9846), Report.PageWidth);
+  Report.DrawHeading(1, 'Rechnung ' + Inv.Number);
   Text := Labeled('Rechnungsbetrag ', Amount(Due));
   if (Text <> '') and (Inv.Currency <> '') then
     Text := Text + ' ' + Inv.Currency;
@@ -641,58 +675,84 @@ begin
     Report.DrawParagraph(Text + '.');
     DefineFormat(Report, 'P', Sans, 10, [], clBlack, 0, 250);
   end;
-  // what identifies the invoice, and what it refers to
-  DrawSection(Report, 'Rechnungsdaten');
-  DrawFields(Report,
-    ['Rechnungsnummer', 'Rechnungsdatum', 'Lieferdatum', 'Leistungszeitraum'],
-    [Inv.Number, GermanDate(Inv.IssueDate), GermanDate(Inv.DeliveryDate),
-     Period(Inv.PeriodStart, Inv.PeriodEnd)]);
-  DrawFields(Report,
-    ['Ihre Bestellung', 'Ihre Referenz', 'Unser Auftrag', 'Vertrag'],
-    [Inv.BuyerOrder, Inv.BuyerReference, Inv.SellerOrder, Inv.Contract]);
-  // the parties side by side, each in a frame of its own; the customer
-  // comes first in the structure tree because its frame is drawn first
-  Report.AddVerticalSpace(4);
-  Y := Report.CurrentY;
-  Report.BeginFrame(0, Y, 8500);
-  Report.DrawHeading(2, 'Kunde');
-  // the return address line of a window envelope repeats the seller: an
-  // artifact, read once under "Rechnungssteller"
+  Report.EndFrame;
+  // letterhead, fold and hole marks: decoration, the seller is tagged under
+  // "Rechnungssteller"
+  Report.BeginArtifact;
+  Logo := NewLogo;
+  try
+    Report.DrawBitmap(Report.PaperX(17000), Report.PaperY(1500), 2000, 2000,
+      Logo, '');
+  finally
+    Logo.Free;
+  end;
+  Report.SaveLayout;
+  Report.SetFont(Sans, 18);
+  Report.FontStyle := [fsBold];
+  Name := Inv.SellerTradingName;
+  if Name = '' then
+    Name := Inv.SellerName;
+  Report.DrawText(0, Report.PaperY(2000), Name);
+  Report.SetFont(Sans, 9);
+  Report.FontStyle := [];
+  Report.TextColor := $505050;
+  Report.DrawText(0, Report.PaperY(2900), Join([Inv.SellerStreet,
+    TrimU(Inv.SellerPostcode + ' ' + Inv.SellerCity)]));
+  Report.RestoreLayout;
+  Report.DrawLine(Report.PaperX(300), Report.PaperY(10500),
+    Report.PaperX(800), Report.PaperY(10500), 1, clGray);
+  Report.DrawLine(Report.PaperX(300), Report.PaperY(14850),
+    Report.PaperX(1000), Report.PaperY(14850), 1, clGray);
+  Report.DrawLine(Report.PaperX(300), Report.PaperY(21000),
+    Report.PaperX(800), Report.PaperY(21000), 1, clGray);
+  Report.EndArtifact;
+  // the address field: the return address line repeats the seller (an
+  // artifact), the address itself is the customer's
+  Report.BeginFrame(Report.PaperX(2000), Report.PaperY(4500), 8500);
   Report.SaveLayout;
   Report.SetFont(Sans, 7);
   Report.TextColor := $505050;
   Report.BeginArtifact;
-  Report.DrawText(0, Report.CurrentY, Join([Inv.SellerName,
+  // one line within the 85 mm of the field: name and town only
+  Report.DrawText(500, Report.PaperY(5800), Join([Inv.SellerName,
     TrimU(Inv.SellerPostcode + ' ' + Inv.SellerCity)]));
   Report.EndArtifact;
   Report.RestoreLayout;
-  Report.MoveToNextLine(400);
+  Report.EndFrame;
+  Report.BeginFrame(Report.PaperX(2500), Report.PaperY(6270), 8000);
+  DefineFormat(Report, 'P', Sans, 10, [], clBlack, 0, 0);
   Name := Inv.BuyerName;
   if Inv.BuyerId <> '' then
     Name := Name + ' (Kundennummer ' + Inv.BuyerId + ')';
-  DrawLines(Report, Sans, [Name, Inv.BuyerStreet,
-    TrimU(Inv.BuyerPostcode + ' ' + Inv.BuyerCity), Inv.BuyerCountry,
-    Labeled('USt-IdNr. ', Inv.BuyerVatId),
-    Labeled('Ansprechpartner: ', Join([Inv.BuyerContact,
-      Labeled('Tel. ', Inv.BuyerPhone), Inv.BuyerContactEmail])),
-    Labeled('E-Mail: ', Inv.BuyerEmail)]);
+  Report.DrawParagraph(Name);
+  Report.DrawParagraph(Inv.BuyerStreet);
+  Report.DrawParagraph(TrimU(Inv.BuyerPostcode + ' ' + Inv.BuyerCity));
+  if Inv.BuyerCountry <> 'DE' then
+    Report.DrawParagraph(Inv.BuyerCountry); // DIN 5008: no country at home
   Report.EndFrame;
-  Report.BeginFrame(9500, Y, 8500);
-  Report.DrawHeading(2, 'Rechnungssteller');
-  Name := Inv.SellerName;
-  if Inv.SellerTradingName <> '' then
-    Name := Name + ' (' + Inv.SellerTradingName + ')';
-  DrawLines(Report, Sans, [Name, Inv.SellerStreet,
-    TrimU(Inv.SellerPostcode + ' ' + Inv.SellerCity), Inv.SellerCountry,
-    Join([Labeled('USt-IdNr. ', Inv.SellerVatId),
-      Labeled('Steuernummer ', Inv.SellerTaxNumber)]),
-    Inv.SellerDescription, Inv.Note,
-    Labeled('Ansprechpartner: ', Join([Inv.SellerContact,
-      Labeled('Tel. ', Inv.SellerPhone), Inv.SellerEmail]))]);
-  Report.EndFrame; // CurrentY below the longer of the two
+  // the information block: what identifies the invoice
+  Report.BeginFrame(Report.PaperX(12500), Report.PaperY(5000),
+    Report.PageWidth + Report.MarginLeft - 12500);
+  DefineFormat(Report, 'H2', Sans, 11, [fsBold], clBlack, 0, 0);
+  Report.DrawHeading(2, 'Rechnungsdaten');
+  DefineFormat(Report, 'H2', Sans, 13, [fsBold], clBlack, 0, 0);
+  DefineFormat(Report, 'P', Sans, 8, [], clBlack, 0, 0);
+  DrawField(Report, 'Rechnungsnummer', Inv.Number);
+  DrawField(Report, 'Rechnungsdatum', GermanDate(Inv.IssueDate));
+  DrawField(Report, 'Lieferdatum', GermanDate(Inv.DeliveryDate));
+  DrawField(Report, 'Leistungszeitraum', Period(Inv.PeriodStart, Inv.PeriodEnd));
+  DrawField(Report, 'Ihre Bestellung', Inv.BuyerOrder);
+  DrawField(Report, 'Ihre Referenz', Inv.BuyerReference);
+  DrawField(Report, 'Unser Auftrag', Inv.SellerOrder);
+  DrawField(Report, 'Vertrag', Inv.Contract);
+  DrawField(Report, 'Ansprechpartner', Inv.SellerContact);
+  DrawField(Report, 'Telefon', Inv.SellerPhone);
+  DrawField(Report, 'E-Mail', Inv.SellerEmail);
+  DefineFormat(Report, 'P', Sans, 10, [], clBlack, 0, 250);
+  Report.EndFrame; // CurrentY: below the subject, where the body starts
   // the items; the table breaks the page and repeats its header on its own
   DrawSection(Report, 'Positionen');
-  Report.BeginTable(ItemTableLayout);
+  Report.BeginTable(ItemTableLayout(Report.PageWidth));
   Report.DrawTableHeader(['Bezeichnung', 'Menge', 'Einzelpreis', 'USt', 'Betrag']);
   for n := 0 to high(Inv.Items) do
   begin
@@ -753,6 +813,33 @@ begin
         Report.DrawListItem(300, Report.CurrentY, Join([Inv.AccountNames[k],
           'IBAN ' + IbanGroups(Inv.Ibans[k])]));
   end;
+  // the parties in full, side by side: what the letterhead, the address
+  // field and the footer show as decoration is tagged here, once
+  Report.AddVerticalSpace(4);
+  Y := Report.CurrentY;
+  Report.BeginFrame(0, Y, Report.PageWidth div 2 - 500);
+  Report.DrawHeading(2, 'Kunde');
+  DrawLines(Report, Sans, [Inv.BuyerName, Inv.BuyerStreet,
+    TrimU(Inv.BuyerPostcode + ' ' + Inv.BuyerCity), Inv.BuyerCountry,
+    Labeled('USt-IdNr. ', Inv.BuyerVatId),
+    Labeled('Ansprechpartner: ', Join([Inv.BuyerContact,
+      Labeled('Tel. ', Inv.BuyerPhone), Inv.BuyerContactEmail])),
+    Labeled('E-Mail: ', Inv.BuyerEmail)]);
+  Report.EndFrame;
+  Report.BeginFrame(Report.PageWidth div 2 + 500, Y,
+    Report.PageWidth div 2 - 500);
+  Report.DrawHeading(2, 'Rechnungssteller');
+  Name := Inv.SellerName;
+  if Inv.SellerTradingName <> '' then
+    Name := Name + ' (' + Inv.SellerTradingName + ')';
+  DrawLines(Report, Sans, [Name, Inv.SellerStreet,
+    TrimU(Inv.SellerPostcode + ' ' + Inv.SellerCity), Inv.SellerCountry,
+    Join([Labeled('USt-IdNr. ', Inv.SellerVatId),
+      Labeled('Steuernummer ', Inv.SellerTaxNumber)]),
+    Inv.SellerDescription, Inv.Note,
+    Labeled('Ansprechpartner: ', Join([Inv.SellerContact,
+      Labeled('Tel. ', Inv.SellerPhone), Inv.SellerEmail]))]);
+  Report.EndFrame;
   // where the data comes from
   DrawSection(Report, 'Hinweise');
   DefineFormat(Report, 'P', Sans, 9, [], $505050, 0, 100);
@@ -764,9 +851,6 @@ begin
       '(--no-attachment), die Seite ist aus ' + XML_NAME + ' gelesen.');
   Report.DrawParagraph('Beispieldaten aus XRechnung for Delphi (Landrix ' +
     'Software) - keine echte Rechnung.');
-  // header and footer are drawn in the font that is current at the export
-  Report.SetFont(Sans, 8);
-  Report.TextColor := $505050;
 end;
 
 { ---------- the program ---------- }
@@ -794,6 +878,21 @@ begin
       '..' + PathDelim + XML_NAME);
 end;
 
+// the bank accounts for the footer, one line each
+function Banks(const Inv: TInvoice): RawUtf8;
+var
+  n: integer;
+begin
+  result := '';
+  for n := 0 to high(Inv.Ibans) do
+    if Inv.Ibans[n] <> '' then
+    begin
+      if result <> '' then
+        result := result + #10;
+      result := result + 'IBAN ' + IbanGroups(Inv.Ibans[n]);
+    end;
+end;
+
 procedure ExportInvoice(const Inv: TInvoice; const FileName: TFileName);
 var
   Report: TGDIPages;
@@ -812,21 +911,30 @@ begin
     Report.GetExportFonts(SansFont, SerifFont, MonoFont);
     Report.PaperSize := psA4;
     Report.Orientation := poPortrait;
-    Report.MarginLeft := 1500;
-    Report.MarginRight := 1500;
-    Report.MarginTop := 2000;               // room for the letterhead
-    Report.MarginBottom := 2000;            // and the footer
+    Report.MarginLeft := 2500;              // DIN 5008: 25 mm
+    Report.MarginRight := 2000;             // and 20 mm
+    Report.MarginTop := 2000;               // the header of pages 2 and on
+    Report.MarginBottom := 2500;            // room for the footer columns
     Report.Title := 'Rechnung ' + Inv.Number;
     Report.Author := Inv.SellerName;
     Report.Subject := 'Rechnung mit eingebetteten ZUGFeRD / Factur-X-Daten (' +
       PROFILE + ')';
-    // letterhead and footer repeat on every page and are artifacts: their
-    // facts are tagged in the body ("Rechnungssteller"), a screen reader
-    // reads them once
-    Report.SetHeader(Join([Inv.SellerName, Inv.SellerStreet,
-      TrimU(Inv.SellerPostcode + ' ' + Inv.SellerCity)]));
-    Report.SetFooter(Join([Inv.SellerName, Labeled('USt-IdNr. ', Inv.SellerVatId),
-      'Rechnung ' + Inv.Number, 'Seite {#} von {total}']));
+    // running texts are artifacts: their facts are tagged in the body.
+    // Page 1 has the letterhead instead of a header; the footer carries the
+    // company details in three columns, as a business letter does
+    Report.SetFont(SansFont, 8);
+    Report.TextColor := $505050;
+    Report.SetHeaderColumns([], true);
+    Report.SetHeaderColumns([Inv.SellerName, 'Rechnung ' + Inv.Number,
+      'Seite {#} von {total}']);
+    Report.SetFont(SansFont, 7);
+    Report.SetFooterColumns([
+      Join([Inv.SellerName, Inv.SellerTradingName]) + #10 + Inv.SellerStreet +
+        #10 + TrimU(Inv.SellerPostcode + ' ' + Inv.SellerCity),
+      Labeled('USt-IdNr. ', Inv.SellerVatId) + #10 +
+        Labeled('Steuernummer ', Inv.SellerTaxNumber) + #10 + Inv.Note,
+      Banks(Inv)]);
+    Report.TextColor := clBlack;
     Report.NewPage;
     DrawInvoice(Report, Inv, SansFont);
     Report.EndDoc;

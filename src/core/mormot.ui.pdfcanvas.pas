@@ -168,6 +168,9 @@ type
     procedure Draw(X, Y: integer; AGraphic: TGraphic);
       {$ifdef PDF_CANVASVIRTUAL}override{$else}reintroduce{$endif};
     procedure StretchDraw(const ARect: TRect; AGraphic: TGraphic); reintroduce;
+    /// StretchDraw by its four edges - for a caller whose TRect is the one of
+    // the Types unit, e.g. mormot.ui.report, which cannot see this one
+    procedure StretchDrawBounds(X1, Y1, X2, Y2: integer; AGraphic: TGraphic);
   public
     constructor Create(APdfDoc: TPdfDocumentVcl; APdfCanvas: TPdfCanvas);
     destructor Destroy; override;
@@ -711,6 +714,18 @@ begin
     if owned then
       bmp.Free;
   end;
+end;
+
+procedure TPdfVclCanvas.StretchDrawBounds(X1, Y1, X2, Y2: integer;
+  AGraphic: TGraphic);
+var
+  r: TRect;
+begin
+  r.Left := X1;
+  r.Top := Y1;
+  r.Right := X2;
+  r.Bottom := Y2;
+  StretchDraw(r, AGraphic);
 end;
 
 // ---------------------------------------------------------------------------

@@ -232,6 +232,16 @@ type
     FooterRowHeader: boolean;
   end;
 
+  /// a running header or footer in columns, see TGDIPages.SetHeaderColumns
+  TReportPageText = record
+    Columns:   TRawUtf8DynArray; // one entry per column, lines split at #10
+    FontName:  RawUtf8;          // the font current at the Set*Columns call
+    FontSize:  Integer;
+    FontStyle: TFontStyles;
+    Color:     TColor;
+    Defined:   boolean;          // false = not set, fall back
+  end;
+
   /// heading information tracked for PDF outline generation
   THeadingInfo = record
     Level:    Integer;  // heading level 1..6
@@ -292,6 +302,8 @@ type
     { --- Phase 3: Header and Footer --- }
     fHeaderText:   RawUtf8;
     fFooterText:   RawUtf8;
+    fHeaderCols, fFooterCols: TReportPageText;           // every page
+    fFirstHeaderCols, fFirstFooterCols: TReportPageText; // page 1 only
 
     { --- Phase 4: Table state --- }
     fTableStartY:      Integer;       // Y position where table started
@@ -432,6 +444,8 @@ type
     procedure SetMarginBottom(Value: Integer);
     procedure SetExportPdfTagged(Value: boolean);
     procedure CheckNoArtifact(const Caller: RawUtf8);
+    procedure SetPageText(var Target: TReportPageText;
+      const Columns: array of RawUtf8);
   public
     constructor Create(AOwner: TComponent); override;
     destructor  Destroy; override;
@@ -480,6 +494,21 @@ type
     procedure SetHeader(const AText: RawUtf8);
     /// set page footer text with placeholders: {#} = page number (1-based), {total} = total pages
     procedure SetFooter(const AText: RawUtf8);
+    /// a running header in columns of equal width, each left-aligned
+    // - a column may hold several lines, separated by #10; {#} and {total}
+    // work as in SetHeader
+    // - drawn in the font, size, style and TextColor current at this call,
+    // not in the one current at the export as SetHeader is
+    // - FirstPage = true: for page 1 only, replacing what the other pages
+    // get; no columns at all leave page 1 without a header, e.g. for a
+    // letterhead drawn in the page body
+    // - replaces SetHeader once called; an artifact in tagged output
+    procedure SetHeaderColumns(const Columns: array of RawUtf8;
+      FirstPage: boolean = false);
+    /// a running footer in columns, see SetHeaderColumns - e.g. the
+    // company details at the foot of a business letter
+    procedure SetFooterColumns(const Columns: array of RawUtf8;
+      FirstPage: boolean = false);
 
     { --- Phase 5: Format registry (Markdown-style) --- }
     /// define or override a named text format (H1, H2, P, Strong, Em, Code, etc.)
@@ -560,6 +589,12 @@ type
     property PageWidth:        Integer read fPageWidth;
     /// printable page height in 1/100 mm
     property PageHeight:       Integer read fPageHeight;
+    /// a horizontal paper position (1/100 mm from the left paper edge) as
+    // the X the Draw* methods take, e.g. for fold marks in the margin
+    function PaperX(X: Integer): Integer;
+    /// a vertical paper position (1/100 mm from the top paper edge) as the
+    // Y the Draw* methods take, e.g. the address field of a letter
+    function PaperY(Y: Integer): Integer;
     /// current Y cursor within the printable area (1/100 mm)
     property CurrentY:         Integer read fCurrentY;
     property CurrentX:         Integer read fCurrentX write fCurrentX;
@@ -581,6 +616,13 @@ type
     procedure DrawTextWrapped(X, MaxWidth, Y: Integer; const AText: RawUtf8);
     procedure DrawLine(X1, Y1, X2, Y2, Width: Integer; Color: TColor);
     procedure DrawFilledRect(X1, Y1, X2, Y2: Integer; Color: TColor);
+    /// draw a copy of Bitmap stretched into the rectangle X, Y, Width, Height
+    // (1/100 mm); CurrentY does not move
+    // - a Figure with AltText as its /Alt in tagged output: AltText is then
+    // required, except inside BeginArtifact..EndArtifact, where a
+    // decorative image (a logo next to the company name) is an artifact
+    procedure DrawBitmap(X, Y, Width, Height: Integer; Bitmap: TBitmap;
+      const AltText: RawUtf8);
     procedure Columns2(Gap: Integer; const Text1, Text2: RawUtf8);
 
     { --- frames and artifacts --- }
@@ -1100,10 +1142,12 @@ begin
     raise ESynException.Create('TGDIPages.BeginFrame: frames do not nest');
   if fTableInProgress then
     raise ESynException.Create('TGDIPages.BeginFrame: inside a table');
-  if (X < 0) or (Width <= 0) or (X + Width > fPageWidth) or
-     (Y < 0) or (Y > fPageHeight) then
+  { the margins are allowed: a window address starts left of the text }
+  if (X < -fMarginLeft) or (Width <= 0) or
+     (X + Width > fPageWidth + fMarginRight) or
+     (Y < -fMarginTop) or (Y > fPageHeight) then
     raise ESynException.CreateUtf8('TGDIPages.BeginFrame: (%, %, %) is ' +
-      'outside the printable area', [X, Y, Width]);
+      'outside the paper', [X, Y, Width]);
   CloseOpenList;
   fFrameActive := true;
   fFrameX := X;
@@ -1364,6 +1408,49 @@ begin
   fFooterText := AText;
 end;
 
+procedure TGDIPages.SetPageText(var Target: TReportPageText;
+  const Columns: array of RawUtf8);
+var
+  i: Integer;
+begin
+  SetLength(Target.Columns, length(Columns));
+  for i := 0 to high(Columns) do
+    Target.Columns[i] := Columns[i];
+  Target.FontName := fFontName;
+  Target.FontSize := fFontSize;
+  Target.FontStyle := fFontStyle;
+  Target.Color := fTextColor;
+  Target.Defined := true;
+end;
+
+procedure TGDIPages.SetHeaderColumns(const Columns: array of RawUtf8;
+  FirstPage: boolean);
+begin
+  if FirstPage then
+    SetPageText(fFirstHeaderCols, Columns)
+  else
+    SetPageText(fHeaderCols, Columns);
+end;
+
+procedure TGDIPages.SetFooterColumns(const Columns: array of RawUtf8;
+  FirstPage: boolean);
+begin
+  if FirstPage then
+    SetPageText(fFirstFooterCols, Columns)
+  else
+    SetPageText(fFooterCols, Columns);
+end;
+
+function TGDIPages.PaperX(X: Integer): Integer;
+begin
+  result := X - fMarginLeft;
+end;
+
+function TGDIPages.PaperY(Y: Integer): Integer;
+begin
+  result := Y - fMarginTop;
+end;
+
 { --- format registry methods --- }
 
 procedure TGDIPages.DefineFormat(const AName: RawUtf8; const AFormat: TReportFormat);
@@ -1431,20 +1518,20 @@ end;
 
 function TGDIPages.NormalizeX(X: Integer): Integer;
 begin
-  { Validate: X must be relative to printable area [0, fPageWidth] }
+  { relative to the printable area, but anywhere on the paper: marks and
+    letterheads sit in the margin }
   {$IFDEF DEBUG}
-  Assert((X >= 0) and (X <= fPageWidth),
-    Format('NormalizeX: X=%d out of bounds [0, %d]', [X, fPageWidth]));
+  Assert((X >= -fMarginLeft) and (X <= fPageWidth + fMarginRight),
+    Format('NormalizeX: X=%d outside the paper', [X]));
   {$ENDIF}
   Result := X;
 end;
 
 function TGDIPages.NormalizeY(Y: Integer): Integer;
 begin
-  { Validate: Y must be relative to printable area [0, fPageHeight] }
   {$IFDEF DEBUG}
-  Assert((Y >= 0) and (Y <= fPageHeight),
-    Format('NormalizeY: Y=%d out of bounds [0, %d]', [Y, fPageHeight]));
+  Assert((Y >= -fMarginTop) and (Y <= fPageHeight + fMarginBottom),
+    Format('NormalizeY: Y=%d outside the paper', [Y]));
   {$ENDIF}
   Result := Y;
 end;
@@ -1973,6 +2060,32 @@ begin
   Cmd.X2    := NormalizeX(X2);
   Cmd.Y2    := NormalizeY(Y2);
   Cmd.Color := Color;
+  AddCommand(Cmd);
+end;
+
+procedure TGDIPages.DrawBitmap(X, Y, Width, Height: Integer; Bitmap: TBitmap;
+  const AltText: RawUtf8);
+var
+  Cmd: TDrawCommand;
+  Copy: TBitmap;
+begin
+  if (Bitmap = nil) or Bitmap.Empty then
+    raise ESynException.Create('TGDIPages.DrawBitmap: no bitmap');
+  { PDF/UA wants an /Alt on every Figure; known now, as ExportPdfTagged
+    is set before the first page }
+  if fExportPdfTagged and not fInArtifact and (AltText = '') then
+    raise ESynException.Create('TGDIPages.DrawBitmap: an image needs an ' +
+      'alternate text, or BeginArtifact if it is decorative');
+  Copy := TBitmap.Create;
+  Copy.Assign(Bitmap);
+  Cmd             := NewCommand;
+  Cmd.Kind        := dckDrawBitmap;
+  Cmd.X           := NormalizeX(X);
+  Cmd.Y           := NormalizeY(Y);
+  Cmd.X2          := NormalizeX(X + Width);
+  Cmd.Y2          := NormalizeY(Y + Height);
+  Cmd.Text        := AltText;
+  Cmd.BitmapIndex := fBitmaps.Add(Copy);
   AddCommand(Cmd);
 end;
 
@@ -2665,6 +2778,47 @@ var
     fRenderRowGroup := ARole;
   end;
 
+  { a header (AtTop) or footer in columns, centred in its margin, as an
+    artifact like the single-line SetHeader/SetFooter }
+  procedure RenderPageText(const T: TReportPageText; AtTop: boolean);
+  var
+    c, l, n, MaxLines, LineH, ColW, Top: Integer;
+    Lines: array of TRawUtf8DynArray;
+  begin
+    n := length(T.Columns);
+    if n = 0 then
+      exit;
+    ACanvas.Font.Name  := Utf8ToString(T.FontName);
+    ACanvas.Font.Size  := Round(T.FontSize * FontScale);
+    ACanvas.Font.Style := T.FontStyle;
+    ACanvas.Font.Color := T.Color;
+    ACanvas.Brush.Style := bsClear;
+    SetLength(Lines, n);
+    MaxLines := 0;
+    for c := 0 to n - 1 do
+    begin
+      CsvToRawUtf8DynArray(pointer(T.Columns[c]), Lines[c], #10);
+      if length(Lines[c]) > MaxLines then
+        MaxLines := length(Lines[c]);
+    end;
+    LineH := CanvasTextHeight('Ag');
+    if AtTop then
+      Top := (fRenderOffsetY - MaxLines * LineH) div 2
+    else
+      Top := ScaleY(Page.PageHeight) +
+        (DestHeight - ScaleY(Page.PageHeight) - MaxLines * LineH) div 2;
+    ColW := Page.PageWidth div n;
+    if fActivePdfDoc <> nil then
+      fActivePdfDoc.BeginArtifact;
+    for c := 0 to n - 1 do
+      for l := 0 to high(Lines[c]) do
+        if Lines[c][l] <> '' then
+          CanvasTextOut(ScaleX(c * ColW), Top + l * LineH,
+            SubstitutePlaceholders(Lines[c][l], PageIndex));
+    if fActivePdfDoc <> nil then
+      fActivePdfDoc.EndArtifact;
+  end;
+
   { open the struct element matching the current dckDrawText command
     - an inline line opens it without a region: every run of the line adds
       its own, so plain runs and Span kids stay in reading order }
@@ -2724,8 +2878,13 @@ begin
   if Bridge = nil then
     ACanvas.FillRect(Rect(0, 0, DestWidth, DestHeight));
 
-  { Render header if set }
-  if fHeaderText <> '' then
+  { Render header if set: columns for page 1, columns for every page, or
+    the single line of SetHeader }
+  if (PageIndex = 0) and fFirstHeaderCols.Defined then
+    RenderPageText(fFirstHeaderCols, true)
+  else if fHeaderCols.Defined then
+    RenderPageText(fHeaderCols, true)
+  else if fHeaderText <> '' then
   begin
     HeaderText := SubstitutePlaceholders(fHeaderText, PageIndex);
     ACanvas.Font.Name  := Utf8ToString(fFontName);
@@ -2835,9 +2994,15 @@ begin
         if (Cmd.BitmapIndex >= 0) and (Cmd.BitmapIndex < fBitmaps.Count) then
         begin
           if fActivePdfDoc <> nil then
-            fActivePdfDoc.BeginStructContent(psrFigure);
+            fActivePdfDoc.BeginStructContent(psrFigure, Cmd.Text);
           R := Rect(ScaleX(Cmd.X), ScaleY(Cmd.Y), ScaleX(Cmd.X2), ScaleY(Cmd.Y2));
-          ACanvas.StretchDraw(R, TBitmap(fBitmaps[Cmd.BitmapIndex]));
+          { the bridge's StretchDraw is reintroduced with the TRect of
+            mormot.ui.pdf: a call through ACanvas would never reach the PDF }
+          if Bridge <> nil then
+            Bridge.StretchDrawBounds(R.Left, R.Top, R.Right, R.Bottom,
+              TBitmap(fBitmaps[Cmd.BitmapIndex]))
+          else
+            ACanvas.StretchDraw(R, TBitmap(fBitmaps[Cmd.BitmapIndex]));
           if fActivePdfDoc <> nil then
             fActivePdfDoc.EndStructContent;
         end;
@@ -2958,8 +3123,12 @@ begin
     BDC/EMC must stay balanced inside each content stream }
   CloseRenderBlock(true);
 
-  { Render footer if set }
-  if fFooterText <> '' then
+  { Render footer if set, the same way }
+  if (PageIndex = 0) and fFirstFooterCols.Defined then
+    RenderPageText(fFirstFooterCols, false)
+  else if fFooterCols.Defined then
+    RenderPageText(fFooterCols, false)
+  else if fFooterText <> '' then
   begin
     FooterText := SubstitutePlaceholders(fFooterText, PageIndex);
     ACanvas.Font.Name  := Utf8ToString(fFontName);

@@ -121,6 +121,24 @@ Report.SetFooter('Created: ' + DateToStr(Now) + '   Page {#} of {total}');
 - Does **not** advance `CurrentY`; the content area starts at Y=0 as normal
 - Use `SetHeader`/`SetFooter` for per-page text; **do not** use manual `DrawText` commands for headers/footers — those commands are only recorded on the page where they are called and will not appear on continuation pages created by table pagination
 - `SetHeader`/`SetFooter` must be called **before** `NewPage` to take effect on page 1
+- They draw in the font current **at the export**, one line, left-aligned
+
+**Columns (R-29):** `SetHeaderColumns(Columns, FirstPage = false)` and
+`SetFooterColumns(...)` take one string per column; the columns share the
+printable width, each left-aligned, lines split at `#10`, `{#}`/`{total}`
+as above. Font, size, style and `TextColor` are captured **at the call**
+(`TReportPageText`). `FirstPage = true` sets page 1 apart; an empty array
+leaves page 1 without one (a letterhead drawn in the body instead).
+Precedence per page: page 1 columns, then the common columns, then the
+single-line text. The block is centred in its margin
+(`RenderPageText`) and an artifact, like the single line.
+
+```pascal
+Report.SetFont(Sans, 8);
+Report.SetHeaderColumns([], true);                     // page 1: letterhead instead
+Report.SetHeaderColumns(['Seller', 'Invoice 42', 'Page {#} of {total}']);
+Report.SetFooterColumns(['Seller Ltd'#10'1 Main St', 'VAT DE123', 'IBAN ...']);
+```
 
 ---
 
@@ -351,6 +369,20 @@ recording order, so the frame drawn first is read first, whatever its
 position. Rules, each raising `ESynException`: no page break inside a frame
 (`NewPage`, called by any overflowing method, refuses), no nesting, no
 frame inside a table or a table left open, `EndDoc` with a frame open.
+
+**Paper coordinates.** `PaperX(X)` = `X - MarginLeft`, `PaperY(Y)` =
+`Y - MarginTop`: a position measured from the paper edge as the coordinate
+the Draw* methods take, e.g. `DrawLine(PaperX(300), PaperY(10500), ...)` for
+a fold mark in the margin. Coordinates may lie anywhere on the paper (the
+DEBUG asserts of `NormalizeX/Y` check the paper, not the printable area),
+and so may a frame (`BeginFrame` refuses only what leaves the paper).
+
+**Images.** `DrawBitmap(X, Y, Width, Height, Bitmap, AltText)` stores a copy
+in `fBitmaps` and records `dckDrawBitmap` (alternate text in `Cmd.Text`);
+`CurrentY` does not move. Rendered as `psrFigure` with `/Alt`, through
+`TPdfVclCanvas.StretchDrawBounds` (a call through `ACanvas.StretchDraw` never
+reached the PDF). With `ExportPdfTagged` an empty `AltText` raises, except
+inside `BeginArtifact`, where `fActivePdfDoc = nil` skips the `Figure`.
 
 **Artifacts.** `BeginArtifact`/`EndArtifact` record `dckBeginArtifact`/
 `dckEndArtifact`; a tagged export handles them like a repeated header row:

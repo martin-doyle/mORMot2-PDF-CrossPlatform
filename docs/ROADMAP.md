@@ -65,8 +65,15 @@ v0.10.0 (2026-09-30).
 - **New (`TGDIPages`, R-29):** `BeginFrame(X, Y, Width)`/`EndFrame` let
   headings, paragraphs, tables and lists flow inside a rectangle, e.g. a
   window address with an info block beside it; `BeginArtifact`/`EndArtifact`
-  mark text and graphics as an artifact in tagged output, e.g. the return
-  address line. Opt-in, the output of existing code is unchanged
+  mark text, graphics and images as an artifact in tagged output, e.g. the
+  return address line; `PaperX`/`PaperY` place them from the paper edge,
+  margins included (fold marks); `DrawBitmap` draws an image, a `Figure`
+  with its alternate text; `SetHeaderColumns`/`SetFooterColumns` give
+  running texts in columns of several lines, in a font of their own, page 1
+  apart if wanted. Opt-in, the output of existing code is unchanged
+- **Fixed (Linux/macOS):** a `TBitmap` drawn into a PDF came out as stripes
+  on Cocoa: the pixels were read with the stride of a Windows bitmap. The
+  LCL path now reads them through `TLazIntfImage`
 - **Coming with R-20** (announce when done): the preview and the GUI demos
   on Delphi
 
@@ -440,9 +447,9 @@ is compact, but it is two tables in the structure tree. Two ways to get one:
    it adds a third of the font size after the heading and nothing before.
    `invoice_demo` adds the space itself. Fixing it changes the layout of
    every demo that defines heading formats: decide on a fix or an option
-5. **Running header and footer**: one line, left-aligned, in the font that
-   is current at export time (`invoice_demo` ends with `SetFont`). Wanted:
-   several lines, left/centre/right parts, a font of their own
+5. ~~**Running header and footer**~~ done 2026-10-05:
+   `SetHeaderColumns`/`SetFooterColumns` (columns, lines, own font, page 1
+   apart). Left open: centre or right alignment of a column
 6. **List items**: `DrawListItem` writes the bullet into `LBody` (no `Lbl`)
    and does not wrap, so a long item runs past the margin
 7. **Tagged links** (was R-18; asked for on 2026-10-04, also layer 1).
@@ -469,11 +476,11 @@ is compact, but it is two tables in the structure tree. Two ways to get one:
    page 2. Wanted: the heading moves to the next page unless at least one
    line of the following block fits below it. Layout only, PDF/UA does not
    mind
-9. **Images**: `TGDIPages` renders `dckDrawBitmap` as a `Figure`, but no
-   public method records one, so a report has no image yet. Wanted: a
-   `DrawBitmap` with an alternate text. A decorative logo, whose company
-   name is text elsewhere, then needs nothing more: drawn inside
-   `BeginArtifact`/`EndArtifact` it opens no `Figure`
+9. ~~**Images**~~ done 2026-10-05: `DrawBitmap` with an alternate text; a
+   decorative logo inside `BeginArtifact`. Found on the way: a `TBitmap`
+   came out as stripes on macOS (fixed, see To Announce)
+10. ~~**Drawing in the margin**~~ done 2026-10-05: `PaperX`/`PaperY`, frames
+   and coordinates anywhere on the paper (fold and hole marks)
 
 **Not for the engine — a payment QR code** (GiroCode / EPC QR), common on
 German invoices. For the engine it is an image in a `Figure` with an

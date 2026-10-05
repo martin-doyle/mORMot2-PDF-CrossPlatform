@@ -50,6 +50,9 @@ type
     procedure TestFrame;
     procedure TestFrameRefusals;
     procedure TestArtifact;
+    procedure TestPageTextColumns;
+    procedure TestPaperCoordinates;
+    procedure TestDrawBitmap;
   end;
 
 implementation
@@ -1000,7 +1003,7 @@ var
         0: Report.BeginFrame(0, 0, 1000);           // nested
         1: Report.NewPage;                          // page break in a frame
         2: Report.EndDoc;                           // frame still open
-        3: Report.BeginFrame(Report.PageWidth, 0, 1000); // outside
+        3: Report.BeginFrame(Report.PageWidth, 0, 5000); // past the paper
         4: Report.EndFrame;                         // no frame
       end;
     except
@@ -1031,7 +1034,7 @@ begin
         Check(true, 'overflowing a frame raises');
     end;
     Report.EndFrame;
-    Check(Raises(3), 'a frame outside the printable area is refused');
+    Check(Raises(3), 'a frame beyond the paper is refused');
     Check(Raises(4), 'EndFrame without BeginFrame');
     Report.EndDoc;
   finally
@@ -1102,6 +1105,180 @@ begin
     Report.EndArtifact;
     Report.EndDoc;
   finally
+    Report.Free;
+  end;
+end;
+
+procedure TReportTests.TestPageTextColumns;
+var
+  Report: TGDIPages;
+  MS: TMemoryStream;
+  s: RawUtf8;
+begin
+  Report := TGDIPages.Create(nil);
+  MS := TMemoryStream.Create;
+  try
+    { base-14 fonts, untagged: the texts stay readable in the content stream }
+    Report.ExportPdfStandardFonts := true;
+    Report.SetFont('Helvetica', 8);
+    Report.SetHeader('OLDHEAD');
+    Report.SetHeaderColumns(['NEXTHEAD {#}/{total}']);
+    Report.SetHeaderColumns(['FIRSTHEAD'], true);
+    Report.SetFooterColumns(['FOOTA1'#10'FOOTA2', 'FOOTB', 'PAGE {#}']);
+    Report.NewPage;
+    Report.DrawText(0, 0, 'one');
+    Report.ForceNewPage;
+    Report.DrawText(0, 0, 'two');
+    Report.EndDoc;
+    Check(Report.ExportPdfStream(MS), 'export');
+    FastSetString(s, MS.Memory, MS.Size);
+    s := InflatePdf(s);
+    CheckEqual(1, CountOf(s, '(FIRSTHEAD)'), 'page 1 has its own header');
+    CheckEqual(0, CountOf(s, '(NEXTHEAD 1/2)'), 'not the one of the other pages');
+    CheckEqual(1, CountOf(s, '(NEXTHEAD 2/2)'), 'page 2 has the common header');
+    CheckEqual(0, CountOf(s, '(OLDHEAD)'), 'the columns replace SetHeader');
+    CheckEqual(2, CountOf(s, '(FOOTA1)'), 'the footer on both pages');
+    CheckEqual(2, CountOf(s, '(FOOTA2)'), 'second line of a column');
+    CheckEqual(2, CountOf(s, '(FOOTB)'), 'second column');
+    CheckEqual(1, CountOf(s, '(PAGE 2)'), 'placeholders in a column');
+  finally
+    MS.Free;
+    Report.Free;
+  end;
+  { tagged: header and footer columns add no struct element }
+  Report := TGDIPages.Create(nil);
+  MS := TMemoryStream.Create;
+  try
+    Report.ExportPdfTagged := true;
+    Report.SetHeaderColumns(['A', 'B']);
+    Report.SetFooterColumns(['C'#10'D']);
+    Report.NewPage;
+    Report.DrawParagraph('Body');
+    Report.EndDoc;
+    Check(Report.ExportPdfStream(MS), 'tagged export');
+    FastSetString(s, MS.Memory, MS.Size);
+    CheckEqual(PdfStructRoles(s), 'Document 1'#10'P 1'#10,
+      'running columns are artifacts');
+  finally
+    MS.Free;
+    Report.Free;
+  end;
+end;
+
+procedure TReportTests.TestPaperCoordinates;
+var
+  Report: TGDIPages;
+  Cmds: TDrawCommandList;
+  Raised: boolean;
+begin
+  Report := TGDIPages.Create(nil);
+  try
+    Report.MarginLeft := 2500;
+    Report.MarginTop := 2000;
+    Report.NewPage;
+    CheckEqual(-2500, Report.PaperX(0), 'PaperX of the paper edge');
+    CheckEqual(2500, Report.PaperY(4500), 'PaperY of the window address');
+    { a fold mark at the paper edge, 105 mm from the top }
+    Report.DrawLine(Report.PaperX(300), Report.PaperY(10500),
+      Report.PaperX(800), Report.PaperY(10500), 1, clBlack);
+    { a frame may start in the margin }
+    Report.BeginFrame(Report.PaperX(2000), Report.PaperY(4500), 8500);
+    Report.DrawText(0, Report.CurrentY, 'window');
+    Report.EndFrame;
+    Raised := false;
+    try
+      Report.BeginFrame(Report.PaperX(-100), 0, 1000);
+    except
+      on Exception do
+        Raised := true;
+    end;
+    Check(Raised, 'a frame beyond the paper edge is refused');
+    Report.EndDoc;
+    Cmds := Report.Pages[0].Commands;
+    CheckEqual(-2200, Cmds[0].X, 'line start in the margin');
+    CheckEqual(-1700, Cmds[0].X2, 'line end in the margin');
+    CheckEqual(8500, Cmds[0].Y, 'line Y from the paper top');
+    CheckEqual(-500, Cmds[1].X, 'frame text 20 mm from the paper edge');
+    CheckEqual(2500, Cmds[1].Y, 'frame text 45 mm from the paper top');
+  finally
+    Report.Free;
+  end;
+end;
+
+procedure TReportTests.TestDrawBitmap;
+
+  function MakePdf(Decorative: boolean): RawUtf8;
+  var
+    Report: TGDIPages;
+    MS: TMemoryStream;
+    Bmp: TBitmap;
+  begin
+    result := '';
+    Report := TGDIPages.Create(nil);
+    MS := TMemoryStream.Create;
+    Bmp := TBitmap.Create;
+    try
+      Bmp.PixelFormat := pf24bit;
+      Bmp.Width := 8;
+      Bmp.Height := 8;
+      Bmp.Canvas.Brush.Color := clNavy;
+      Bmp.Canvas.FillRect(Rect(0, 0, 8, 8));
+      Report.ExportPdfTagged := true;
+      Report.NewPage;
+      if Decorative then
+      begin
+        Report.BeginArtifact;
+        Report.DrawBitmap(0, 0, 2000, 2000, Bmp, '');
+        Report.EndArtifact;
+      end
+      else
+        Report.DrawBitmap(0, 0, 2000, 2000, Bmp, 'Company logo');
+      Report.DrawParagraph('Body');
+      Report.EndDoc;
+      Check(Report.ExportPdfStream(MS), 'tagged export with an image');
+      FastSetString(result, MS.Memory, MS.Size);
+    finally
+      Bmp.Free;
+      MS.Free;
+      Report.Free;
+    end;
+  end;
+
+var
+  s: RawUtf8;
+  Report: TGDIPages;
+  Bmp: TBitmap;
+  Raised: boolean;
+begin
+  s := MakePdf(false);
+  CheckEqual(PdfStructRoles(s), 'Document 1'#10'Figure 1'#10'P 1'#10,
+    'an image is a Figure');
+  s := InflatePdf(s);
+  Check(PosEx('/Alt(Company logo)', s) > 0, 'with its alternate text');
+  Check(PosEx('/Subtype/Image', s) > 0, 'the image reaches the PDF');
+  s := MakePdf(true);
+  CheckEqual(PdfStructRoles(s), 'Document 1'#10'P 1'#10,
+    'inside an artifact it is no Figure');
+  Check(PosEx('/Subtype/Image', InflatePdf(s)) > 0, 'but still drawn');
+  { tagged output refuses an image without alternate text }
+  Report := TGDIPages.Create(nil);
+  Bmp := TBitmap.Create;
+  try
+    Bmp.Width := 4;
+    Bmp.Height := 4;
+    Report.ExportPdfTagged := true;
+    Report.NewPage;
+    Raised := false;
+    try
+      Report.DrawBitmap(0, 0, 1000, 1000, Bmp, '');
+    except
+      on Exception do
+        Raised := true;
+    end;
+    Check(Raised, 'a Figure needs an alternate text');
+    Report.EndDoc;
+  finally
+    Bmp.Free;
     Report.Free;
   end;
 end;

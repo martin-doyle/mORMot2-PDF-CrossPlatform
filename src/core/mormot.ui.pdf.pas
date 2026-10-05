@@ -107,6 +107,8 @@ uses
     lclproc,
     lclintf,
     rtlconsts,
+    fpimage,      // TFPColor
+    intfgraphics, // TLazIntfImage: TBitmap pixels in any widgetset's layout
     {$ifdef USE_METAFILE}
     mormot.ui.core, // for TMetaFile definition
     {$endif USE_METAFILE}
@@ -12247,6 +12249,40 @@ var
     P^ := '>';
   end;
 
+  {$ifdef FPC}
+  { the LCL keeps the widgetset's own layout behind ScanLine - 32-bit on
+    Cocoa even for a pf24bit bitmap - so ScanLine with a Windows DIB stride
+    gives stripes: read the pixels through TLazIntfImage instead }
+  procedure AddLclRgb;
+  var
+    intf: TLazIntfImage;
+    x, row: integer;
+    c: TFPColor;
+    line: RawByteString;
+    p: PAnsiChar;
+  begin
+    intf := bmp.CreateIntfImage;
+    try
+      SetLength(line, fPixelWidth * 3);
+      for row := 0 to fPixelHeight - 1 do
+      begin
+        p := pointer(line);
+        for x := 0 to fPixelWidth - 1 do
+        begin
+          c := intf.Colors[x, row];
+          p[0] := AnsiChar(c.red shr 8);
+          p[1] := AnsiChar(c.green shr 8);
+          p[2] := AnsiChar(c.blue shr 8);
+          inc(p, 3);
+        end;
+        fWriter.Add(pointer(line), fPixelWidth * 3);
+      end;
+    finally
+      intf.Free;
+    end;
+  end;
+  {$endif FPC}
+
 begin
   inherited Create(aDoc, DontAddToFXref);
   fPixelWidth := aImage.Width;
@@ -12308,8 +12344,12 @@ begin
             pinc := 3
           else
             pinc := 4;
+          {$ifdef FPC}
+          AddLclRgb;
+          {$else}
           for y := 0 to fPixelHeight - 1 do
             fWriter.AddRGB(bmp.{%H-}ScanLine[y], pinc, fPixelWidth);
+          {$endif FPC}
           if (pinc = 3) and
              (bmp.TransparentMode = tmFixed) then
           begin
