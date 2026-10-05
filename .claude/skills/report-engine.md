@@ -320,6 +320,49 @@ Report.Columns2(Gap, Text1, Text2);               // two-column text
 
 ---
 
+## Frames and Artifacts (R-29)
+
+```pascal
+Y := Report.CurrentY;
+Report.BeginFrame(0, Y, 8500);          // X, Y, Width in 1/100 mm
+  Report.DrawHeading(2, 'Kunde');       // headings, paragraphs, tables, lists
+  Report.BeginArtifact;                 // e.g. the return address line
+    Report.DrawText(0, Report.CurrentY, 'Seller Ltd, 12345 Town');
+  Report.EndArtifact;
+  Report.DrawParagraph('Buyer Ltd');
+Report.EndFrame;
+Report.BeginFrame(9500, Y, 8500);       // a second frame beside the first
+  Report.DrawHeading(2, 'Rechnungssteller');
+Report.EndFrame;                        // CurrentY below the longer frame
+```
+
+**Frames.** Inside `BeginFrame(X, Y, Width)` every X is relative to the
+frame's left edge and the flowing methods (`DrawParagraph`, `DrawHeading`,
+`DrawQuote`, `DrawCaption`, `Columns2`, `DrawTextRight/Center` with X = 0)
+wrap or align at `Width`, which replaces `fPrintableWidth` until `EndFrame`.
+Y stays a page coordinate; `BeginFrame` makes it `CurrentY`, `EndFrame` sets
+`CurrentY := Max(CurrentY before BeginFrame, frame bottom)`, so frames side
+by side leave the cursor below the longest. Table column widths are absolute,
+so they must fit the frame. The offset is applied in one place,
+`AddCommand` (`fFrameX` added to `X`, and `X2` for lines, rectangles,
+bitmaps, clips) — not in `NormalizeX`, which `RecordWrappedText` and the
+table cells call twice per coordinate. The structure tree follows the
+recording order, so the frame drawn first is read first, whatever its
+position. Rules, each raising `ESynException`: no page break inside a frame
+(`NewPage`, called by any overflowing method, refuses), no nesting, no
+frame inside a table or a table left open, `EndDoc` with a frame open.
+
+**Artifacts.** `BeginArtifact`/`EndArtifact` record `dckBeginArtifact`/
+`dckEndArtifact`; a tagged export handles them like a repeated header row:
+`fActivePdfDoc.BeginArtifact`, then `fActivePdfDoc := nil` (kept in
+`ArtifactDoc`), so nothing inside opens a struct element. Text and graphics
+only: `DrawHeading`, `BeginTable` and `DrawListItem` raise
+(`CheckNoArtifact`), as do a page break and `EndDoc` inside one. Frames and
+artifacts are independent and may nest either way. Untagged export and
+preview ignore both commands.
+
+---
+
 ## Export & Preview
 
 `TGDIPages` is a non-visual `TComponent` (R-20): the unit needs no forms and

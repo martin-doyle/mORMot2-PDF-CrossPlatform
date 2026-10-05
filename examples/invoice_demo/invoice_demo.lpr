@@ -12,9 +12,10 @@
 //   drawn from what ReadInvoice finds in it and the file is embedded
 // - the labels are ASCII German without umlauts ("Kunde", "Zahlbar bis");
 //   every umlaut on the page comes from the UTF-8 XML
-// - only the API of TGDIPages as it is: a label/value table with row
-//   headers would need a body row header in TTableLayout, a sender line for
-//   a window envelope a text artifact - see README.md
+// - customer and seller stand side by side in two frames (BeginFrame); the
+//   return address line above the customer is an artifact (BeginArtifact).
+//   A label/value table with row headers would still need an engine
+//   change - see README.md
 //
 // Switches, to tell the sources of a checker failure apart:
 //   --no-attachment   leave factur-x.xml out (the page is still read from it)
@@ -615,7 +616,7 @@ end;
 
 procedure DrawInvoice(Report: TGDIPages; const Inv: TInvoice; const Sans: RawUtf8);
 var
-  n, k: integer;
+  n, k, Y: integer;
   Item: TInvoiceItem;
   Name, Text, Due: RawUtf8;
 begin
@@ -649,8 +650,23 @@ begin
   DrawFields(Report,
     ['Ihre Bestellung', 'Ihre Referenz', 'Unser Auftrag', 'Vertrag'],
     [Inv.BuyerOrder, Inv.BuyerReference, Inv.SellerOrder, Inv.Contract]);
-  // the parties
-  DrawSection(Report, 'Kunde');
+  // the parties side by side, each in a frame of its own; the customer
+  // comes first in the structure tree because its frame is drawn first
+  Report.AddVerticalSpace(4);
+  Y := Report.CurrentY;
+  Report.BeginFrame(0, Y, 8500);
+  Report.DrawHeading(2, 'Kunde');
+  // the return address line of a window envelope repeats the seller: an
+  // artifact, read once under "Rechnungssteller"
+  Report.SaveLayout;
+  Report.SetFont(Sans, 7);
+  Report.TextColor := $505050;
+  Report.BeginArtifact;
+  Report.DrawText(0, Report.CurrentY, Join([Inv.SellerName,
+    TrimU(Inv.SellerPostcode + ' ' + Inv.SellerCity)]));
+  Report.EndArtifact;
+  Report.RestoreLayout;
+  Report.MoveToNextLine(400);
   Name := Inv.BuyerName;
   if Inv.BuyerId <> '' then
     Name := Name + ' (Kundennummer ' + Inv.BuyerId + ')';
@@ -660,7 +676,9 @@ begin
     Labeled('Ansprechpartner: ', Join([Inv.BuyerContact,
       Labeled('Tel. ', Inv.BuyerPhone), Inv.BuyerContactEmail])),
     Labeled('E-Mail: ', Inv.BuyerEmail)]);
-  DrawSection(Report, 'Rechnungssteller');
+  Report.EndFrame;
+  Report.BeginFrame(9500, Y, 8500);
+  Report.DrawHeading(2, 'Rechnungssteller');
   Name := Inv.SellerName;
   if Inv.SellerTradingName <> '' then
     Name := Name + ' (' + Inv.SellerTradingName + ')';
@@ -671,6 +689,7 @@ begin
     Inv.SellerDescription, Inv.Note,
     Labeled('Ansprechpartner: ', Join([Inv.SellerContact,
       Labeled('Tel. ', Inv.SellerPhone), Inv.SellerEmail]))]);
+  Report.EndFrame; // CurrentY below the longer of the two
   // the items; the table breaks the page and repeats its header on its own
   DrawSection(Report, 'Positionen');
   Report.BeginTable(ItemTableLayout);

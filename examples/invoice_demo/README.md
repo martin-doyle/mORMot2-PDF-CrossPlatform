@@ -5,8 +5,9 @@
 embedded `factur-x.xml`, laid out for a screen reader user.
 `zugferd_demo` stays the reference demo until this one is accepted.
 
-**Layer 3.** `uses mormot.ui.report`, only the API `TGDIPages` has today. No
-change in `src/`.
+**Layer 3.** `uses mormot.ui.report`. Besides the existing API it uses the
+frames and artifacts of R-29 (`BeginFrame`/`EndFrame`,
+`BeginArtifact`/`EndArtifact`), new on this branch.
 
 ## Why
 
@@ -23,8 +24,10 @@ H1  Rechnung R2020-0815
 P   Rechnungsbetrag 226,00 EUR, zahlbar bis 29.09.2026.    (bold, the summary)
 H2  Rechnungsdaten     Table: Rechnungsnummer | Rechnungsdatum | Lieferdatum | Leistungszeitraum
                        Table: Ihre Bestellung | Ihre Referenz | Unser Auftrag | Vertrag
-H2  Kunde              address lines (P each), USt-IdNr., contact
-H2  Rechnungssteller   address lines, USt-IdNr., Steuernummer, register, contact
+H2  Kunde              left frame: return address line (artifact), address
+                       lines (P each), USt-IdNr., contact
+H2  Rechnungssteller   right frame, beside it: address lines, USt-IdNr.,
+                       Steuernummer, register, contact
 H2  Positionen         the item table (THead, TBody, TFoot with row headers),
                        the item descriptions as P
 H2  Zahlung            Table: Zahlbetrag | Zahlbar bis | Verwendungszweck
@@ -40,6 +43,9 @@ Artifacts              letterhead (SetHeader), footer with page number (SetFoote
 - **Letterhead and footer are artifacts.** Every fact in them (seller,
   address, VAT ID) is tagged once in the body, under "Rechnungssteller". A
   screen reader reads them once, not again on every page.
+- **Customer and seller side by side**, each in a frame. The customer's
+  frame is drawn first, so it is read first. The small return address line
+  above the customer's address repeats the seller and is an artifact.
 - **The bank accounts are a list.** "List with 2 items" tells at once that
   there is a choice, and an item makes sense without the one before.
 - **The order numbers are shown**: buyer's order, seller's order and contract.
@@ -55,16 +61,16 @@ Artifacts              letterhead (SetHeader), footer with page number (SetFoote
 3. Is the address as one `P` per line acceptable, or should it be one `P`?
 4. Should the IBAN stay in groups of four? Screen readers may read
    "1245" as a number; `/ActualText` would change copy and paste too.
-5. Is a letter layout for a window envelope (DIN 5008) needed? Then the
-   return-address line above the address would be an artifact.
+5. Is a full letter layout for a window envelope (DIN 5008) needed? Frames
+   and the return address line as an artifact make it possible now.
 
 ## Limits of TGDIPages found on the way
 
 Collected in [ROADMAP R-29](../../docs/ROADMAP.md), together with the two
 ways to make label/value data one table. In this demo they show as follows:
 `DrawSection` adds the space above an H2 itself, the labels are column
-headers, there is no return-address line, the letterhead and the footer are
-one line each, and each bank account must fit into one line.
+headers, the letterhead and the footer are one line each, and each bank
+account must fit into one line.
 
 ## Build and run
 

@@ -47,6 +47,9 @@ type
     procedure TestExportPdfAttachment;
     procedure TestTableFooterRowHeader;
     procedure TestExportPdfPageMode;
+    procedure TestFrame;
+    procedure TestFrameRefusals;
+    procedure TestArtifact;
   end;
 
 implementation
@@ -913,6 +916,192 @@ begin
     Check(not Report.ExportPdfStream(MS), 'UseAttachments refused with PDF/A-1');
   finally
     MS.Free;
+    Report.Free;
+  end;
+end;
+
+procedure TReportTests.TestFrame;
+var
+  Report: TGDIPages;
+  Cmds: TDrawCommandList;
+  i, Y0, Bottom1, Bottom2, Lines: Integer;
+begin
+  Report := TGDIPages.Create(nil);
+  try
+    Report.MarginLeft := 2000;
+    Report.MarginRight := 2000;
+    Report.NewPage;
+    Report.SetFont('Helvetica', 10);
+    Report.DrawText(0, 0, 'before');
+    Report.MoveToNextLine(1000);
+    Y0 := Report.CurrentY;
+    { a frame on the right: X relative to it, the paragraph wraps at its width }
+    Report.BeginFrame(9000, Y0, 6000);
+    CheckEqual(Y0, Report.CurrentY, 'BeginFrame sets CurrentY');
+    Report.DrawHeading(2, 'Right');
+    Report.DrawParagraph('one two three four five six seven eight nine ten ' +
+      'eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen');
+    Report.DrawTextRight(0, Report.CurrentY, 'R');
+    Report.DrawLine(0, Report.CurrentY, 6000, Report.CurrentY, 1, clBlack);
+    Report.EndFrame;
+    Bottom1 := Report.CurrentY;
+    { a shorter frame on the left, at the same Y }
+    Report.BeginFrame(0, Y0, 8000);
+    Report.DrawParagraph('left');
+    Bottom2 := Report.CurrentY;
+    Report.EndFrame;
+    Check(Bottom2 < Bottom1, 'the left frame is the shorter one');
+    CheckEqual(Bottom1, Report.CurrentY, 'EndFrame keeps the bottom of the longer frame');
+    Report.DrawText(0, Report.CurrentY, 'after');
+    Report.EndDoc;
+    Cmds := Report.Pages[0].Commands;
+    CheckEqual(0, Cmds[0].X, 'text before the frame is not shifted');
+    Lines := 0;
+    for i := 0 to High(Cmds) do
+      if Cmds[i].Kind = dckDrawText then
+      begin
+        if Cmds[i].Text = 'Right' then
+          CheckEqual(9000, Cmds[i].X, 'the heading starts at the frame');
+        if PosEx('one', Cmds[i].Text) = 1 then
+          CheckEqual(9000, Cmds[i].X, 'the paragraph starts at the frame');
+        if (Cmds[i].X = 9000) and (Cmds[i].Text <> 'Right') then
+        begin
+          inc(Lines);
+          Check(Cmds[i].TextWidthMM <= 6000, 'a line stays inside the frame');
+        end;
+        if Cmds[i].Text = 'R' then
+          CheckEqual(15000, Cmds[i].X + Cmds[i].TextWidthMM,
+            'right-aligned to the frame edge');
+        if Cmds[i].Text = 'left' then
+          CheckEqual(0, Cmds[i].X, 'the second frame starts at its own X');
+        if Cmds[i].Text = 'after' then
+          CheckEqual(0, Cmds[i].X, 'EndFrame removes the offset');
+      end
+      else if Cmds[i].Kind = dckDrawLine then
+      begin
+        CheckEqual(9000, Cmds[i].X, 'line start shifted');
+        CheckEqual(15000, Cmds[i].X2, 'line end shifted');
+      end;
+    Check(Lines > 1, 'the paragraph wraps at the frame width');
+  finally
+    Report.Free;
+  end;
+end;
+
+procedure TReportTests.TestFrameRefusals;
+var
+  Report: TGDIPages;
+
+  function Raises(Step: Integer): boolean;
+  begin
+    result := false;
+    try
+      case Step of
+        0: Report.BeginFrame(0, 0, 1000);           // nested
+        1: Report.NewPage;                          // page break in a frame
+        2: Report.EndDoc;                           // frame still open
+        3: Report.BeginFrame(Report.PageWidth, 0, 1000); // outside
+        4: Report.EndFrame;                         // no frame
+      end;
+    except
+      on Exception do
+        result := true;
+    end;
+  end;
+
+var
+  i: Integer;
+begin
+  Report := TGDIPages.Create(nil);
+  try
+    Report.NewPage;
+    Report.SetFont('Helvetica', 10);
+    Report.BeginFrame(1000, 0, 5000);
+    Check(Raises(0), 'frames do not nest');
+    Check(Raises(1), 'no page break inside a frame');
+    Check(Raises(2), 'EndDoc refuses an open frame');
+    { content that does not fit raises instead of breaking the page }
+    Report.MoveToNextLine(Report.PageHeight - 100);
+    try
+      for i := 1 to 3 do
+        Report.DrawParagraph('overflow');
+      Check(false, 'overflowing a frame raises');
+    except
+      on Exception do
+        Check(true, 'overflowing a frame raises');
+    end;
+    Report.EndFrame;
+    Check(Raises(3), 'a frame outside the printable area is refused');
+    Check(Raises(4), 'EndFrame without BeginFrame');
+    Report.EndDoc;
+  finally
+    Report.Free;
+  end;
+end;
+
+procedure TReportTests.TestArtifact;
+
+  function MakePdf(WithArtifact: boolean): RawUtf8;
+  var
+    Report: TGDIPages;
+    MS: TMemoryStream;
+  begin
+    result := '';
+    Report := TGDIPages.Create(nil);
+    MS := TMemoryStream.Create;
+    try
+      Report.ExportPdfTagged := true;
+      Report.NewPage;
+      Report.DrawHeading(1, 'Invoice');
+      if WithArtifact then
+        Report.BeginArtifact;
+      Report.DrawText(0, Report.CurrentY, 'Seller Ltd, 1 Main Street');
+      Report.DrawLine(0, Report.CurrentY + 500, 8500, Report.CurrentY + 500,
+        1, clBlack);
+      if WithArtifact then
+        Report.EndArtifact;
+      Report.MoveToNextLine(1000);
+      Report.DrawParagraph('Body');
+      Report.EndDoc;
+      Check(Report.ExportPdfStream(MS), 'tagged export');
+      FastSetString(result, MS.Memory, MS.Size);
+    finally
+      MS.Free;
+      Report.Free;
+    end;
+  end;
+
+var
+  Report: TGDIPages;
+  Raised: boolean;
+begin
+  CheckEqual(PdfStructRoles(MakePdf(false)), 'Document 1'#10'H1 1'#10'P 2'#10,
+    'without BeginArtifact the line is a P');
+  CheckEqual(PdfStructRoles(MakePdf(true)), 'Document 1'#10'H1 1'#10'P 1'#10,
+    'inside BeginArtifact..EndArtifact it is no struct element');
+  Report := TGDIPages.Create(nil);
+  try
+    Report.NewPage;
+    Report.BeginArtifact;
+    Raised := false;
+    try
+      Report.DrawHeading(2, 'No');
+    except
+      on Exception do
+        Raised := true;
+    end;
+    Check(Raised, 'no heading inside an artifact');
+    Raised := false;
+    try
+      Report.NewPage;
+    except
+      on Exception do
+        Raised := true;
+    end;
+    Check(Raised, 'no page break inside an artifact');
+    Report.EndArtifact;
+    Report.EndDoc;
+  finally
     Report.Free;
   end;
 end;

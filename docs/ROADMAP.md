@@ -62,6 +62,11 @@ v0.10.0 (2026-09-30).
   (issue #4, Ubuntu 24.04). The README now says which distributions ship a
   HarfBuzz older than 2.9 and do not subset at all: Debian 11, Ubuntu 22.04,
   RHEL 8/9
+- **New (`TGDIPages`, R-29):** `BeginFrame(X, Y, Width)`/`EndFrame` let
+  headings, paragraphs, tables and lists flow inside a rectangle, e.g. a
+  window address with an info block beside it; `BeginArtifact`/`EndArtifact`
+  mark text and graphics as an artifact in tagged output, e.g. the return
+  address line. Opt-in, the output of existing code is unchanged
 - **Coming with R-20** (announce when done): the preview and the GUI demos
   on Delphi
 
@@ -421,17 +426,11 @@ is compact, but it is two tables in the structure tree. Two ways to get one:
 
 **The other gaps**, each its own fix:
 
-1. **Frames.** `BeginFrame(X, Y, Width)` … `EndFrame`: headings, paragraphs,
-   tables and lists flow inside a rectangle; `EndFrame` leaves `CurrentY`
-   below the tallest frame. This gives the window address of a DIN 5008
-   letter, an info block beside it, and side-by-side headings ("Kunde",
-   "Rechnungssteller"). The order of the frames in the code is the order in
-   the structure tree. Simplest rule: no page break inside a frame. Today
-   headings and tables always start at the left margin with the full width.
-   Rough effort 2–3 days with tests
-2. **Text artifacts at a free position**: the return address line above a
-   window address. Layer 1 has `BeginArtifact`/`EndArtifact`; `TGDIPages`
-   has no way to it except `SetHeader`/`SetFooter`. Possibly a flag of (1)
+1. ~~**Frames**~~ done 2026-10-05: `BeginFrame`/`EndFrame` (skill
+   report-engine.md, "Frames and Artifacts"); `invoice_demo` sets customer
+   and seller side by side
+2. ~~**Text artifacts at a free position**~~ done 2026-10-05:
+   `BeginArtifact`/`EndArtifact`, the return address line in `invoice_demo`
 3. **Multi-line table cells**: wrap a cell's text to its column width, the
    row as tall as its tallest cell, one `TD` per cell (the `BlockId` of
    wrapped paragraphs). Today a cell is one line and long text runs into the
@@ -465,6 +464,22 @@ is compact, but it is two tables in the structure tree. Two ways to get one:
    `/Tabs /S`; then `mailto:` links for the e-mail addresses of
    `zugferd_demo` and `invoice_demo`, and `DrawLink` writing a real
    annotation for its URL. Done, it clears W-2
+8. **Keep a heading with what follows**: `DrawHeading` only checks that the
+   heading itself fits, so "Zahlung" can end page 1 and its table start
+   page 2. Wanted: the heading moves to the next page unless at least one
+   line of the following block fits below it. Layout only, PDF/UA does not
+   mind
+9. **Images**: `TGDIPages` renders `dckDrawBitmap` as a `Figure`, but no
+   public method records one, so a report has no image yet. Wanted: a
+   `DrawBitmap` with an alternate text. A decorative logo, whose company
+   name is text elsewhere, then needs nothing more: drawn inside
+   `BeginArtifact`/`EndArtifact` it opens no `Figure`
+
+**Not for the engine — a payment QR code** (GiroCode / EPC QR), common on
+German invoices. For the engine it is an image in a `Figure` with an
+alternate text ("QR code for the transfer of 226,00 EUR to …"); the code
+itself would come from a library. The same case as Charts: an example only
+on request.
 
 ### R-24 — Tests on GitHub Actions — priority 2, alongside R-28
 

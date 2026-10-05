@@ -127,7 +127,9 @@ type
     dckBeginList,     // begin list - for Tagged PDF structure (psrL)
     dckEndList,       // end list - for Tagged PDF structure
     dckBeginLI,       // begin list item - for Tagged PDF structure (psrLI)
-    dckEndLI          // end list item - for Tagged PDF structure
+    dckEndLI,         // end list item - for Tagged PDF structure
+    dckBeginArtifact, // begin content a tagged export marks as an artifact
+    dckEndArtifact    // end of that content
   );
 
   /// style of an inline text run, mapped to a Tagged PDF Span element
@@ -310,6 +312,12 @@ type
     fInList:           boolean;       // true between dckBeginList and dckEndList
     fRecordingListItem: boolean;      // true while DrawListItem records its text
 
+    { --- frame and artifact state, see BeginFrame/BeginArtifact --- }
+    fFrameActive:      boolean;
+    fFrameX:           Integer;       // added to every X recorded in the frame
+    fFrameSavedY:      Integer;       // CurrentY when the frame began
+    fInArtifact:       boolean;
+
     { --- Phase 2: 1x1 bitmap for LCL text measurement (preview fallback) --- }
     fMeasureBitmap: TBitmap;
 
@@ -423,6 +431,7 @@ type
     procedure SetMarginTop(Value: Integer);
     procedure SetMarginBottom(Value: Integer);
     procedure SetExportPdfTagged(Value: boolean);
+    procedure CheckNoArtifact(const Caller: RawUtf8);
   public
     constructor Create(AOwner: TComponent); override;
     destructor  Destroy; override;
@@ -573,6 +582,29 @@ type
     procedure DrawLine(X1, Y1, X2, Y2, Width: Integer; Color: TColor);
     procedure DrawFilledRect(X1, Y1, X2, Y2: Integer; Color: TColor);
     procedure Columns2(Gap: Integer; const Text1, Text2: RawUtf8);
+
+    { --- frames and artifacts --- }
+    /// let headings, paragraphs, tables and lists flow inside a rectangle
+    // - X and Width in 1/100 mm within the printable area; until EndFrame
+    // every X is relative to the frame's left edge and the flowing methods
+    // wrap at Width; Y stays a page coordinate and becomes CurrentY
+    // - the order of the frames in the code is their order in the structure
+    // tree of a tagged export, whatever their position on the page
+    // - a frame does not break the page: content that does not fit raises
+    // ESynException; frames do not nest
+    procedure BeginFrame(X, Y, Width: Integer);
+    /// end the frame: CurrentY is then the lower of its bottom and of the
+    // CurrentY before BeginFrame, so frames side by side leave CurrentY below
+    // the longest one
+    procedure EndFrame;
+    /// what is drawn until EndArtifact is an artifact in a tagged export:
+    // content that carries no information of its own, e.g. the return
+    // address line above the address of a window envelope
+    // - text and graphics only: headings, tables and lists raise
+    // ESynException; no page break until EndArtifact
+    procedure BeginArtifact;
+    /// end the content started by BeginArtifact
+    procedure EndArtifact;
 
     { --- tables (Phase 4) --- }
     /// begin table with TTableLayout definition (column widths, fonts, colors, alignment)
@@ -1042,6 +1074,89 @@ begin
   n := Length(fCurrCmds^);
   SetLength(fCurrCmds^, n + 1);
   fCurrCmds^[n] := Cmd;
+  { one place for the frame offset: every Draw* method records through here }
+  if fFrameX <> 0 then
+    case Cmd.Kind of
+      dckDrawText:
+        inc(fCurrCmds^[n].X, fFrameX);
+      dckDrawLine, dckDrawRect, dckFillRect, dckDrawBitmap, dckClip:
+      begin
+        inc(fCurrCmds^[n].X, fFrameX);
+        inc(fCurrCmds^[n].X2, fFrameX);
+      end;
+    end;
+end;
+
+procedure TGDIPages.CheckNoArtifact(const Caller: RawUtf8);
+begin
+  if fInArtifact then
+    raise ESynException.CreateUtf8('TGDIPages.%: structure is not allowed ' +
+      'inside BeginArtifact..EndArtifact', [Caller]);
+end;
+
+procedure TGDIPages.BeginFrame(X, Y, Width: Integer);
+begin
+  if fFrameActive then
+    raise ESynException.Create('TGDIPages.BeginFrame: frames do not nest');
+  if fTableInProgress then
+    raise ESynException.Create('TGDIPages.BeginFrame: inside a table');
+  if (X < 0) or (Width <= 0) or (X + Width > fPageWidth) or
+     (Y < 0) or (Y > fPageHeight) then
+    raise ESynException.CreateUtf8('TGDIPages.BeginFrame: (%, %, %) is ' +
+      'outside the printable area', [X, Y, Width]);
+  CloseOpenList;
+  fFrameActive := true;
+  fFrameX := X;
+  fFrameSavedY := fCurrentY;
+  fPrintableWidth := Width;
+  fWrappingWidthPx := MMToPixels(Width, 96);
+  fCurrentY := Y;
+  fCurrentX := 0;
+  fInlineBlockId := 0;
+end;
+
+procedure TGDIPages.EndFrame;
+begin
+  if not fFrameActive then
+    raise ESynException.Create('TGDIPages.EndFrame: no frame');
+  if fTableInProgress then
+    raise ESynException.Create('TGDIPages.EndFrame: EndTable missing');
+  CloseOpenList; // its dckEndList still belongs to the frame
+  fFrameActive := false;
+  fFrameX := 0;
+  fPrintableWidth := fPageWidth;
+  fWrappingWidthPx := MMToPixels(fPrintableWidth, 96);
+  fCurrentY := Max(fFrameSavedY, fCurrentY);
+  fCurrentX := 0;
+  fInlineBlockId := 0;
+end;
+
+procedure TGDIPages.BeginArtifact;
+var
+  Cmd: TDrawCommand;
+begin
+  if fInArtifact then
+    raise ESynException.Create('TGDIPages.BeginArtifact: already inside one');
+  if fTableInProgress then
+    raise ESynException.Create('TGDIPages.BeginArtifact: inside a table');
+  Cmd := NewCommand;
+  Cmd.Kind := dckBeginArtifact;
+  AddCommand(Cmd); // closes an open list first
+  fInArtifact := true;
+  fInlineBlockId := 0;
+end;
+
+procedure TGDIPages.EndArtifact;
+var
+  Cmd: TDrawCommand;
+begin
+  if not fInArtifact then
+    raise ESynException.Create('TGDIPages.EndArtifact: no BeginArtifact');
+  fInArtifact := false;
+  Cmd := NewCommand;
+  Cmd.Kind := dckEndArtifact;
+  AddCommand(Cmd);
+  fInlineBlockId := 0;
 end;
 
 function TGDIPages.GetPageCount: Integer;
@@ -1154,6 +1269,12 @@ end;
 
 procedure TGDIPages.NewPage;
 begin
+  if fFrameActive then
+    raise ESynException.Create('TGDIPages: the content of a frame does not ' +
+      'fit on its page');
+  if fInArtifact then
+    raise ESynException.Create('TGDIPages: no page break inside ' +
+      'BeginArtifact..EndArtifact');
   { close an open list on the page it started on, so L/LI never span pages }
   if not fRecordingListItem then
     CloseOpenList;
@@ -1181,6 +1302,9 @@ end;
 
 procedure TGDIPages.EndDoc;
 begin
+  if fFrameActive or fInArtifact then
+    raise ESynException.Create('TGDIPages.EndDoc: EndFrame or EndArtifact ' +
+      'missing');
   CloseOpenList;
   fCurrCmds := nil; // seal: catch stray drawing calls early
 end;
@@ -1578,6 +1702,7 @@ var
   LH: Integer;
   Cmd: TDrawCommand;
 begin
+  CheckNoArtifact('DrawListItem');
   SaveLayout;
   Format := GetFormat('LI');
   SetFont(Format.FontName, Format.FontSize);
@@ -1648,6 +1773,7 @@ var
   FontSizeIn100mm: Integer;
   CurrY: Integer;
 begin
+  CheckNoArtifact('DrawHeading');
   { Validate inputs }
   if (ALevel < 1) or (ALevel > 6) then
     raise Exception.Create('DrawHeading: level must be 1..6');
@@ -1942,7 +2068,7 @@ var
   ColW:    Integer;
   Y1, Y2: Integer;
 begin
-  ColW := (fPageWidth - Gap) div 2;
+  ColW := (fPrintableWidth - Gap) div 2; // the frame's width inside a frame
   Y1   := fCurrentY;
   Y2   := fCurrentY;
   RecordWrappedText(0,          Y1, Text1, ColW);
@@ -1973,6 +2099,7 @@ var
   i: Integer;
   BTCmd: TDrawCommand;
 begin
+  CheckNoArtifact('BeginTable');
   if fTableInProgress then
     raise Exception.Create('BeginTable: table already in progress');
   fTableInProgress := True;
@@ -2283,6 +2410,7 @@ var
   i: Integer;
   Cmd: TDrawCommand;
 begin
+  CheckNoArtifact('BeginTable');
   if fTableInProgress then
     raise Exception.Create('BeginTable: table already in progress');
   fTableInProgress := True;
@@ -2807,6 +2935,22 @@ begin
           fActivePdfDoc.EndStructContent;
         InListItem := false;
       end;
+      { as a repeated header row: without fActivePdfDoc nothing inside
+        opens a struct element }
+      dckBeginArtifact:
+        if fActivePdfDoc <> nil then
+        begin
+          fActivePdfDoc.BeginArtifact;
+          ArtifactDoc   := fActivePdfDoc;
+          fActivePdfDoc := nil;
+        end;
+      dckEndArtifact:
+        if ArtifactDoc <> nil then
+        begin
+          fActivePdfDoc := ArtifactDoc;
+          ArtifactDoc   := nil;
+          fActivePdfDoc.EndArtifact;
+        end;
     end;
   end;
 
