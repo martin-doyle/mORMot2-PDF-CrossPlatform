@@ -398,10 +398,9 @@ through the bridge reference too (R-20), so both paths need it.
 
 **Why.** `zugferd_demo` passes veraPDF and PAC, yet its structure tree is an
 `H1`, a `Table` and a run of `P`: a screen reader user gets two jump targets.
-`examples/invoice_demo` (2026-10-04, for review on the branch
-`feature/invoice-demo`, not on `main` yet) lays out the same invoice with
-one `H2` per section, so the headings list and the bookmarks lead to invoice
-data, parties, items and payment.
+`examples/invoice_demo` (2026-10-04, for review, not in the learning path
+yet) lays out the same invoice with one `H2` per section, so the headings
+list and the bookmarks lead to invoice data, parties, items and payment.
 Label/value data is in tables, the accounts are an `L`, and letterhead and
 footer are artifacts. PAC 2024 shows it well structured. It uses the API as it
 is; building it found the gaps below. Its README holds the questions for the

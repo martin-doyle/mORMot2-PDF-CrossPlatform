@@ -1,0 +1,3 @@
+# the embedded invoice must be the same bytes on every platform: no
+# line-ending conversion on checkout
+factur-x.xml -text
