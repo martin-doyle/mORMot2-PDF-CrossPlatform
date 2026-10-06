@@ -231,6 +231,10 @@ type
     // - true: the first cell of a footer row heads that row, e.g. the label of
     // a totals line - tagged as TH with /Scope /Row instead of TD
     FooterRowHeader: boolean;
+    // - space between the cell border and its text in 1/100 mm, above and on
+    // the left and right; 0 = 200 (2 mm). A table without grid or fill
+    // looks loose with the default
+    CellPadding: Integer;
   end;
 
   /// a running header or footer in columns, see TGDIPages.SetHeaderColumns
@@ -425,6 +429,7 @@ type
     procedure DrawTableStyledRow(const Cells: array of RawUtf8;
       ARowKind: Integer; const AFontName: RawUtf8; AFontSize: Integer;
       AFontStyle: TFontStyles; ABkColor: TColor);
+    function TableCellPadding: Integer;
     procedure InitializeFormatRegistry;
     procedure AddHeadingsToOutline(PDF: TPdfDocumentVcl);
     function  NormalizeX(X: Integer): Integer;
@@ -2248,6 +2253,13 @@ begin
   AddCommand(BTCmd);
 end;
 
+function TGDIPages.TableCellPadding: Integer;
+begin
+  result := fTableLayout.CellPadding;
+  if result <= 0 then
+    result := CELL_PADDING;
+end;
+
 procedure TGDIPages.DrawTableStyledRow(const Cells: array of RawUtf8;
   ARowKind: Integer; const AFontName: RawUtf8; AFontSize: Integer;
   AFontStyle: TFontStyles; ABkColor: TColor);
@@ -2273,7 +2285,7 @@ begin
   fTextColor := clBlack;
 
   { Cell height includes padding above and small padding below text }
-  CellHeight := LineHeightMM + CELL_PADDING;
+  CellHeight := LineHeightMM + TableCellPadding;
 
   { Draw header cells }
   CellX := 0;
@@ -2303,7 +2315,7 @@ begin
     AddCommand(Cmd);
 
     { Draw header text }
-    CellY := fCurrentY + CELL_PADDING;
+    CellY := fCurrentY + TableCellPadding;
     case fTableColAligns[i] of
       tcaRight:
         AlignValue := 1;
@@ -2320,12 +2332,12 @@ begin
       { right alignment: the text width has to be in the X position already }
       case AlignValue of
         1: { Right: X = right_edge - text_width, then the text is drawn left-aligned }
-          EmitTextCmd(NormalizeX(CellX + CellWidth - CELL_PADDING - MeasureTextWidthMM(Cells[i])), NormalizeY(CellY), Cells[i], 0);
+          EmitTextCmd(NormalizeX(CellX + CellWidth - TableCellPadding - MeasureTextWidthMM(Cells[i])), NormalizeY(CellY), Cells[i], 0);
         2: { Center: use middle of cell }
           EmitTextCmd(NormalizeX(CellX + CellWidth div 2), NormalizeY(CellY), Cells[i], AlignValue);
       else
         { Left: normal left-aligned }
-        EmitTextCmd(NormalizeX(CellX + CELL_PADDING), NormalizeY(CellY), Cells[i], AlignValue);
+        EmitTextCmd(NormalizeX(CellX + TableCellPadding), NormalizeY(CellY), Cells[i], AlignValue);
       end;
     finally
       fEmitRowHeader := false;
@@ -2396,7 +2408,7 @@ begin
 
   { never leave the footer alone on a page without its table: break first,
     repeating the column headers like DrawTableRow does }
-  RowHeight := LineHeightMM + CELL_PADDING;
+  RowHeight := LineHeightMM + TableCellPadding;
   if fCurrentY + RowHeight > fPageHeight then
   begin
     ForceNewPage;
@@ -2428,7 +2440,7 @@ begin
     raise Exception.Create('DrawTableRow: BeginTable not called');
 
   { Calculate row height with padding above and small padding below text }
-  RowHeight := LineHeightMM + CELL_PADDING;
+  RowHeight := LineHeightMM + TableCellPadding;
 
   { Check for page break - repeat column headers on the continuation page }
   if fCurrentY + RowHeight > fPageHeight then
@@ -2493,7 +2505,7 @@ begin
     AddCommand(Cmd);
 
     { Draw body text }
-    CellY := fCurrentY + CELL_PADDING;
+    CellY := fCurrentY + TableCellPadding;
     case fTableColAligns[i] of
       tcaRight:
         AlignValue := 1;
@@ -2505,12 +2517,12 @@ begin
     { right alignment: the text width has to be in the X position already }
     case AlignValue of
       1: { Right: X = right_edge - text_width, then the text is drawn left-aligned }
-        EmitTextCmd(NormalizeX(CellX + CellWidth - CELL_PADDING - MeasureTextWidthMM(Values[i])), NormalizeY(CellY), Values[i], 0);
+        EmitTextCmd(NormalizeX(CellX + CellWidth - TableCellPadding - MeasureTextWidthMM(Values[i])), NormalizeY(CellY), Values[i], 0);
       2: { Center: use middle of cell }
         EmitTextCmd(NormalizeX(CellX + CellWidth div 2), NormalizeY(CellY), Values[i], AlignValue);
     else
       { Left: normal left-aligned }
-      EmitTextCmd(NormalizeX(CellX + CELL_PADDING), NormalizeY(CellY), Values[i], AlignValue);
+      EmitTextCmd(NormalizeX(CellX + TableCellPadding), NormalizeY(CellY), Values[i], AlignValue);
     end;
 
     CellX := CellX + CellWidth;

@@ -71,6 +71,9 @@ v0.10.0 (2026-09-30).
   with its alternate text; `SetHeaderColumns`/`SetFooterColumns` give
   running texts in columns of several lines, in a font of their own, page 1
   apart if wanted. Opt-in, the output of existing code is unchanged
+- **New, opt-in (`TGDIPages`, R-29):** `TTableLayout.CellPadding` sets the
+  space between cell border and text (default 2 mm, as before), e.g. 0.5 mm
+  for a label/value table without grid
 - **New (tagged links, R-29):** `DrawLink` writes a clickable link, in
   tagged output a `Link` element with its annotation; layer 1: `psrLink`,
   and `CreateHyperLink` inside it is tagged as PDF/UA-1 7.18 asks
@@ -471,6 +474,8 @@ is compact, but it is two tables in the structure tree. Two ways to get one:
    came out as stripes on macOS (fixed, see To Announce)
 10. ~~**Drawing in the margin**~~ done 2026-10-05: `PaperX`/`PaperY`, frames
    and coordinates anywhere on the paper (fold and hole marks)
+11. ~~**Cell padding**~~ done 2026-10-06: `TTableLayout.CellPadding`, the
+   fixed 2 mm made the label/value table under "Zahlung" look loose
 
 **Not for the engine — a payment QR code** (GiroCode / EPC QR), common on
 German invoices. For the engine it is an image in a `Figure` with an

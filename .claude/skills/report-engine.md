@@ -268,6 +268,7 @@ const TABLE_LAYOUT: TTableLayout = (
   FooterBkColor:     0;
   GridColor:         clSilver; // cell borders; 0 = clBlack, as before the field existed
   FooterRowHeader:   false;    // true: first footer cell is a row header (TH /Scope /Row)
+  CellPadding:       0;        // 1/100 mm above and beside the text; 0 = CELL_PADDING (2 mm)
 );
 
 Report.BeginTable(TABLE_LAYOUT);
@@ -303,7 +304,7 @@ the footer is never orphaned on a page of its own.
 **Internal lifecycle of BeginTable(TTableLayout):**
 - `BeginTable(Layout)` calls `SaveLayout` internally — balanced by `EndTable` calling `RestoreLayout`. Set the document body font via `SetFont` **before** `BeginTable` so the save captures it.
 - `DrawTableHeader` and `DrawTableRow` each call `SaveLayout`/`RestoreLayout` internally for their cell drawing.
-- `CELL_PADDING = 200` (2 mm). Row/cell height = `LineHeightMM + CELL_PADDING`.
+- `CELL_PADDING = 200` (2 mm), the default of `TTableLayout.CellPadding`; `TableCellPadding` returns the one in effect. Row/cell height = `LineHeightMM + TableCellPadding`, the text placed `TableCellPadding` below the row top and in from the cell edge — no padding below it, the line height's leading serves. The legacy `AddTableRow` keeps `CELL_PADDING`.
 - `LineHeightMM` is `FontSize * LineHeightFactor` converted to 1/100 mm — no canvas involved, identical on every platform.
 - Column loop in both `DrawTableHeader` and `DrawTableRow`: `for i := 0 to Min(High(Cells), High(fTableColWidths))`.
 - `fTableColWidths`/`fTableColAligns` are populated from `Length(Layout.ColumnWidths)` / `Length(Layout.ColumnAligns)`. If `TTableLayout` typed constants have dynamic array fields that aren't properly initialized by the FPC version in use, `Length()` returns 0 and NO cells are drawn (not even the header). See note below.

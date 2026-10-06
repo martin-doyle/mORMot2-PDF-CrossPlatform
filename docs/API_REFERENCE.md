@@ -286,12 +286,15 @@ TTableLayout = record
   FooterBkColor:     TColor;
   GridColor:         TColor;   // cell borders; 0 = clBlack (the default)
   FooterRowHeader:   boolean;  // first footer cell = row header (TH /Scope /Row)
+  CellPadding:       Integer;  // 1/100 mm above and beside the text; 0 = 200 (2 mm)
 end;
 ```
 
 Empty `FontName` and `FontSize = 0` inherit the current document font. The table automatically picks up the font set by `Report.SetFont()`.
 
 **Cell borders:** `GridColor` colours the borders of every cell — header, data and footer rows. They are one pixel wide at 96 dpi (0.75 pt), the thinnest the canvas bridge draws; a light grey such as `clSilver` makes them recede.
+
+**Cell padding:** `CellPadding` is the space between a cell's border and its text, above it and on the left and right, in 1/100 mm; 0 keeps the default of 2 mm. A row is as tall as a line of text plus this padding. A table without grid or fill, used to set labels above values, reads tighter with 50 (0.5 mm).
 
 **Automatic header repetition (R-9):** `DrawTableHeader` saves the column headers. When `DrawTableRow` triggers a page break, the headers are automatically re-drawn at the top of the continuation page. `EndTable` clears the saved headers.
 
