@@ -425,6 +425,9 @@ Label/value data is in tables, the accounts are an `L`, and letterhead and
 footer are artifacts. PAC 2024 shows it well structured. It uses the API as it
 is; building it found the gaps below. Its README holds the questions for the
 accessibility review, whose answers may change this list.
+Reviewed 2026-10-06: tables, blocks, artifacts and IBAN groups accepted; the
+customer, read twice and once without context, is now tagged under "Kunde"
+only, the address field an artifact (README "Review"). No new engine gap.
 
 **Open decision — label/value data** ("Rechnungsnummer: R2020-0815" and
 seven more). Today: two tables of one header row and one data row each,
@@ -445,7 +448,7 @@ is compact, but it is two tables in the structure tree. Two ways to get one:
    report-engine.md, "Frames and Artifacts"); `invoice_demo` sets customer
    and seller side by side
 2. ~~**Text artifacts at a free position**~~ done 2026-10-05:
-   `BeginArtifact`/`EndArtifact`, the return address line in `invoice_demo`
+   `BeginArtifact`/`EndArtifact`, the address field in `invoice_demo`
 3. **Multi-line table cells**: wrap a cell's text to its column width, the
    row as tall as its tallest cell, one `TD` per cell (the `BlockId` of
    wrapped paragraphs). Today a cell is one line and long text runs into the

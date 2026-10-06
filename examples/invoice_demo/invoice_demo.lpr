@@ -3,8 +3,9 @@
 // laid out for a screen reader user: letterhead, address field,
 // information block and subject at their positions, a heading per section
 // below, so that the headings list and the bookmarks lead through it; all
-// decoration - letterhead, logo, return line, marks, running texts - is an
-// artifact, its facts tagged once under "Rechnungssteller".
+// decoration - letterhead, logo, address field, marks, running texts - is an
+// artifact, its facts tagged once under "Kunde" and "Rechnungssteller".
+// Only what the paper needs is shown; the rest is in the embedded XML.
 // A proposal for review - zugferd_demo stays the reference demo.
 //
 // Worth noting:
@@ -60,12 +61,10 @@ type
     Number, IssueDate, DeliveryDate, Note, BuyerReference: RawUtf8;
     BuyerOrder, SellerOrder, Contract: RawUtf8;
     PeriodStart, PeriodEnd: RawUtf8;
-    SellerName, SellerTradingName, SellerDescription: RawUtf8;
-    SellerVatId, SellerTaxNumber: RawUtf8;
+    SellerName, SellerTradingName, SellerVatId, SellerTaxNumber: RawUtf8;
     SellerStreet, SellerPostcode, SellerCity, SellerCountry: RawUtf8;
     SellerContact, SellerPhone, SellerEmail: RawUtf8;
-    BuyerId, BuyerName, BuyerEmail, BuyerVatId: RawUtf8;
-    BuyerContact, BuyerPhone, BuyerContactEmail: RawUtf8;
+    BuyerId, BuyerName, BuyerVatId: RawUtf8;
     BuyerStreet, BuyerPostcode, BuyerCity, BuyerCountry: RawUtf8;
     Currency, PaymentTerms, DueDate, PaymentReference: RawUtf8;
     Ibans, AccountNames: array of RawUtf8;
@@ -246,7 +245,6 @@ begin
   result.SellerName := XmlText(Seller, ['ram:Name']);
   result.SellerTradingName := XmlText(Seller, ['ram:SpecifiedLegalOrganization',
     'ram:TradingBusinessName']);
-  result.SellerDescription := XmlText(Seller, ['ram:Description']);
   result.SellerVatId := SchemeId(Seller, 'VA');
   result.SellerTaxNumber := SchemeId(Seller, 'FC');
   result.SellerStreet := AddressLines(Seller);
@@ -270,15 +268,7 @@ begin
     'ram:PostcodeCode']);
   result.BuyerCity := XmlText(Buyer, ['ram:PostalTradeAddress', 'ram:CityName']);
   result.BuyerCountry := XmlText(Buyer, ['ram:PostalTradeAddress', 'ram:CountryID']);
-  result.BuyerEmail := XmlText(Buyer, ['ram:URIUniversalCommunication',
-    'ram:URIID']);
   result.BuyerVatId := SchemeId(Buyer, 'VA');
-  result.BuyerContact := XmlText(Buyer, ['ram:DefinedTradeContact',
-    'ram:PersonName']);
-  result.BuyerPhone := XmlText(Buyer, ['ram:DefinedTradeContact',
-    'ram:TelephoneUniversalCommunication', 'ram:CompleteNumber']);
-  result.BuyerContactEmail := XmlText(Buyer, ['ram:DefinedTradeContact',
-    'ram:EmailURIUniversalCommunication', 'ram:URIID']);
   result.DeliveryDate := XmlText(Trade, ['ram:ApplicableHeaderTradeDelivery',
     'ram:ActualDeliverySupplyChainEvent', 'ram:OccurrenceDateTime',
     'udt:DateTimeString']);
@@ -499,6 +489,21 @@ begin
     result := Prefix + Value;
 end;
 
+// the lines of an address after DIN 5008: no country when it is the
+// sender's own
+function Address(const Name, Street, Postcode, City, Country,
+  Home: RawUtf8): TRawUtf8DynArray;
+begin
+  SetLength(result, 4);
+  result[0] := Name;
+  result[1] := Street;
+  result[2] := TrimU(Postcode + ' ' + City);
+  if Country <> Home then
+    result[3] := Country
+  else
+    result[3] := '';
+end;
+
 { ---------- the page ---------- }
 
 // the item columns, shares of the printable width.
@@ -615,6 +620,7 @@ begin
   Layout.HeaderBkColor := clWhite;
   Layout.BodyBkColor := clWhite;
   Layout.GridColor := clWhite;
+  Layout.CellPadding := 50;  // without a grid, 2 mm around the text look loose
   Report.BeginTable(Layout);
   Report.DrawTableHeader(L);
   Report.DrawTableRow(V);
@@ -669,34 +675,25 @@ var
   n, k, Y: integer;
   Item: TInvoiceItem;
   Name, Text, Due: RawUtf8;
+  Lines: TRawUtf8DynArray;
   Logo: TBitmap;
 begin
   DefineFormat(Report, 'H1', Sans, 16, [fsBold], clBlack, 0, 200);
   DefineFormat(Report, 'H2', Sans, 13, [fsBold], clBlack, 0, 0);
   DefineFormat(Report, 'P', Sans, 10, [], clBlack, 0, 250);
-  DefineFormat(Report, 'LI', Sans, 10, [], clBlack, 0, 100);
+  DefineFormat(Report, 'LI', Sans, 10, [], clBlack, 0, 0);
   Report.SetFont(Sans, 10);
   Due := Inv.DuePayable;
   if Due = '' then
     Due := Inv.GrandTotal;
   // the subject first in the structure tree, though it stands below the
-  // address: it names the document, and a screen reader starts there
+  // address: it names the document, and a screen reader starts there.
+  // Amount and due date only under "Zahlung": once is enough
   Report.BeginFrame(0, Report.PaperY(9846), Report.PageWidth);
   Report.DrawHeading(1, 'Rechnung ' + Inv.Number);
-  Text := Labeled('Rechnungsbetrag ', Amount(Due));
-  if (Text <> '') and (Inv.Currency <> '') then
-    Text := Text + ' ' + Inv.Currency;
-  if Inv.DueDate <> '' then
-    Text := Join([Text, 'zahlbar bis ' + GermanDate(Inv.DueDate)]);
-  if Text <> '' then
-  begin
-    DefineFormat(Report, 'P', Sans, 11, [fsBold], clBlack, 0, 250);
-    Report.DrawParagraph(Text + '.');
-    DefineFormat(Report, 'P', Sans, 10, [], clBlack, 0, 250);
-  end;
   Report.EndFrame;
   // letterhead, fold and hole marks: decoration, the seller is tagged under
-  // "Rechnungssteller"
+  // "Rechnungssteller" - as Word does with letterhead, header and footer
   Report.BeginArtifact;
   Logo := NewLogo;
   try
@@ -725,30 +722,24 @@ begin
   Report.DrawLine(Report.PaperX(300), Report.PaperY(21000),
     Report.PaperX(800), Report.PaperY(21000), 1, clGray);
   Report.EndArtifact;
-  // the address field: the return address line repeats the seller (an
-  // artifact), the address itself is the customer's
+  // the address field is for the envelope: an artifact, as a customer name
+  // read right after the subject has no context. The customer is tagged
+  // under "Kunde"
+  Report.BeginArtifact;
   Report.BeginFrame(Report.PaperX(2000), Report.PaperY(4500), 8500);
   Report.SaveLayout;
   Report.SetFont(Sans, 7);
   Report.TextColor := $505050;
-  Report.BeginArtifact;
   // one line within the 85 mm of the field: name and town only
   Report.DrawText(500, Report.PaperY(5800), Join([Inv.SellerName,
     TrimU(Inv.SellerPostcode + ' ' + Inv.SellerCity)]));
-  Report.EndArtifact;
   Report.RestoreLayout;
   Report.EndFrame;
   Report.BeginFrame(Report.PaperX(2500), Report.PaperY(6270), 8000);
-  DefineFormat(Report, 'P', Sans, 10, [], clBlack, 0, 0);
-  Name := Inv.BuyerName;
-  if Inv.BuyerId <> '' then
-    Name := Name + ' (Kundennummer ' + Inv.BuyerId + ')';
-  Report.DrawParagraph(Name);
-  Report.DrawParagraph(Inv.BuyerStreet);
-  Report.DrawParagraph(TrimU(Inv.BuyerPostcode + ' ' + Inv.BuyerCity));
-  if Inv.BuyerCountry <> 'DE' then
-    Report.DrawParagraph(Inv.BuyerCountry); // DIN 5008: no country at home
+  DrawLines(Report, Sans, Address(Inv.BuyerName, Inv.BuyerStreet,
+    Inv.BuyerPostcode, Inv.BuyerCity, Inv.BuyerCountry, Inv.SellerCountry));
   Report.EndFrame;
+  Report.EndArtifact;
   // the information block: what identifies the invoice
   Report.BeginFrame(Report.PaperX(12500), Report.PaperY(5000),
     Report.PageWidth + Report.MarginLeft - 12500);
@@ -758,8 +749,7 @@ begin
   DefineFormat(Report, 'P', Sans, 8, [], clBlack, 0, 0);
   DrawField(Report, 'Rechnungsnummer', Inv.Number);
   DrawField(Report, 'Rechnungsdatum', GermanDate(Inv.IssueDate));
-  DrawField(Report, 'Lieferdatum', GermanDate(Inv.DeliveryDate));
-  DrawField(Report, 'Leistungszeitraum', Period(Inv.PeriodStart, Inv.PeriodEnd));
+  DrawField(Report, 'Kundennummer', Inv.BuyerId);
   DrawField(Report, 'Ihre Bestellung', Inv.BuyerOrder);
   DrawField(Report, 'Ihre Referenz', Inv.BuyerReference);
   DrawField(Report, 'Unser Auftrag', Inv.SellerOrder);
@@ -771,6 +761,10 @@ begin
   Report.EndFrame; // CurrentY: below the subject, where the body starts
   // the items; the table breaks the page and repeats its header on its own
   DrawSection(Report, 'Positionen');
+  // when, for all items: Paragraph 14 UStG wants it on the invoice
+  DrawLines(Report, Sans, [Labeled('Lieferdatum: ', GermanDate(Inv.DeliveryDate)),
+    Labeled('Leistungszeitraum: ', Period(Inv.PeriodStart, Inv.PeriodEnd))]);
+  Report.AddVerticalSpace(2);
   Report.BeginTable(ItemTableLayout(Report.PageWidth));
   Report.DrawTableHeader(['Bezeichnung', 'Menge', 'Einzelpreis', 'USt', 'Betrag']);
   for n := 0 to high(Inv.Items) do
@@ -792,8 +786,9 @@ begin
     Text := Text + ' (' + Inv.Currency + ')';
   Report.DrawTableFooter([Text, '', '', '', Amount(Inv.GrandTotal)]);
   Report.EndTable;
-  Report.AddVerticalSpace(3);
-  // what the items say beyond the table, right below it
+  // what the items say beyond the table, right below it: a line per item,
+  // close together as Lieferdatum and Leistungszeitraum
+  Lines := nil;
   for n := 0 to high(Inv.Items) do
   begin
     Item := Inv.Items[n];
@@ -803,8 +798,17 @@ begin
     if Text <> '' then
       Text := Text + '.';
     if (Text <> '') or (Item.Note <> '') then
-      Report.DrawParagraph(TrimU(Item.Name + ': ' + Text +
-        Labeled(' ', Item.Note)));
+    begin
+      SetLength(Lines, length(Lines) + 1);
+      Lines[high(Lines)] := TrimU(Item.Name + ': ' + Text +
+        Labeled(' ', Item.Note));
+    end;
+  end;
+  if Lines <> nil then
+  begin
+    Report.AddVerticalSpace(3);
+    DrawLines(Report, Sans, Lines);
+    Report.AddVerticalSpace(2);
   end;
   // payment: amount, date and reference as labelled values, the accounts as
   // a list - "list with 2 items" tells at once that there is a choice
@@ -812,8 +816,13 @@ begin
   Text := Amount(Due);
   if (Text <> '') and (Inv.Currency <> '') then
     Text := Text + ' ' + Inv.Currency;
+  // a reference that names the invoice number is shown as it is labelled
+  // under "Rechnungsdaten"; any other stands as the XML has it
+  Name := Inv.PaymentReference;
+  if (Inv.Number <> '') and ((Name = '') or EndWithExact(Name, Inv.Number)) then
+    Name := 'Rechnungsnummer: ' + Inv.Number;
   DrawFields(Report, ['Zahlbetrag', 'Zahlbar bis', 'Verwendungszweck'],
-    [Text, GermanDate(Inv.DueDate), Inv.PaymentReference]);
+    [Text, GermanDate(Inv.DueDate), Name]);
   if Inv.PaymentTerms <> '' then
     Report.DrawParagraph(Inv.PaymentTerms);
   n := 0;
@@ -822,33 +831,34 @@ begin
       inc(n);
   if n > 0 then
   begin
+    // the lead-in close to its list, as one block
+    DefineFormat(Report, 'P', Sans, 10, [], clBlack, 0, 100);
     if n = 1 then
       Report.DrawParagraph('Bankverbindung:')
     else
       Report.DrawParagraph('Bankverbindungen, zur Wahl:');
+    DefineFormat(Report, 'P', Sans, 10, [], clBlack, 0, 250);
     // each account on one line, so that no line break falls into an IBAN
     for k := 0 to high(Inv.Ibans) do
       if Inv.Ibans[k] <> '' then
         Report.DrawListItem(300, Report.CurrentY, Join([Inv.AccountNames[k],
           'IBAN ' + IbanGroups(Inv.Ibans[k])]));
   end;
-  // the parties in full, side by side: what the letterhead, the address
-  // field and the footer show as decoration is tagged here, once
-  // a frame does not break the page: start the pair on the next one when
-  // the space left is short of what the longer block takes
+  // the parties, side by side: what the letterhead, the address field and
+  // the footer show as decoration is tagged here, once - only what the
+  // paper needs, the rest is in the XML. The note (register, management)
+  // stands in the footer too, but it is information, not decoration
+  // (Matterhorn 01-002). A frame does not break the page: start the pair on
+  // the next one when the space left is short of what the longer block takes
   Report.AddVerticalSpace(4);
-  if Report.CurrentY + 5000 > Report.PageHeight then
+  if Report.CurrentY + 3500 > Report.PageHeight then
     Report.ForceNewPage;
   Y := Report.CurrentY;
   Report.BeginFrame(0, Y, Report.PageWidth div 2 - 500);
   Report.DrawHeading(2, 'Kunde');
-  DrawLines(Report, Sans, [Inv.BuyerName, Inv.BuyerStreet,
-    TrimU(Inv.BuyerPostcode + ' ' + Inv.BuyerCity), Inv.BuyerCountry,
-    Labeled('USt-IdNr. ', Inv.BuyerVatId),
-    Labeled('Ansprechpartner: ', Join([Inv.BuyerContact,
-      Labeled('Tel. ', Inv.BuyerPhone)]))]);
-  DrawMailLine(Report, Sans, 10, 'E-Mail', Inv.BuyerContactEmail);
-  DrawMailLine(Report, Sans, 10, 'Rechnungen an', Inv.BuyerEmail);
+  DrawLines(Report, Sans, Address(Inv.BuyerName, Inv.BuyerStreet,
+    Inv.BuyerPostcode, Inv.BuyerCity, Inv.BuyerCountry, Inv.SellerCountry));
+  DrawLines(Report, Sans, [Labeled('USt-IdNr. ', Inv.BuyerVatId)]);
   Report.EndFrame;
   Report.BeginFrame(Report.PageWidth div 2 + 500, Y,
     Report.PageWidth div 2 - 500);
@@ -856,14 +866,14 @@ begin
   Name := Inv.SellerName;
   if Inv.SellerTradingName <> '' then
     Name := Name + ' (' + Inv.SellerTradingName + ')';
-  DrawLines(Report, Sans, [Name, Inv.SellerStreet,
-    TrimU(Inv.SellerPostcode + ' ' + Inv.SellerCity), Inv.SellerCountry,
-    Join([Labeled('USt-IdNr. ', Inv.SellerVatId),
-      Labeled('Steuernummer ', Inv.SellerTaxNumber)]),
-    Inv.SellerDescription, Inv.Note,
-    Labeled('Ansprechpartner: ', Join([Inv.SellerContact,
-      Labeled('Tel. ', Inv.SellerPhone)]))]);
-  DrawMailLine(Report, Sans, 10, 'E-Mail', Inv.SellerEmail);
+  DrawLines(Report, Sans, Address(Name, Inv.SellerStreet, Inv.SellerPostcode,
+    Inv.SellerCity, Inv.SellerCountry, Inv.SellerCountry));
+  // Paragraph 14 UStG: the VAT ID or the tax number, one of them is enough
+  if Inv.SellerVatId <> '' then
+    Text := 'USt-IdNr. ' + Inv.SellerVatId
+  else
+    Text := Labeled('Steuernummer ', Inv.SellerTaxNumber);
+  DrawLines(Report, Sans, [Text, Inv.Note]);
   Report.EndFrame;
   // where the data comes from
   DrawSection(Report, 'Hinweise');
