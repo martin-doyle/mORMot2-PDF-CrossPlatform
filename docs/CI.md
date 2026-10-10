@@ -126,8 +126,9 @@ packages `mormot2` and `LCL`, and the runner uses `Interfaces` and
    (`windows-latest`, `test_runner.exe --noenter`); **macOS**
    (`aarch64-darwin`) only if Homebrew installs FPC and Lazarus cleanly
 
-**mORMot2:** `actions/checkout` of `synopse/mORMot2` at the commit pinned in
-the refactoring baseline (`docs/REFACTORING.md`, Phase 0 step 3), its
+**mORMot2:** `actions/checkout` of the commit pinned in the refactoring
+baseline (`docs/REFACTORING.md`, Phase 0 step 3) - during the refactoring a
+commit of the `pdf-font-layer` branch of `landrix/mORMot2` - its
 packages registered with `lazbuild --add-package-link`, plus the static
 libraries from `mormot2static.tgz`.
 

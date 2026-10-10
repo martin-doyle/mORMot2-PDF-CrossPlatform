@@ -22,11 +22,30 @@ function InflatePdf(const s: RawUtf8): RawUtf8;
 // - the structure is checked before anything is blanked: each /Length has to
 // end at endstream, each offset has to point to its object; Error tells the
 // first violation
-function NormalizePdf(const Pdf: RawByteString; out Error: RawUtf8): RawUtf8;
+function NormalizePdf(const Pdf: RawByteString; out Error: RawUtf8): RawUtf8; overload;
 
-/// compare two normalized files: true when equal, otherwise Diff names the
-// object and byte of the first difference and the line of each
-function ComparePdfText(const a, b: RawUtf8; out Diff: RawUtf8): boolean;
+type
+  /// where one object is in the normalized text: from the "n g" before
+  // 'obj' to 'endobj', or one object of an object stream
+  TPdfObjectSpan = record
+    Num, Gen: integer;
+    Start, Stop: integer; // 1-based, Stop excluded
+  end;
+  TPdfObjectSpans = array of TPdfObjectSpan;
+
+/// NormalizePdf, with where each object is in the result
+// - found by the same walk through the syntax, so that strings and stream
+// data are never taken for an object; an object stream gives its objects
+// one by one, not itself
+function NormalizePdf(const Pdf: RawByteString; out Error: RawUtf8;
+  out Objects: TPdfObjectSpans): RawUtf8; overload;
+
+/// compare two normalized files: true when equal, otherwise Diff names each
+// differing, added or removed object (up to ten), paired by number, with the
+// byte of its first difference and the line of each side, and the text
+// outside the objects - so that one expected difference hides no other
+function ComparePdfText(const a, b: RawUtf8; const ObjA, ObjB: TPdfObjectSpans;
+  out Diff: RawUtf8): boolean;
 
 /// the roles of the structure tree with their counts, one 'Role count' per
 // line, sorted by role; '' for an untagged file
@@ -125,6 +144,11 @@ var
   b, e, k: integer;
 begin
   LineNo := 1;
+  result := '';
+  if s = '' then
+    exit;
+  if i < 1 then
+    i := 1;
   for k := 1 to i - 1 do
     if s[k] = #10 then
       inc(LineNo);
@@ -169,26 +193,129 @@ begin
   end;
 end;
 
-function ComparePdfText(const a, b: RawUtf8; out Diff: RawUtf8): boolean;
+// the first difference of a[PosA..EndA) and b[PosB..EndB), as three lines
+function DiffAt(const a, b: RawUtf8; PosA, EndA, PosB, EndB: integer;
+  const What: RawUtf8): RawUtf8;
 var
-  i, n, la, lb: integer;
+  i, la, lb: integer;
   ta, tb: RawUtf8;
+begin
+  i := 0;
+  while (PosA + i < EndA) and
+        (PosB + i < EndB) and
+        (a[PosA + i] = b[PosB + i]) do
+    inc(i);
+  ta := LineAt(a, MinPtrInt(PosA + i, length(a)), la);
+  tb := LineAt(b, MinPtrInt(PosB + i, length(b)), lb);
+  result := '  ' + What + ', byte ' + Int32ToUtf8(PosA + i) + #10 +
+    '  a, line ' + Int32ToUtf8(la) + ': ' + ta + #10 +
+    '  b, line ' + Int32ToUtf8(lb) + ': ' + tb;
+end;
+
+// the Nth (0-based) definition of object Num Gen: an incremental update
+// defines an object again
+function FindSpan(const Spans: TPdfObjectSpans; Num, Gen, Nth: integer): integer;
+begin
+  for result := 0 to high(Spans) do
+    if (Spans[result].Num = Num) and
+       (Spans[result].Gen = Gen) then
+      if Nth = 0 then
+        exit
+      else
+        dec(Nth);
+  result := -1;
+end;
+
+// which definition of its object Spans[Index] is, 0 for the first
+function SpanNth(const Spans: TPdfObjectSpans; Index: integer): integer;
+var
+  k: integer;
+begin
+  result := 0;
+  for k := 0 to Index - 1 do
+    if (Spans[k].Num = Spans[Index].Num) and
+       (Spans[k].Gen = Spans[Index].Gen) then
+      inc(result);
+end;
+
+// the text outside the objects: header, xref, trailer
+function OutsideSpans(const s: RawUtf8; const Spans: TPdfObjectSpans): RawUtf8;
+var
+  k, i, n: integer;
+  inside: TBooleanDynArray;
+begin
+  SetLength(inside, length(s) + 1);
+  for k := 0 to high(Spans) do
+    for i := Spans[k].Start to Spans[k].Stop - 1 do
+      inside[i] := true;
+  SetLength(result, length(s));
+  n := 0;
+  for i := 1 to length(s) do
+    if not inside[i] then
+    begin
+      inc(n);
+      result[n] := s[i];
+    end;
+  SetLength(result, n);
+end;
+
+function ComparePdfText(const a, b: RawUtf8; const ObjA, ObjB: TPdfObjectSpans;
+  out Diff: RawUtf8): boolean;
+const
+  MAX_REPORTED = 10;
+var
+  k, m, count: integer;
+  oa, ob: RawUtf8;
+
+  procedure Report(const Text: RawUtf8);
+  begin
+    inc(count);
+    if count > MAX_REPORTED then
+      exit;
+    if Diff <> '' then
+      Diff := Diff + #10;
+    Diff := Diff + Text;
+  end;
+
+  function Name(const Span: TPdfObjectSpan): RawUtf8;
+  begin
+    result := 'object ' + Int32ToUtf8(Span.Num) + ' ' + Int32ToUtf8(Span.Gen);
+  end;
+
 begin
   Diff := '';
   result := a = b;
   if result then
     exit;
-  n := length(a);
-  if length(b) < n then
-    n := length(b);
-  i := 1;
-  while (i <= n) and (a[i] = b[i]) do
-    inc(i);
-  ta := LineAt(a, i, la);
-  tb := LineAt(b, i, lb);
-  Diff := '  object ' + ObjectAt(a, i) + ', byte ' + Int32ToUtf8(i) + #10 +
-          '  a, line ' + Int32ToUtf8(la) + ': ' + ta + #10 +
-          '  b, line ' + Int32ToUtf8(lb) + ': ' + tb;
+  count := 0;
+  // removed and added first: a new object usually renumbers the others
+  for k := 0 to high(ObjA) do
+    if FindSpan(ObjB, ObjA[k].Num, ObjA[k].Gen, SpanNth(ObjA, k)) < 0 then
+      Report('  ' + Name(ObjA[k]) + ' removed');
+  for m := 0 to high(ObjB) do
+    if FindSpan(ObjA, ObjB[m].Num, ObjB[m].Gen, SpanNth(ObjB, m)) < 0 then
+      Report('  ' + Name(ObjB[m]) + ' added');
+  for k := 0 to high(ObjA) do
+  begin
+    m := FindSpan(ObjB, ObjA[k].Num, ObjA[k].Gen, SpanNth(ObjA, k));
+    if (m >= 0) and
+       ((ObjA[k].Stop - ObjA[k].Start <> ObjB[m].Stop - ObjB[m].Start) or
+        not CompareMem(@a[ObjA[k].Start], @b[ObjB[m].Start],
+          ObjA[k].Stop - ObjA[k].Start)) then
+      Report(DiffAt(a, b, ObjA[k].Start, ObjA[k].Stop, ObjB[m].Start,
+        ObjB[m].Stop, Name(ObjA[k])));
+  end;
+  oa := OutsideSpans(a, ObjA);
+  ob := OutsideSpans(b, ObjB);
+  if oa <> ob then
+    Report(DiffAt(oa, ob, 1, length(oa) + 1, 1, length(ob) + 1,
+      'outside the objects'));
+  // the same objects and the same text around them, in another order
+  if count = 0 then
+    Report(DiffAt(a, b, 1, length(a) + 1, 1, length(b) + 1,
+      'the order of the objects'));
+  if count > MAX_REPORTED then
+    Diff := Diff + #10'  ... ' + Int32ToUtf8(count - MAX_REPORTED) + ' more';
 end;
 
 
@@ -204,6 +331,11 @@ type
     fError: RawUtf8;
     // file offsets of the xref tables and XRef stream objects parsed so far
     fXRefOffsets: TInt64DynArray;
+    // where the objects are in fOut (Start/Stop 1-based), and those of the
+    // object stream Stream() last normalized, relative to its result
+    fSpans, fStreamSpans: TPdfObjectSpans;
+    procedure AddSpan(var Spans: TPdfObjectSpans; Num, Gen: integer;
+      Start, Stop: Int64);
     procedure Fail(const Fmt: RawUtf8; const Args: array of const);
     procedure Emit(const s: RawByteString; b, e: PtrInt); overload;
     procedure Emit(const s: RawByteString); overload;
@@ -467,6 +599,19 @@ begin
   until false;
 end;
 
+procedure TPdfNormalizer.AddSpan(var Spans: TPdfObjectSpans; Num, Gen: integer;
+  Start, Stop: Int64);
+var
+  n: PtrInt;
+begin
+  n := length(Spans);
+  SetLength(Spans, n + 1);
+  Spans[n].Num := Num;
+  Spans[n].Gen := Gen;
+  Spans[n].Start := Start;
+  Spans[n].Stop := Stop;
+end;
+
 procedure TPdfNormalizer.Fail(const Fmt: RawUtf8; const Args: array of const);
 begin
   if fError = '' then // the first error is the one that explains the others
@@ -667,8 +812,13 @@ var
   sub: TPdfNormalizer;
   filter, typ: RawByteString;
   err: RawUtf8;
+  n, first, start: Int64;
+  k: PtrInt;
+  m, e: integer;
+  nums, offs: TInt64DynArray;
 begin
   result := Data;
+  fStreamSpans := nil;
   filter := DictValue(Dict, '/Filter');
   if ((filter = '/FlateDecode') or (filter = '[/FlateDecode]')) and
      (Data = '') then
@@ -692,13 +842,64 @@ begin
     result := XRefStream(Dict, result)
   else if typ = '/ObjStm' then
   begin
-    // the objects inside are dictionaries like the ones at top level
+    // the objects inside are dictionaries like the ones at top level: each
+    // normalized on its own, so that its place in the result is known
     sub := TPdfNormalizer.Create;
     try
       sub.fPdf := fPdf;
       sub.fOut := TRawByteStringStream.Create;
       try
-        sub.Syntax(result, {TopLevel=}false);
+        n := ReadIntValue(DictValue(Dict, '/N'));
+        first := ReadIntValue(DictValue(Dict, '/First'));
+        SetLength(nums, 0);
+        SetLength(offs, 0);
+        // each pair takes four characters at least: "1 0 "
+        if (n > 0) and
+           (first > 0) and
+           (first <= length(result)) and
+           (n <= first div 4) then
+        begin
+          // the header: n pairs "number offset"
+          k := 1;
+          SetLength(nums, n);
+          SetLength(offs, n);
+          for m := 0 to n - 1 do
+          begin
+            SkipWhite(result, k);
+            nums[m] := ReadInt(result, k);
+            SkipWhite(result, k);
+            offs[m] := ReadInt(result, k);
+            // the members follow each other from /First on, so that no
+            // byte is left out of the normalized text
+            if (nums[m] < 0) or
+               (offs[m] < 0) or
+               (k > first + 1) or
+               (first + offs[m] > length(result)) or
+               ((m = 0) and (offs[m] <> 0)) or
+               ((m > 0) and (offs[m] < offs[m - 1])) then
+            begin
+              SetLength(nums, 0); // not as expected: normalized as one
+              break;
+            end;
+          end;
+        end;
+        if nums = nil then
+          sub.Syntax(result, {TopLevel=}false)
+        else
+        begin
+          sub.Syntax(copy(result, 1, first), false);
+          for m := 0 to n - 1 do
+          begin
+            if m < n - 1 then
+              e := first + offs[m + 1]
+            else
+              e := length(result);
+            start := sub.fOut.Position;
+            sub.Syntax(copy(result, first + offs[m] + 1, e - first - offs[m]),
+              false);
+            AddSpan(fStreamSpans, nums[m], 0, start + 1, sub.fOut.Position + 1);
+          end;
+        end;
         result := sub.fOut.DataString;
         err := sub.fError;
       finally
@@ -718,6 +919,8 @@ procedure TPdfNormalizer.Syntax(const s: RawByteString; TopLevel: boolean);
 var
   i, j, b, objStart, dataEnd, after: PtrInt;
   len, num1, num2, objNum, objGen, off, objOut, num1Pos, num2Pos, objPos: Int64;
+  num1Out, num2Out, spanStart, dataOut: Int64;
+  inStm: boolean;
   k: integer;
   found: boolean;
   tok, lastKey, dict, data, head: RawByteString;
@@ -735,6 +938,10 @@ begin
   num1Pos := 0;
   num2Pos := 0;
   objPos := 0;
+  num1Out := 0;
+  num2Out := 0;
+  spanStart := 0;
+  inStm := false;
   while (i <= length(s)) and (fError = '') do
     case s[i] of
       '%':
@@ -825,6 +1032,8 @@ begin
           tok := copy(s, i, j - i);
           num1 := num2;
           num1Pos := num2Pos;
+          num1Out := num2Out;
+          num2Out := fOut.Position;
           num2 := ReadIntValue(tok);
           num2Pos := i - 1; // 0-based offset of the number
           if (lastKey = '/Length') and TopLevel then
@@ -855,7 +1064,16 @@ begin
             objPos := num1Pos;
             objStart := i;
             objOut := fOut.Position;
+            spanStart := num1Out; // from the object number on
+            inStm := false;
             Emit(tok);
+          end
+          else if tok = 'endobj' then
+          begin
+            Emit(tok);
+            // an object stream gave its objects already
+            if not inStm then
+              AddSpan(fSpans, objNum, objGen, spanStart + 1, fOut.Position + 1);
           end
           else if tok = 'stream' then
           begin
@@ -919,8 +1137,14 @@ begin
                 Emit(head);
             end;
             Emit('stream'#10);
+            dataOut := fOut.Position;
             Emit(data);
             Emit(#10'endstream');
+            inStm := fStreamSpans <> nil;
+            for k := 0 to high(fStreamSpans) do
+              with fStreamSpans[k] do
+                AddSpan(fSpans, Num, Gen, dataOut + Start, dataOut + Stop);
+            fStreamSpans := nil;
             i := after;
           end
           else if tok = 'xref' then
@@ -970,12 +1194,21 @@ end;
 
 function NormalizePdf(const Pdf: RawByteString; out Error: RawUtf8): RawUtf8;
 var
+  spans: TPdfObjectSpans;
+begin
+  result := NormalizePdf(Pdf, Error, spans);
+end;
+
+function NormalizePdf(const Pdf: RawByteString; out Error: RawUtf8;
+  out Objects: TPdfObjectSpans): RawUtf8;
+var
   n: TPdfNormalizer;
   t: RawByteString;
 begin
   n := TPdfNormalizer.Create;
   try
     t := n.Normalize(Pdf, Error);
+    Objects := n.fSpans;
   finally
     n.Free;
   end;

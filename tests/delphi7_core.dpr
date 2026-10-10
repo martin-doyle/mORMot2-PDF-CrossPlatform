@@ -10,7 +10,6 @@ uses
   mormot.core.base,
   mormot.pdf.types,
   mormot.lib.uniscribe,
-  mormot.pdf.gdi,
   mormot.ui.pdf;
 
 begin

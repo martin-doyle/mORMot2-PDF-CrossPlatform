@@ -21,6 +21,7 @@ uses
   mormot.core.os,       // FileFromString
   mormot.core.test,
   mormot.core.unicode,  // StringToUtf8
+  mormot.lib.core,      // FontShaper
   mormot.pdf.types,     // TPdfStructRole, GetPdfFonts
   mormot.ui.pdf,        // TPdfDocument, TPdfCanvas
   test_pdf_subset;      // DrawUtf8Text
@@ -51,6 +52,8 @@ type
     procedure TestTaggedTableRowGroups;
     procedure TestTaggedUnicode;
     procedure TestShapingSwitch;
+    procedure TestShapedAfterFallback;
+    procedure TestShapedRunOutcomeUnset;
     procedure TestZeroRealIsWritten;
   end;
 
@@ -122,7 +125,7 @@ begin
     lines.Text := string(s);
     for i := 0 to lines.Count - 1 do
     begin
-      line := RawByteString(Trim(lines[i]));
+      line := RawByteString(SysUtils.Trim(lines[i]));
       sp := length(line);
       while (sp > 0) and (line[sp] <> ' ') do
         dec(sp);
@@ -452,7 +455,7 @@ begin
       Check(PDF.EmbeddedTTF, 'Tagged turns embedding on');
       Check(not PDF.StandardFontsReplace, 'Tagged drops the base-14 Type1 mode');
       // a retain-GID subset keeps the round-trip, so Tagged may subset:
-      // through PdfFontSubsetter on POSIX (R-12), through CreateFontPackage
+      // through FontSubsetter on POSIX (R-12), through CreateFontPackage
       // with a glyph keep list on Windows (R-15) - only a platform offering
       // neither falls back to the whole face
       Check(PDF.EmbeddedWholeTtf = not PdfCanSubsetRetainingGids,
@@ -1131,7 +1134,7 @@ begin
     { joined Arabic letters are presentation forms (U+FExx) or, in a face
       without them, PUA slots (U+Exxx); unshaped text maps to U+06xx only
       (R-13). POSIX shapes only when libharfbuzz loaded }
-    if {$ifdef OSWINDOWS} true {$else} PdfTextShaper <> nil {$endif} then
+    if {$ifdef OSWINDOWS} true {$else} FontShaper <> nil {$endif} then
       Check((Pos(RawByteString('> <FE'), s) > 0) or
             (Pos(RawByteString('> <E'), s) > 0), 'the Arabic text is shaped');
     { the WinAnsi peers of the CJK and Arabic faces show no character, and
@@ -1198,7 +1201,7 @@ begin
     only the direction: HarfBuzz used to run on RightToLeftText alone and to
     force LTR otherwise, which shaped Arabic in the wrong order }
   {$ifndef OSWINDOWS} // Uniscribe is part of Windows
-  if PdfTextShaper = nil then
+  if FontShaper = nil then
   begin
     Check(true, 'SKIP: no text shaper (libharfbuzz absent)');
     exit;
@@ -1213,6 +1216,137 @@ begin
   GetPdfFonts(true, sans, serif, mono);
   CheckEqual(CountOf('/Type0', ShapedPdf(StringToUtf8(sans), 'Hello, World', true, false)), 0,
     'Latin text with UseUniscribe stays in the simple font');
+end;
+
+procedure TPdfSmokeTests.TestShapedAfterFallback;
+const
+  /// देव then عربي: Devanagari, which the main font lacks, then Arabic
+  MIXED_TEXT = {$ifdef HASCODEPAGE}
+    #$0926#$0947#$0935#$0639#$0631#$0628#$064A {$else}
+    #$E0#$A4#$A6#$E0#$A5#$87#$E0#$A4#$B5#$D8#$B9#$D8#$B1#$D8#$A8#$D9#$8A {$endif};
+var
+  PDF: TPdfDocument;
+  Stream: TMemoryStream;
+  s: RawByteString;
+begin
+  { Uniscribe draws an item it cannot shape in the main font unshaped, and its
+    characters then come from the fallback font; the shaped item after it drew
+    the main font's glyph IDs in the fallback font, which was still active }
+  Stream := TMemoryStream.Create;
+  try
+    PDF := TPdfDocument.Create(false, 0, pdfaNone);
+    try
+      PDF.CompressionMethod := cmNone;
+      PDF.EmbeddedTTF := true;
+      PDF.FontFallBackName := 'Nirmala UI';
+      PDF.AddPage;
+      PDF.UseUniscribe := true;
+      PDF.Canvas.SetFont(ARABIC_FONT, 24, [], PDF_DEFAULT_CHARSET);
+      DrawUtf8Text(PDF, 40, 650, MIXED_TEXT);
+      PDF.SaveToStream(Stream);
+    finally
+      PDF.Free;
+    end;
+    s := StreamToRaw(Stream);
+  finally
+    Stream.Free;
+  end;
+  if Pos(RawByteString('NirmalaUI'), s) = 0 then
+  begin
+    Check(true, 'SKIP: no Nirmala UI fallback font, or no fallback taken');
+    exit;
+  end;
+  Check(IsShaped(s), 'the Arabic item is shaped');
+  CheckEqual(CountOf('> Tj'#10'<', s), 0,
+    'the shaped item switches back to the main font after the fallback');
+end;
+
+type
+  // a shaper giving one shaped run of glyph $0024 with the outcome asked for
+  TFixedRunShaper = class(TInterfacedObject, IFontShaper)
+  public
+    Outcome: TFontShapeOutcome;
+    // leaves Kind at its zero value, fskPlain
+    KindUnset: boolean;
+    // adds a second, plain run of no code unit - which the contract excludes
+    EmptyRun: boolean;
+    function Shape(Text: PWideChar; Len: integer; Font: TFontHandle;
+      RightToLeft: boolean; out Runs: TFontShapedRuns): boolean;
+  end;
+
+function TFixedRunShaper.Shape(Text: PWideChar; Len: integer; Font: TFontHandle;
+  RightToLeft: boolean; out Runs: TFontShapedRuns): boolean;
+begin
+  SetLength(Runs, 1);
+  if not KindUnset then
+    Runs[0].Kind := fskShaped;
+  Runs[0].Outcome := Outcome;
+  Runs[0].TextStart := 0;
+  Runs[0].TextLen := Len;
+  SetLength(Runs[0].Glyphs, 1);
+  Runs[0].Glyphs[0] := $24;
+  SetLength(Runs[0].Advances, 1);
+  Runs[0].Advances[0] := 500;
+  SetLength(Runs[0].Offsets, 1);
+  if EmptyRun then
+  begin
+    SetLength(Runs, 2);
+    Runs[1].Kind := fskPlain;
+    Runs[1].Outcome := fsoDone;
+    Runs[1].TextStart := Len;
+    Runs[1].TextLen := 0;
+  end;
+  result := true;
+end;
+
+procedure TPdfSmokeTests.TestShapedRunOutcomeUnset;
+var
+  saved: IFontShaper;
+  fixed: TFixedRunShaper;
+  plain: RawByteString;
+
+  // the text object of the page: the one line ShapedPdf() draws
+  function TextObject(const aPdf: RawByteString): RawByteString;
+  var
+    b: integer;
+  begin
+    b := Pos(RawByteString('BT'#10), aPdf);
+    result := Copy(aPdf, b, PosEx('ET'#10, aPdf, b) - b);
+  end;
+
+  function Drawn(aOutcome: TFontShapeOutcome): RawByteString;
+  begin
+    fixed.Outcome := aOutcome;
+    result := TextObject(ShapedPdf(ARABIC_FONT, ARABIC_TEXT, true, false));
+  end;
+
+begin
+  { fsoUnknown is the zero value of TFontShapeOutcome, fskPlain that of
+    TFontShapeKind: a run whose shaper never set either is drawn unshaped,
+    whatever the other says }
+  saved := FontShaper;
+  fixed := TFixedRunShaper.Create;
+  FontShaper := fixed;
+  try
+    plain := TextObject(ShapedPdf(ARABIC_FONT, ARABIC_TEXT, false, false));
+    Check(plain <> '', 'the unshaped line is drawn');
+    // shaped: the run's one glyph, in Tj or TJ
+    Check(Pos(RawByteString('<0024>'), Drawn(fsoDone)) > 0,
+      'a run with fsoDone is drawn as shaped');
+    Check(Drawn(fsoUnknown) = plain,
+      'a run left at fsoUnknown is drawn as without shaping');
+    // and the same for Kind: fskPlain wins over fsoDone
+    fixed.KindUnset := true;
+    Check(Drawn(fsoDone) = plain,
+      'a run left at fskPlain is drawn as without shaping');
+    fixed.KindUnset := false;
+    // a run of no code unit breaks the contract: the whole text goes the
+    // simple path (it used to write a #0 through a nil buffer)
+    fixed.EmptyRun := true;
+    Check(Drawn(fsoDone) = plain, 'an empty run leaves the text unshaped');
+  finally
+    FontShaper := saved;
+  end;
 end;
 
 procedure TPdfSmokeTests.TestZeroRealIsWritten;

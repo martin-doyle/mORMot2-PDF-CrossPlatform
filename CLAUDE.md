@@ -15,7 +15,7 @@ Skills contain complete, distilled API and architectural knowledge. The main sou
 |---|---|
 | `.claude/skills/pdf-engine.md` | TPdfDocument, TPdfDocumentVcl, TPdfCanvas — full API, enums, encryption, FPImage |
 | `.claude/skills/report-engine.md` | TGDIPages — all methods, tables, command recording, global helpers |
-| `.claude/skills/platform-backends.md` | IPdfPlatformFont/SystemFonts/DC, optional IPdfTextShaper/IPdfFontSubsetter — interfaces, backends, data types |
+| `.claude/skills/platform-backends.md` | IFontProvider/Enumerator/DC, optional IFontShaper/IFontSubsetter (mormot.lib.core) — interfaces, backends, data types |
 | `.claude/skills/call-graph.md` | Execution paths: registration → rendering → serialization (font lifecycle 4a–4d, image, bookmarks) |
 | `.claude/skills/fonts.md` | Font handling deep reference: dual-instance model, CMAP loading, text rendering chains, RTL/Arabic |
 
@@ -47,11 +47,10 @@ All files under `src/` require justification and user approval before reading.
 | `src/core/mormot.ui.report.pas` | Report engine (`TGDIPages`) | Production |
 | `src/core/mormot.ui.reportpreview.pas` | Preview window and printing for `TGDIPages` (LCL) | Production |
 | `src/core/mormot.ui.pdfcanvas.pas` | TCanvas bridge (`TPdfDocumentVcl`) | Production |
-| `src/core/mormot.pdf.types.pas` | Platform interfaces & types | Production |
-| `src/platform/windows/mormot.pdf.gdi.pas` | GDI backend | Production |
-| `src/platform/unix/mormot.pdf.freetype.pas` | FreeType2 backend | Production |
-| `src/platform/unix/mormot.pdf.harfbuzz.pas` | HarfBuzz shaper (RTL/complex scripts) | Production |
-| `src/platform/unix/mormot.pdf.hbsubset.pas` | hb-subset font subsetter (R-12) | Production |
+| `src/core/mormot.pdf.types.pas` | PDF types; former font type names as aliases of mormot.lib.core | Production |
+| mORMot2 `src/lib/mormot.lib.uniscribe.pas` | GDI backend (Windows), Uniscribe shaper and FontSub subsetter, beside their bindings | Production |
+| mORMot2 `src/lib/mormot.lib.freetype.pas` | FreeType2 backend (POSIX) | Production |
+| mORMot2 `src/lib/mormot.lib.harfbuzz.pas` | HarfBuzz shaper (RTL/complex scripts) and hb-subset subsetter (R-12) | Production |
 | `src/core/mormot.pdf.fpimage.pas` | FPImage bitmap adapter | Production |
 
 ## File Structure
@@ -63,15 +62,13 @@ src/
     mormot.ui.report.pas        TGDIPages — layout engine, no forms or printer
     mormot.ui.reportpreview.pas ShowReportPreview, PrintReport (LCL)
     mormot.ui.pdfcanvas.pas     TPdfDocumentVcl, TPdfVclCanvas
-    mormot.pdf.types.pas        IPdfPlatformFont/SystemFonts/DC, types
+    mormot.pdf.types.pas        PDF types, aliases of the mormot.lib.core font types
     mormot.pdf.fpimage.pas      Bitmap embedding (FPImage)
     mormot.ui.core.pas          UI helper functions   } the trunk's units of mORMot2 src/ui (only the include path differs),
     mormot.ui.gdiplus.pas       GDI+ support (Windows) } which is not on the search path
-  platform/
-    windows/mormot.pdf.gdi.pas  GDI backend (Windows)
-    unix/mormot.pdf.freetype.pas FreeType2 backend (Linux/macOS)
-    unix/mormot.pdf.harfbuzz.pas HarfBuzz text shaper (Linux/macOS; used by mormot.ui.pdf, library optional)
-    unix/mormot.pdf.hbsubset.pas hb-subset font subsetter (Linux/macOS; used by mormot.ui.pdf, library optional)
+  (the backends are mORMot2 units in src/lib: mormot.lib.uniscribe on Windows
+   (GDI), mormot.lib.freetype and mormot.lib.harfbuzz - shaper and subsetter,
+   each library optional - on POSIX)
 examples/
   pdf_demo/           Demo 1 — TPdfDocumentVcl, TCanvas API, Tagged PDF (console)
   report_demo/        Demo 2 — TGDIPages, GUI preview, tagged PDF
@@ -81,10 +78,11 @@ examples/
   rtl_demo/           Demo 6 — Arabic RTL, HarfBuzz/Uniscribe shaping (console)
   zugferd_demo/       Demo 7 — PDF/A-3U + PDF/UA-1, ZUGFeRD/Factur-X invoice with embedded XML (console)
   layer1_demo/        Demo 8 — TPdfDocument/TPdfCanvas alone, tagged; FPC, Delphi 7 and Delphi 2010 (console)
+  invoice_demo/       proposal (R-29, this branch) — accessible invoice, DIN 5008 letter, PDF/A-3U + PDF/UA-1, tagged links (console)
   (each demo folder carries a short README.md; the source header of its .lpr
    (`layer1_demo`: .dpr) says the same thing in two sentences)
 tests/
-  test_runner.lpr              runs every suite below (green: 279 assertions on Windows with FPC, Delphi 7 and Delphi 2010; 337 on macOS, 318 on Linux — the rest are skips; the golden files add two per case with or without a baseline. Delphi 13, measured before the golden files: 259 on Windows, 171 on Linux64, 129 on Android64, layer 1 only)
+  test_runner.lpr              runs every suite below (green: 576 assertions on Windows with FPC, Delphi 7 and Delphi 2010, with the CJK and symbol faces of Windows 11 - Delphi 13 last measured at 506 before the merge of main into this branch; on macOS and Linux measured before that merge: 477 on macOS with Geeza Pro, Hiragino Sans GB and Helvetica, 453 on Linux with fonts-noto-cjk — the rest are skips; the golden files add two per case with or without a baseline. Delphi 13, measured before the golden files: 259 on Windows, 171 on Linux64, 129 on Android64, layer 1 only)
   test_defines.inc             PDF_HASVCLCANVAS: the TCanvas bridge suites (all compilers since R-20)
   build_delphi7.bat            dcc32 build of one project (R-19)
   build_delphi2010.bat         the same with Delphi 2010, warnings on (R-25, Unicode Delphi)
@@ -97,7 +95,7 @@ tests/
   test_pdf_crossplatform.pas   platform backend, text shaper, TTC extraction
   test_pdf_smoke.pas           PDF basics, tagged output, struct tree, tagged Unicode, the shaping switch (through TPdfCanvas; one bridge test)
   test_report_crossplatform.pas report engine, tables, tagged export
-  test_pdf_subset.pas          font subsetting: IPdfFontSubsetter and TPdfDocument
+  test_pdf_subset.pas          font subsetting: IFontSubsetter and TPdfDocument
   test_pdf_pdfa.pas            PDF/A-3: associated files, XMP schemas, PdfMetadataFacturX, level U
   test_pdf_golden.pas          golden files: generated PDFs against this machine's baseline (layers 1-2)
   test_report_golden.pas       the same for TGDIPages (layer 3)
@@ -115,7 +113,7 @@ CHANGELOG.md          Released versions; a release's entry is written from ROADM
 .claude/skills/
   pdf-engine.md       TPdfDocument, TPdfDocumentVcl, TPdfCanvas — full API, enums, encryption, FPImage
   report-engine.md    TGDIPages — all methods, tables, command recording, global helpers
-  platform-backends.md IPdfPlatformFont/SystemFonts/DC, IPdfTextShaper/IPdfFontSubsetter — interfaces, backends, registration, the shaping switch
+  platform-backends.md IFontProvider/Enumerator/DC, IFontShaper/IFontSubsetter — interfaces, backends, registration, the shaping switch
   call-graph.md       Complete call graph: font lifecycle (4a–4d), rendering, image, bookmarks
   fonts.md            Font handling deep reference: dual-instance model, CMAP loading, text rendering chains, RTL/Arabic
 ```
@@ -131,10 +129,11 @@ TPdfDocumentVcl / TPdfVclCanvas       <- TCanvas bridge
     | automatic coordinate conversion
 TPdfCanvas / TPdfDocument (mormot.ui.pdf) <- Low-level PDF
     | via interfaces
-IPdfPlatformFont / IPdfSystemFonts / IPdfPlatformDC
-    |                + optional: IPdfTextShaper, IPdfFontSubsetter
+IFontProvider (→ IFontFace) / IFontEnumerator
+    |                + optional: IFontShaper, IFontSubsetter
 GDI (Windows)  /  FreeType2 (Linux/macOS)
-                  + HarfBuzz shaping and hb-subset when the libraries load
++ Uniscribe shaping   + HarfBuzz shaping and hb-subset when the libraries load
+  and FontSub subsetting
 ```
 
 For all execution paths through this architecture: `.claude/skills/call-graph.md`
@@ -152,6 +151,7 @@ For interface and backend details: `.claude/skills/platform-backends.md`
 | rtl_demo | `TPdfDocumentVcl` | Console | Arabic RTL, HarfBuzz/Uniscribe shaping |
 | zugferd_demo | `TGDIPages` | Console | PDF/A-3U + PDF/UA-1, page read from the embedded XML, `AddExportPdfAttachment`, `PdfMetadataFacturX`, sample invoice XML of XRechnung for Delphi |
 | layer1_demo | `TPdfDocument` | Console | Layer 1 only, PDF points (Y=0 bottom), tagged H1/H2/P/Figure and a Table with THead/TBody/TFoot, UTF-8 via `TextOutW`; builds with Delphi 7, as do all console demos |
+| invoice_demo | `TGDIPages` | Console | Proposal for review (R-29, this branch): the invoice of zugferd_demo as a DIN 5008 letter for screen readers - frames, artifacts, paper coordinates, running texts in columns, tagged links, `CellPadding` |
 
 Detailed description with code examples: `docs/DEMOS.md`
 
@@ -216,8 +216,9 @@ both declare `psA4`, and `TRect` differs from the LCL's, so the uses order
 decides which one a name means. Details: `.claude/skills/report-engine.md`
 
 The platform units need no `uses` in a program: `mormot.ui.pdf` brings
-`mormot.pdf.gdi`, or `mormot.pdf.freetype`, `mormot.pdf.harfbuzz` and
-`mormot.pdf.hbsubset`; a missing library only leaves its feature off.
+`mormot.lib.uniscribe`, or `mormot.lib.freetype` and `mormot.lib.harfbuzz`; a
+missing HarfBuzz library only leaves shaping or subsetting off, a missing
+`libfreetype` makes `TPdfDocument.Create` raise.
 **Shaping is one switch**, `UseUniscribe` — Uniscribe on Windows, HarfBuzz on
 Linux/macOS, only for runs of a script that needs it (or `RightToLeftText`
 runs). `RightToLeftText` is the direction only. Never set either behind a
@@ -285,6 +286,7 @@ Details on interfaces and registration: `.claude/skills/platform-backends.md`
 "C:\lazarus\lazbuild.exe" examples/rtl_demo/rtl_demo.lpi -B
 "C:\lazarus\lazbuild.exe" examples/zugferd_demo/zugferd_demo.lpi -B
 "C:\lazarus\lazbuild.exe" examples/layer1_demo/layer1_demo.lpi -B
+"C:\lazarus\lazbuild.exe" examples/invoice_demo/invoice_demo.lpi -B
 "C:\lazarus\lazbuild.exe" tests/test_runner.lpi -B
 tests\bin\x86_64-win64\test_runner.exe --noenter
 "C:\lazarus\lazbuild.exe" tests/pdfcheck.lpi -B   # refactoring checks: docs/REFACTORING.md
@@ -298,6 +300,7 @@ lazbuild examples/report_demo/report_demo.lpi -B
 lazbuild examples/mormot_demo/mormot_demo.lpi -B
 lazbuild examples/zugferd_demo/zugferd_demo.lpi -B
 lazbuild examples/layer1_demo/layer1_demo.lpi -B
+lazbuild examples/invoice_demo/invoice_demo.lpi -B
 lazbuild tests/test_runner.lpi -B && tests/bin/<cpu-os>/test_runner
 lazbuild tests/pdfcheck.lpi -B
 
@@ -356,15 +359,15 @@ itself is in each demo's `uReport.pas`; the form only passes its options.
 
 - **mORMot Refactoring** (R-28, in progress): before any step of it, read
   `docs/REFACTORING.md` — its rules apply on top of this file
-- **Font subsetting**: default (`EmbeddedWholeTtf = False`) on all platforms, two implementations, both keeping the original glyph IDs and therefore safe for CJK, shaped Arabic and tagged output. **Linux/macOS** (R-12): `IPdfFontSubsetter` from `mormot.pdf.hbsubset` (`libharfbuzz-subset`); 97–99.5% smaller PDFs. **Windows** (R-15): `CreateFontPackage` with a glyph keep list (`TTFCFP_FLAGS_GLYPHLIST`). The whole face is embedded instead for PDF/A-1 (no `/CIDSet`), for symbol fonts on POSIX (R-15b) and when `libharfbuzz-subset` is missing. See `.claude/skills/fonts.md` §3, §9
+- **Font subsetting**: default (`EmbeddedWholeTtf = False`) on all platforms, two implementations, both keeping the original glyph IDs and therefore safe for CJK, shaped Arabic and tagged output. **Linux/macOS** (R-12): `IFontSubsetter` (`mormot.lib.core`) implemented by `mormot.lib.harfbuzz` (`libharfbuzz-subset`); 97–99.5% smaller PDFs. **Windows** (R-15): `IFontSubsetter` implemented by `mormot.lib.uniscribe` (`CreateFontPackage` with a glyph keep list, `TTFCFP_FLAGS_GLYPHLIST`; the face of a `.ttc` found from the bytes) - one path through `FontSubsetter` on every platform since R-28 Phase 1 W2. The whole face is embedded instead for PDF/A-1 (no `/CIDSet`), for symbol fonts on POSIX (R-15b) and when `libharfbuzz-subset` is missing. See `.claude/skills/fonts.md` §3, §9
 - **CFF faces are subset too** (R-15c, done): a CFF-flavoured face goes to `/FontFile3` with `/Subtype /OpenType` as a `CIDFontType0`; `glyf` goes to `/FontFile2`. `PdfFontFileKey()` picks the key. Embedding CFF in `/FontFile2` is a spec violation (ISO 32000-1 9.9) — do not reintroduce it by assuming one key fits both
 - **RTL / Arabic text**: one switch, `UseUniscribe` — HarfBuzz delivers correct ligatures on Linux/macOS, Windows uses Uniscribe; `RightToLeftText` is the direction only — see `.claude/skills/fonts.md` §10
 - **Testing RTL**: Linux fonts (Noto Naskh Arabic) resolve shaped glyphs through the CMAP, so they never exercise the shaper's own advance path. Validate RTL work against a font without Arabic presentation forms — see `.claude/skills/fonts.md` §10
-- **TTC collections**: only face index 0 is reachable; `TPdfFontMap` has no face index, so the other faces of a `.ttc` cannot be selected by name
+- **TTC collections**: only face index 0 is reachable; `TFontFileMap` (`mormot.lib.freetype`) has no face index, so the other faces of a `.ttc` cannot be selected by name
 - **EMF/MetaFile**: Windows-only (`TPdfDocumentGdi`), not portable
 - **GDI+/gradient fills**: Windows-only via EMF
 - **Table pagination**: no row break within a cell (roadmap R-10)
-- **Symbol fonts on POSIX**: excluded from subsetting, the whole face is embedded (roadmap R-15b); neither side is covered by a demo or test
+- **Symbol fonts on POSIX**: excluded from subsetting, the whole face is embedded (roadmap R-15b); `TestSubsetSymbolFont` covers both sides where Wingdings, Webdings or Symbol is installed (Windows: subset by FontSub; macOS: Symbol embedded whole), no demo
 - **PDF/A** (R-17): A-3U + PDF/UA-1, A-3A (tagged) and A-3B verified on all three platforms with veraPDF, Mustang and PAC; A-1 and A-2 implemented, unverified. Pass the level to the constructor — the `PdfA` setter calls `NewDoc`. A levels need `Tagged := True`. With PDF/A + Tagged the engine describes `pdfuaid` in the XMP extension schemas, inside the caller's `<pdfaExtension:schemas><rdf:Bag>` if `PdfAMetadaExtension` has one — keep that single list
 - **E-invoices**: the engine writes the PDF/A-3 container (`CreateFileAttachmentFrom` + `PdfMetadataFacturX`; in `TGDIPages` `AddExportPdfAttachment` + `ExportPdfMetadataExtension`) and never generates or validates invoice XML. Scope is B2B (ZUGFeRD/Factur-X profile EN 16931); invoices to German authorities are pure XML and out of scope. Sample data only under the licence of this project (mORMot's MPL/GPL/LGPL)
 - **Charts**: out of scope — no chart engine, as no invoice XML. A chart is an
@@ -374,7 +377,7 @@ itself is in each demo's `uReport.pas`; the form only passes its options.
 - **Links in tagged output** (R-29, branch `feature/invoice-demo`): `psrLink`; a `CreateHyperLink` inside a `Link` element becomes its `OBJR` kid, with `/StructParent`, `/Contents` and `/Tabs /S`. `TGDIPages.DrawLink` writes a real link. A link annotation outside a `Link` element fails veraPDF `ua1` — see `.claude/skills/pdf-engine.md` (Links)
 - **Delphi** (R-19, R-21, R-23, R-25, R-27 done; R-20 steps 1–6 done): layer 1,
   the TCanvas bridge and the `TGDIPages` core build on Delphi 7 and Delphi
-  2010 (Unicode Delphi), Win32; `test_runner` 279/279 on both. All six console
+  2010 (Unicode Delphi), Win32; `test_runner` 576/576 on Delphi 7 and Delphi 2010. All six console
   demos and the `--export` of the two GUI demos build and give the same PDF as
   FPC (the GUI demos build their report in `uReport.pas`, without a form);
   PAC 2024 and veraPDF pass the files of both compilers. Open: the preview and
@@ -398,7 +401,7 @@ Current verification status per platform, and the open items in detail:
 
 ## Dependencies
 
-Build: FreePascal 3.2+ with Lazarus (what mORMot2 requires; used here: FPC 3.2.2 on Windows, 3.2.3 on Linux and macOS), or Delphi 7 / Delphi 2010 for Win32 (no preview window yet, R-20), or Delphi 13 for Win32, Win64, Linux64 and Android64 (R-27; on Linux/Android layer 1 only); mORMot2 sources of the trunk, not 2.4-stable (v0.10.0 is the last version for it), pinned per refactoring baseline (`docs/REFACTORING.md`, Phase 0 step 3)
+Build: FreePascal 3.2+ with Lazarus (what mORMot2 requires; used here: FPC 3.2.2 on Windows, 3.2.3 on Linux and macOS), or Delphi 7 / Delphi 2010 for Win32 (no preview window yet, R-20), or Delphi 13 for Win32, Win64, Linux64 and Android64 (R-27; on Linux/Android layer 1 only); mORMot2 sources of the trunk, not 2.4-stable (v0.10.0 is the last version for it), pinned per refactoring baseline (`docs/REFACTORING.md`, Phase 0 step 3) - during the refactoring a commit of the `pdf-font-layer` branch of `landrix/mORMot2`, the trunk plus the new `mormot.lib.*` units
 
 Runtime Windows: none (GDI is part of the OS)
 
@@ -414,7 +417,7 @@ Optional on Linux/macOS: HarfBuzz for shaping (`UseUniscribe`), and HarfBuzz 2.9
 with its subset library for font subsetting (without it, the whole face is
 embedded — so on Ubuntu 22.04 and RHEL 9, which ship 2.7.4). Both are loaded
 at run time; nothing to link. Versions per distribution:
-`.claude/skills/platform-backends.md` (IPdfFontSubsetter)
+`.claude/skills/platform-backends.md` (IFontSubsetter)
 ```bash
 sudo apt install libharfbuzz0b libharfbuzz-subset0   # Debian 12+/Ubuntu 24.04+ for subsetting
 sudo dnf install harfbuzz                            # Fedora/RHEL

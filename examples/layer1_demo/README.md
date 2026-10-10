@@ -56,8 +56,8 @@ bin\d7\layer1_demo\layer1_demo.exe       &rem -> bin\d7\layer1_demo\layer1_demo_
 
 **One source for both IDEs.** `layer1_demo.dpr` is the program Lazarus opens
 through `layer1_demo.lpi` and Delphi opens directly. In the Delphi IDE, set
-the project's search path to this repository's `src\core`,
-`src\platform\windows` and `src\lib`, plus mORMot2's `src\core`, `src\lib`
-and `src\crypt`, and add mORMot2's `src` for `mormot.defines.inc`. Leave
+the project's search path to this repository's `src\core`, plus mORMot2's
+`src\core`, `src\lib` (which holds the font backends) and `src\crypt`, and
+add mORMot2's `src` for `mormot.defines.inc`. Leave
 mORMot2's `src\ui` out: it holds the original `mormot.ui.pdf`, which Delphi
 would take instead of this project's without a word.

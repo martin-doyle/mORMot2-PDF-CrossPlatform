@@ -193,19 +193,19 @@ var
   x: RawUtf8;
 begin
   x := PdfMetadataFacturX('EN 16931');
-  Check(Pos('<fx:ConformanceLevel>EN 16931</fx:ConformanceLevel>', x) > 0,
+  Check(PosEx('<fx:ConformanceLevel>EN 16931</fx:ConformanceLevel>', x) > 0,
     'profile');
-  Check(Pos('<fx:DocumentFileName>factur-x.xml</fx:DocumentFileName>', x) > 0,
+  Check(PosEx('<fx:DocumentFileName>factur-x.xml</fx:DocumentFileName>', x) > 0,
     'default file name');
-  Check(Pos('<fx:Version>1.0</fx:Version>', x) > 0, 'default version');
-  Check(Pos('<fx:DocumentType>INVOICE</fx:DocumentType>', x) > 0,
+  Check(PosEx('<fx:Version>1.0</fx:Version>', x) > 0, 'default version');
+  Check(PosEx('<fx:DocumentType>INVOICE</fx:DocumentType>', x) > 0,
     'default document type');
   CheckEqual(CountOf('<pdfaProperty:name>', x), 4,
     'all four properties described');
   x := PdfMetadataFacturX('A&B', 'x<y>.xml');
-  Check(Pos('<fx:ConformanceLevel>A&amp;B</fx:ConformanceLevel>', x) > 0,
+  Check(PosEx('<fx:ConformanceLevel>A&amp;B</fx:ConformanceLevel>', x) > 0,
     'values are XML-escaped');
-  Check(Pos('<fx:DocumentFileName>x&lt;y&gt;.xml</fx:DocumentFileName>', x) > 0,
+  Check(PosEx('<fx:DocumentFileName>x&lt;y&gt;.xml</fx:DocumentFileName>', x) > 0,
     'file name too');
 end;
 

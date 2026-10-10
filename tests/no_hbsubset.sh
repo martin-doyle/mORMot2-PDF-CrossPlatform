@@ -3,11 +3,11 @@
 # Run the test suite and the console demos with libharfbuzz-subset genuinely
 # out of reach, to exercise the fallback that embeds the whole face.
 #
-# Why this is a script and not a test case: mormot.pdf.hbsubset loads the
-# library and registers PdfFontSubsetter in its initialization section, which
+# Why this is a script and not a test case: mormot.lib.harfbuzz loads the
+# library and registers FontSubsetter in its initialization section, which
 # runs before any test code exists. A test can observe the outcome but cannot
 # choose it. TestSubsetFallbackWithoutSubsetter only simulates the state by
-# clearing PdfFontSubsetter; the loader itself is reached only by starting the
+# clearing FontSubsetter; the loader itself is reached only by starting the
 # process with the library missing, which is what this script arranges.
 #
 # How it hides the library: the loader calls dlopen("libharfbuzz-subset.so.0"),
@@ -45,8 +45,16 @@ RUNNER="$(ls "$ROOT"/tests/bin/*-linux/test_runner 2>/dev/null | head -1)"
 if [ "${NO_HBSUBSET_INNER:-}" = 1 ]; then
   masked=0
   empty="$(mktemp)"
+  hidden=""
+  trap 'rm -f "$empty"; [ -n "$hidden" ] && rmdir "$hidden"' EXIT
+  # the names are symlinks to one file: mask each real file once, or a later
+  # mount lands on the empty file itself, which then cannot be removed
+  seen=" "
   for so in $NO_HBSUBSET_LIBS; do
-    if mount --bind "$empty" "$so" 2>/dev/null; then
+    real="$(readlink -f "$so")"
+    case "$seen" in *" $real "*) continue ;; esac
+    seen="$seen$real "
+    if mount --bind "$empty" "$real" 2>/dev/null; then
       masked=$((masked + 1))
     fi
   done
@@ -55,6 +63,16 @@ if [ "${NO_HBSUBSET_INNER:-}" = 1 ]; then
     exit 3
   fi
   echo "== masked $masked libharfbuzz-subset file(s) inside the namespace"
+  # the golden files hold subset faces, so without the subsetter every case
+  # would differ: hide this machine's baseline too, the golden suites skip
+  golden="$(dirname "$RUNNER")/golden"
+  if [ -d "$golden" ]; then
+    hidden="$(mktemp -d)" && mount --bind "$hidden" "$golden" 2>/dev/null || {
+      echo "GOLDEN-MASK-FAILED"
+      exit 3
+    }
+    echo "== golden baseline hidden inside the namespace (whole faces embedded)"
+  fi
   echo
   echo "== test_runner WITHOUT libharfbuzz-subset"
   "$RUNNER" 2>&1
@@ -100,17 +118,46 @@ echo
 
 command -v unshare >/dev/null 2>&1 || die "unshare not found (package util-linux)"
 
+# the masked run writes its PDFs (tagged_unicode_*.pdf) next to the runner,
+# with whole faces embedded: keep those of the reference run, and put them
+# back however this script ends
+runner_dir="$(dirname "$RUNNER")"
+keep="$(mktemp -d)" || die "cannot create a temporary folder"
+kept=0
+restore_pdfs() {
+  # only a complete backup goes back: a partial one could hold a cut file
+  if [ "$kept" = 1 ] && ls "$keep"/*.pdf >/dev/null 2>&1; then
+    cp -p "$keep"/*.pdf "$runner_dir"/ || {
+      echo "error: could not put the PDFs back - they are kept in $keep" >&2
+      return
+    }
+  fi
+  rm -rf "$keep"
+}
+trap restore_pdfs EXIT
+trap 'exit 130' INT TERM
+if ls "$runner_dir"/*.pdf >/dev/null 2>&1; then
+  cp -p "$runner_dir"/*.pdf "$keep"/ || die "cannot keep the PDFs of the reference run"
+fi
+kept=1
+
 export NO_HBSUBSET_INNER=1
 export NO_HBSUBSET_LIBS="$libs"
 out="$(unshare --mount --map-root-user "$0" 2>&1)"
 rc=$?
 unset NO_HBSUBSET_INNER NO_HBSUBSET_LIBS
 
-if printf '%s' "$out" | grep -q MASK-FAILED; then
+
+if printf '%s' "$out" | grep -qx MASK-FAILED; then
   die "could not bind-mount over the library inside the namespace.
   Your kernel may not allow unprivileged user namespaces. Check with:
     sysctl kernel.unprivileged_userns_clone
   Then either enable it, or run this script with sudo."
+fi
+if printf '%s' "$out" | grep -qx GOLDEN-MASK-FAILED; then
+  die "could not hide the golden baseline inside the namespace: without the
+  subsetter every golden case would differ. Move $(dirname "$RUNNER")/golden
+  aside and run this script again."
 fi
 if [ "$rc" != 0 ] && [ -z "$out" ]; then
   die "unshare failed (exit $rc) - unprivileged user namespaces may be disabled"
@@ -139,12 +186,20 @@ echo
 if [ "$status" = 0 ]; then
   echo "RESULT: the fallback holds."
   echo
-  echo "Rebuild the demos and run them the same way to see the size difference -"
-  echo "without the subsetter the whole face is embedded, so the PDFs grow a lot"
-  echo "(chinese_demo is the clearest case, a CJK face being large):"
+  echo "To see the size difference, run a demo with the library masked the same"
+  echo "way - without the subsetter the whole face is embedded, so the PDFs grow"
+  echo "a lot (chinese_demo is the clearest case, a CJK face being large):"
   echo
-  echo "  NO_HBSUBSET_INNER=1 NO_HBSUBSET_LIBS='$libs' \\"
-  echo "    unshare --mount --map-root-user <your-demo-binary>"
+  mounts=""
+  reals=" "
+  for so in $libs; do
+    real="$(readlink -f "$so")"
+    case "$reals" in *" $real "*) continue ;; esac
+    reals="$reals$real "
+    mounts="${mounts}mount --bind /dev/null $real && "
+  done
+  echo "  unshare --mount --map-root-user sh -c \\"
+  echo "    '${mounts}exec <your-demo-binary>'"
   echo
   echo "Still untested: a HarfBuzz OLDER than 2.9, which loads but lacks"
   echo "hb_subset_or_fail. That needs an old distribution, e.g. Debian 11."

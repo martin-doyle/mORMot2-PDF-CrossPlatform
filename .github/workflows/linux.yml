@@ -22,8 +22,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # the commit pinned in the refactoring baseline (docs/REFACTORING.md, Phase 0 step 3)
-  MORMOT2_COMMIT: d60cc6e8035d296e60eb86df4d930b9c91c7a791
+  # the pinned commit (docs/REFACTORING.md, Phase 0 step 3): during the
+  # refactoring a commit of the font-layer branch of landrix/mORMot2, which
+  # is the trunk's d60cc6e80 plus the new mormot.lib.* units
+  MORMOT2_REPO: landrix/mORMot2
+  MORMOT2_COMMIT: 681bbe2a15e9a7fcec3062a49c6bea356b2246a4
   TARGET: x86_64-linux
   # the official image of the veraPDF project
   VERAPDF_IMAGE: verapdf/cli:v1.30.2
@@ -42,7 +45,7 @@ jobs:
       - name: Check out mORMot2
         uses: actions/checkout@v7
         with:
-          repository: synopse/mORMot2
+          repository: ${{ env.MORMOT2_REPO }}
           ref: ${{ env.MORMOT2_COMMIT }}
           path: mORMot2
 

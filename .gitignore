@@ -42,3 +42,7 @@ tests/temp
 .claude/settings.local.json
 # machine-specific toolchain notes (see CLAUDE.local.md.example)
 CLAUDE.local.md
+# GNU Global tag files
+GPATH
+GRTAGS
+GTAGS

@@ -40,6 +40,10 @@ const
     (Dir: 'zugferd_demo';  Exe: 'zugferd_demo';       Gui: false),
     (Dir: 'layer1_demo';   Exe: 'layer1_demo';        Gui: false));
 
+  /// the day report_demo and mormot_demo print, unless SOURCE_DATE_EPOCH is
+  // set already: 2026-01-01, the same for the baseline and the change
+  SOURCE_DATE = '1767225600';
+
 var
   Problems: integer;
 
@@ -83,6 +87,27 @@ begin
       Demo.Exe + PathDelim + Demo.Exe + '.exe';
 end;
 
+{$ifdef OSPOSIX}
+// the environment of this process for RunCommand, SOURCE_DATE_EPOCH set to
+// Epoch: RunCommand passes FPC's startup environment, which setenv() does not
+// change, and an inherited entry would come first, even an empty one
+function DemoEnvironment(const Epoch: RawUtf8): RawUtf8;
+var
+  i: integer;
+  e: RawUtf8;
+begin
+  result := '';
+  for i := 1 to GetEnvironmentVariableCount do
+  begin
+    e := StringToUtf8(GetEnvironmentString(i));
+    if (e <> '') and
+       not IdemPChar(pointer(e), 'SOURCE_DATE_EPOCH=') then
+      result := result + e + #0;
+  end;
+  result := result + 'SOURCE_DATE_EPOCH=' + Epoch + #0;
+end;
+{$endif OSPOSIX}
+
 // each demo runs in its own folder, where zugferd_demo and mormot_demo find
 // their data whatever the compiler's output layout; a PDF written since the
 // start is the demo's
@@ -92,7 +117,7 @@ var
   exe, cmd: TFileName;
   start: TUnixTime;
   pdfs: TFindFilesDynArray;
-  output: RawUtf8;
+  output, epoch: RawUtf8;
 begin
   if (Compiler <> 'fpc') and (Compiler <> 'd7') and (Compiler <> 'd2010') then
   begin
@@ -100,6 +125,13 @@ begin
     exit;
   end;
   EnsureDirectoryExists(OutDir);
+  // the demos print the date of SOURCE_DATE_EPOCH: the same PDF on any day
+  epoch := StringToUtf8(GetEnvironmentVariable('SOURCE_DATE_EPOCH'));
+  if epoch = '' then
+    epoch := SOURCE_DATE;
+  {$ifdef OSWINDOWS}
+  SetSystemEnv('SOURCE_DATE_EPOCH', epoch); // inherited by RunRedirect
+  {$endif OSWINDOWS}
   for i := 0 to high(DEMOS) do
   begin
     exe := DemoExe(Compiler, DEMOS[i]);
@@ -118,7 +150,7 @@ begin
     // returns: the demo writes to our console instead
     ChDir(RootDir + 'examples' + PathDelim + DEMOS[i].Dir);
     output := '';
-    code := RunCommand(cmd, true);
+    code := RunCommand(cmd, true, DemoEnvironment(epoch));
     {$else}
     output := RunRedirect(cmd, @code, nil, INFINITE, true, '',
       RootDir + 'examples' + PathDelim + DEMOS[i].Dir);
@@ -150,6 +182,7 @@ var
   i, j: integer;
   found: boolean;
   na, nb, erra, errb, diff: RawUtf8;
+  oa, ob: TPdfObjectSpans;
 begin
   a := FindFiles(DirA, '*.pdf', '', [ffoExcludesDir, ffoSortByName]);
   b := FindFiles(DirB, '*.pdf', '', [ffoExcludesDir, ffoSortByName]);
@@ -160,13 +193,13 @@ begin
       Fail('MISSING ' + Utf8(a[i].Name))
     else
     begin
-      na := NormalizePdf(StringFromFile(DirA + a[i].Name), erra);
-      nb := NormalizePdf(StringFromFile(DirB + a[i].Name), errb);
+      na := NormalizePdf(StringFromFile(DirA + a[i].Name), erra, oa);
+      nb := NormalizePdf(StringFromFile(DirB + a[i].Name), errb, ob);
       if erra <> '' then
         Fail('BROKEN  ' + Utf8(DirA + a[i].Name) + ': ' + erra)
       else if errb <> '' then
         Fail('BROKEN  ' + Utf8(DirB + a[i].Name) + ': ' + errb)
-      else if ComparePdfText(na, nb, diff) then
+      else if ComparePdfText(na, nb, oa, ob, diff) then
         Say('OK      ' + Utf8(a[i].Name))
       else
       begin

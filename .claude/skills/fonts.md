@@ -1,11 +1,11 @@
 # Font Handling — Deep Reference
 
 Sources: `src/core/mormot.ui.pdf.pas`, `src/core/mormot.pdf.types.pas`,
-`src/platform/windows/mormot.pdf.gdi.pas`, `src/platform/unix/mormot.pdf.freetype.pas`
+mORMot2 `src/lib/mormot.lib.uniscribe.pas` (GDI), `src/lib/mormot.lib.freetype.pas`
 
 **Skill boundaries:**
 - User-facing font mode selection → brief overview here; see also `.claude/skills/pdf-engine.md` §"Font Strategy"
-- Platform interface (IPdfPlatformFont, etc.) → see `.claude/skills/platform-backends.md`
+- Platform interface (IFontProvider, etc.) → see `.claude/skills/platform-backends.md`
 - Call graph of font paths → see `.claude/skills/call-graph.md` Path 4a–4f
 
 ---
@@ -51,7 +51,7 @@ Report.GetExportFonts(SansFont, SerifFont, MonoFont);
 | macOS | Trebuchet MS | Georgia | Andale Mono |
 | Linux | Liberation Sans | Liberation Serif | Liberation Mono |
 
-Fonts excluded from embedding: `TPdfDocument.EmbeddedTtfIgnore` (`TRawUtf8List`).
+Fonts excluded from optional embedding: `TPdfDocument.EmbeddedTtfIgnore` (`TRawUtf8List`) - ignored for PDF/A and tagged output.
 Fallback when a requested font is not found: `TPdfDocument.FontFallBackName` (string).
 
 ---
@@ -64,8 +64,8 @@ untagged output.
 
 | `EmbeddedWholeTtf` | Behaviour |
 |---|---|
-| `true` | Complete TTF bytes embedded. Safe for all scripts including RTL/Arabic. For a `.ttc`, the loaded face alone is extracted as a standalone sfnt — a raw `ttcf` container is not a valid `/FontFile2`. |
-| `false` (default), Linux/macOS | Subset via `IPdfFontSubsetter` (`mormot.pdf.hbsubset`, `libharfbuzz-subset`, R-12). Glyph IDs retained, so content streams, `/W` and `/ToUnicode` stay valid. Safe for Latin, CJK, shaped RTL and tagged output. |
+| `true` | Complete TTF bytes embedded. Safe for all scripts including RTL/Arabic. For a `.ttc`, the face alone is extracted as a standalone sfnt (`IFontFace.GetFaceFile`) — a raw `ttcf` container is not a valid `/FontFile2`. On Windows only since 2026-10-09: before, the whole collection was embedded. |
+| `false` (default), Linux/macOS | Subset via `IFontSubsetter` (`mormot.lib.harfbuzz`, `libharfbuzz-subset`, R-12). Glyph IDs retained, so content streams, `/W` and `/ToUnicode` stay valid. Safe for Latin, CJK, shaped RTL and tagged output. |
 | `false` (default), Windows | Subset via `CreateFontPackage` with a glyph keep list (`TTFCFP_FLAGS_GLYPHLIST`, R-15). Glyph IDs retained, so it is safe for the same cases as hb-subset — Latin, CJK, shaped Arabic (Uniscribe), tagged output. |
 
 The whole face is embedded instead — silently, as before R-12 — when no
@@ -100,11 +100,11 @@ Identity-H. A log line, not a rule: the file passes `ua1`, and it renders the
 same characters as the Linux file (checked 2026-09-29). Do not convert the
 face to CID-keyed CFF to silence it.
 
-**Every `.ttc` face hinges on `TPdfFTContext.SfntChecked`.** `GetFontData(0)`
+**Every `.ttc` face hinges on `TFreeTypeFont.SfntChecked`.** `GetFontData(0)`
 extracts the loaded face once and caches it in `Sfnt`; with `SfntChecked` set
 and `Sfnt` empty it hands out FreeType's whole collection instead. The face then
 reads as neither CFF nor a single font, hb-subset fails, and the raw `ttcf`
-container lands in `/FontFile2` (veraPDF `ua1` 7.21.4.1). `CreateFont` left
+container lands in `/FontFile2` (veraPDF `ua1` 7.21.4.1). `CreateFont` (now `CreateFace`) left
 the flag to the heap until 2026-09-26 — `New()` initializes managed fields
 only — so this happened at random, by heap layout, on Linux and macOS. The
 signature: a PDF of megabytes, a CJK face without subset tag, a stream that
@@ -121,8 +121,10 @@ pair shares one face by construction; Regular and Bold of a `.ttc` face can too)
   plus `fUsedWideChar`. **Required:** a simple TrueType font with
   `/WinAnsiEncoding` reaches its glyphs through the `(3,1)` cmap, and hb-subset
   rebuilds the cmap only for these code points
-- `Glyphs` — every `fUsedWide[].Glyph`, including the PUA slots of shaped glyphs
-  (§8 Step 3). The Identity-H instance addresses glyphs by ID
+- `Glyphs` — every `fUsedWide[].Glyph`, and every glyph without a code point
+  (`fShapedGlyph`, §8 Step 3). The Identity-H instance addresses glyphs by ID.
+  `Unicodes` holds real code points only since 2026-10-08 (before, the
+  synthetic `$E000` keys of shaped glyphs were in it too)
 
 Flags: `RETAIN_GIDS` (mandatory), `NOTDEF_OUTLINE` (a missing glyph stays a
 visible box), `NO_HINTING`; `GSUB/GPOS/GDEF` are dropped
@@ -137,11 +139,30 @@ the WinAnsi, CIDFont and Type0 objects get the same `ABCDEF+` tag, derived from
 
 ### Windows subset input (`CreateFontPackage`)
 
-A glyph keep list (`TTFCFP_FLAGS_GLYPHLIST`) rather than code points, so the
-glyph IDs stay where they are. The WinAnsi characters are resolved to glyph
-indices through the face itself (`AddWinAnsiGlyphs`, R-15a), which works
+The same request as on POSIX, through `FontSubsetter` since W2
+(`TFontSubSubsetter`, `mormot.lib.uniscribe`; `platform-backends.md`). A glyph
+keep list (`TTFCFP_FLAGS_GLYPHLIST`) rather than code points, so the glyph IDs
+stay where they are: the subsetter resolves `Request.Unicodes` to glyph
+indices through the font itself (`GetGlyphIndicesW`; before W2 the engine did
+it for the WinAnsi characters, `AddWinAnsiGlyphs`, R-15a), which works
 whatever cmap the lookup goes through — symbol fonts included, unlike POSIX
-(R-15b). The whole face is embedded for PDF/A-1, as on POSIX.
+(R-15b; `SupportsSymbolic`). A face of a `.ttc` is subset from the whole
+collection at the index found from the bytes (`TtcFaceIndex`; before W2 the
+family-name list `GetTtcIndex`, wrong for 14 of 30 collections).
+`TestSubsetTtcFace` checks four such faces and two of index 0 on the saved
+PDF, and `TestWholeTtcFace` the same faces embedded whole; both also cover
+Noto Sans CJK JP on Linux and Hiragino Sans GB and Helvetica on macOS (the
+FreeType side, face 0), when installed
+(`EmbeddedWholeTtf`, PDF/A-1, no subsetter); both run wherever one of the
+fonts is installed - on Windows, or on a Mac with the Office fonts (face 0
+only there: `TFontFileMap` reaches no other). `TestSubsetSymbolFont`
+subsets Wingdings (`SYMBOL_CHARSET`: only that makes a font symbolic) and
+checks `SupportsSymbolic`. The subset has no `name` table left (`ReduceTtf`), and the faces of
+these collections share `glyf` and `hmtx`: the test tells them apart by `cmap`
+(`MS UI Gothic` maps 'H' to glyph 18634, `MS PGothic` to 16116) and `hhea`
+(the UI faces of YaHei, JhengHei, Yu Gothic), read through `FontProvider`
+from the face the platform selects. The whole face is embedded for PDF/A-1,
+as on POSIX.
 
 The 32-bit `fontsub.dll` writes `language` = `0x0008CA34` into the format 12
 (3/10) `cmap` subtable of a subset, the 64-bit one 0 (spec: 0). Source face and
@@ -185,7 +206,7 @@ Arabic output (R-19, 2026-09-26):
 | `fUsedWide` | `TUsedWide` (dyn. array) | WinAnsi | parallel to `fUsedWideChar`: packed `(Width: word; Glyph: word)` per code point |
 | `fWinAnsiUsed` | `TSynAnsicharSet` | WinAnsi | 256-bit set of WinAnsi chars used (U+0020–U+00FF); drives `/FirstChar`–`/LastChar /Widths` |
 | `fDefaultWidth` | `cardinal` | WinAnsi | advance width of space char; used as PDF `/DW` for unregistered glyphs |
-| `fHGDI` | `TPdfPlatformFontHandle` | both | platform font handle (GDI `HFONT` or FreeType `FT_Face`) |
+| `fFace` | `IFontFace` | both | the face, shared by both instances (reference counted); `fFace.Handle` is the GDI `HFONT` or the `PFreeTypeFont` (Phase 1b; `fHGDI` before) |
 | `fFixedWidth` | `boolean` | WinAnsi | true = monospace; `/W` is omitted, all glyphs use `/DW` |
 | `fIsSymbolFont` | `boolean` | Unicode | true = Symbol charset (glyphs at U+F0xx) |
 
@@ -209,8 +230,9 @@ the WinAnsi font's arrays only contain actually-used code points.
 ## 5. Font Loading — `TPdfTtf.Create` (`pdf.pas:6065`)
 
 Called once per Unicode font instance: `TPdfTtf.Create(self).Free`.
-Uses `GetDCWithFont` to select the font into the DC.
-Reads three TTF tables via `PdfPlatformFont.GetFontData`:
+Reads its tables from the face, `aUnicodeTtf.fFace.GetFontData` (before
+Phase 1b it read the document DC and relied on the font its caller had
+selected):
 
 1. **`head` + `hhea`** — provides `UnitsPerEm` and `numOfLongHorMetrics`
 2. **`cmap`** — Format 4 segment map: populates
@@ -285,34 +307,43 @@ AddUnicodeHexTextNoUniScribe (pdf.pas:5484):
 
 ---
 
-## 7. Text Rendering Chain — Uniscribe / HarfBuzz (RTL, Complex Scripts) (`pdf.pas:5295–5570`)
+## 7. Text Rendering Chain — Uniscribe / HarfBuzz (RTL, Complex Scripts)
+
+One path on every platform since W2 (2026-10-08); the shaper is `FontShaper`
+(`TUniscribeShaper` on Windows, `THarfBuzzShaper` on Linux/macOS):
 
 ```
-TPdfWrite.AddUnicodeHexText (pdf.pas:5549):
-  if UseUniscribe and ttf <> nil:
-    {$ifdef USE_UNISCRIBE}                       // Windows only
-    shaped := AddUnicodeHexTextUniScribe(PW, Len, ttf.WinAnsiFont, NextLine, Canvas)
-    {$endif}
-    if not shaped and PdfTextShaper <> nil:      // Linux/macOS HarfBuzz
-      shaped := AddUnicodeHexTextHarfBuzz(...)
+TPdfWrite.AddUnicodeHexText:
+  shaped := UseUniscribe and ttf <> nil and
+            AddUnicodeHexTextShaped(PW, Len, ttf.WinAnsiFont, NextLine, Canvas)
   if not shaped:
-    AddUnicodeHexTextNoUniScribe(...)            // Latin fallback
+    AddUnicodeHexTextNoUniScribe(...)            // Latin text, or no shaper
 
-AddUnicodeHexTextUniScribe (pdf.pas:5295):
-  ScriptItemize(PW, Len) → items[]              // split into script runs
-  for each item in visual (bidi-reordered) order:
-    ScriptShape(DC, W, L, …, OutGlyphs, glyphsCount)  // OpenType GSUB shaping
-    → AddGlyphs(OutGlyphs, glyphsCount, Canvas, VisAttr)
+AddUnicodeHexTextShaped:
+  FontShaper.Shape(PW, Len, WinAnsiTtf.fFace.Handle, RightToLeftText, Runs)
+    false → not shaped                           // e.g. no complex/RTL item
+  every run checked first: inside the text, covering it, arrays aligned
+    else → not shaped
+  MoveToNextLine once if NextLine
+  per run (visual order):
+    fskPlain or fsoUnknown → AddUnicodeHexTextNoUniScribe(#0-terminated copy)
+    fskShaped              → AddShapedRun(Run, WinAnsiTtf)
+    fskSkip                → nothing
 
-AddGlyphs (pdf.pas:5573):
-  SetPdfFont(ttf.UnicodeFont, FontSize)          // always use CID font for shaped text
-  for each shapedGlyph in OutGlyphs:
-    glyph := ttf.WinAnsiFont.GetAndMarkGlyphAsUsed(shapedGlyph)  // §8
-    AddHex4(glyph)     // accumulate '<XXXX XXXX …>'
-  Add('> Tj')
+AddShapedRun(Run, WinAnsiTtf):
+  SetPdfFont(WinAnsiTtf.UnicodeFont, FontSize)   // CID font, even with no glyph
+  no glyph → done (Uniscribe: every glyph was zero-width)
+  no Advances (Uniscribe): '<' + WinAnsiTtf.GetAndMarkGlyphAsUsed(g)... + '> Tj'  // §8
+  Advances (HarfBuzz): GetAndMarkGlyphAsUsedWithWidth per glyph, then one Tj,
+    or a TJ where an offset or the hmtx width differs (§10, U-2)
 ```
 
-**Important:** `AddGlyphs` switches to `UnicodeFont` (CID font) unconditionally for all shaped output, including runs where `UseUniscribe=false` would have used the WinAnsi font.
+**Important:** a shaped run always goes to the Unicode (CID) font of the font
+it was shaped with - never to the font left active by the run before it,
+which may be the fallback font (fixed 2026-10-08, `TestShapedAfterFallback`).
+The zero-width filter of Uniscribe is in the shaper; the public `AddGlyphs`
+keeps its own for callers passing `TScriptVisAttr`s. Details per outcome:
+`platform-backends.md`, IFontShaper.
 
 ---
 
@@ -392,16 +423,14 @@ Step 2: scan UnicodeFont.fUsedWide[0..Count-1].Glyph == aGlyph  (reverse CMAP)
           → not found: fall through to Step 3
 
 Step 3: GSUB-substituted glyph — not in CMAP at all (rare ligature, etc.)
-  {$ifdef OSWINDOWS} only:
-          GetDCWithFont(self)                              select font into DC
-          GetCharABCWidthsI(fDoc.fDC, aGlyph, 1, nil, @abc)  ← by glyph index
-          w := abc.abcA + integer(abc.abcB) + abc.abcC    ← advance in 1000/em units
-          synChar := WideChar($E000 or (aGlyph and $0FFF)) ← PUA synthetic Unicode slot
-          idx := FindOrAddUsedWideChar(synChar)
-          fUsedWide[idx].Glyph := aGlyph                  ← override glyph
-          fUsedWide[idx].Width := w                        ← set correct advance width
+  every platform since W3 (2026-10-09; Windows only before):
+          fFace.GetGlyphAdvance(aGlyph, w)
+                                    ← by glyph index, 1000/em units
+                                      (GDI GetCharABCWidthsI, FreeType
+                                       FT_Load_Glyph); failure → fDefaultWidth
+          AddShapedGlyph(aGlyph, w)                        ← WinAnsiFont.fShapedGlyph
   → glyph now registered in /W array; no more overlap from /DW fallback
-  {POSIX}: step 3 not implemented; glyphs still use /DW (overlap remains)
+  HarfBuzz runs carry their advances: GetAndMarkGlyphAsUsedWithWidth (see §10)
 ```
 
 **Arabic Presentation Forms in CMAP:** Fonts like Tahoma map U+FE70–U+FEFF (Arabic
@@ -409,7 +438,7 @@ Presentation Forms-B) to the same glyph IDs that Uniscribe produces for shaped c
 forms. Step 2 therefore finds most Arabic shaped glyphs. Step 3
 remains the backstop for fonts whose GSUB glyphs have no Presentation-Form Unicode slot.
 
-**Width unit compatibility:** `GetCharABCWidthsI` returns logical units. Because `lfHeight = -1000` (pdf.pas:8854), the DC em square = 1000 logical units, making these widths directly compatible with `fUsedWide[].Width` (also 1000/em from hmtx). No unit conversion needed.
+**Width unit compatibility:** `GetGlyphAdvance` returns logical units (GDI's `GetCharABCWidthsI`). Because `lfHeight = -1000` (pdf.pas:8854), the DC em square = 1000 logical units, making these widths directly compatible with `fUsedWide[].Width` (also 1000/em from hmtx). No unit conversion needed.
 
 ---
 
@@ -423,22 +452,29 @@ after `PrepareFontSubsets` (§3). Runs for **both** WinAnsi and Unicode instance
 ```
 /DW  = WinAnsiFont.fDefaultWidth               (space char width, e.g. 167 for Tahoma)
 
+WinAnsiFont.GetUsedGlyphs(keys, used)   characters (fUsedWide[]) and glyphs
+                                        without a code point (fShapedGlyph),
+                                        merged in key order (§8)
 /W array construction:
   if WinAnsiFont.fFixedWidth:
     omit /W entirely (all glyphs use /DW)
   else:
-    for i in 0..WinAnsiFont.fUsedWideChar.Count-1:
-      emit [WinAnsiFont.fUsedWide[i].Glyph, [WinAnsiFont.fUsedWide[i].Width]]
+    for each entry of used[] with Used <> 0:
+      emit [Glyph, [Width]]
 
-fFirstChar / fLastChar = min/max .Glyph in WinAnsiFont.fUsedWide[]
+fFirstChar / fLastChar = .Glyph of the first / last entry in KEY order
 ToUnicode CMap codespace = <fFirstChar> <fLastChar>
 
-if WinAnsiFont.fUsedWideChar.Count = 0:
-  /W = []
-  codespace = <0000> <0000>
-  (but: if fGlyphMin/fGlyphMax set by GetAndMarkGlyphAsUsed Step 3,
-         use those as codespace — partial mitigation for shaped Arabic)
+no entry at all: /W = [], codespace = <0000> <0000>
 ```
+
+**Open (found 2026-10-08, older than the glyph list):** the codespace bounds
+are the glyphs of the first and last entry by key, not the smallest and
+largest glyph, so they need not enclose every glyph of the CMap - with Segoe
+UI's shaped glyphs 240, 241 and 4336 the codespace is `<0000> <00F1>` and
+glyph `<10F0>` lies outside (ISO 32000-1 9.10.3). Fix separately: bounds from
+the emitted glyphs, or `<0000> <FFFF>`, with a test that every mapping lies
+inside
 
 ### WinAnsi font branch (`pdf.pas:6671`): builds /Widths array, embeds font file
 
@@ -446,12 +482,15 @@ if WinAnsiFont.fUsedWideChar.Count = 0:
 /FirstChar, /LastChar, /Widths built from fWinAnsiUsed + WinAnsi ABC widths
 
 Font embedding decision:
-  if EmbeddedWholeTtf = true (set by Tagged on Windows):
-    PdfPlatformFont.GetFontData(DC, 0, 0, nil, 0)   → total byte count
-    PdfPlatformFont.GetFontData(DC, 0, 0, Buf, Size) → full TTF bytes → embed as /FontFile2
+  if EmbeddedWholeTtf = true, for PDF/A-1, or with no FontSubsetter (or a
+  symbol font and not SupportsSymbolic, or a failed subset):
+    fFace.GetFaceFile(ttf)                       → the face as one font file
+    (no face → the save raises EPdfInvalidOperation; IsEmbedded is true for
+    PDF/A, for Tagged, or with EmbeddedTtf unless in EmbeddedTtfIgnore)
     safe for all scripts; shaped GSUB glyph IDs are valid in the complete font
-    .ttc: the FreeType backend returns just the loaded face, rebuilt as an sfnt
-          (ExtractSfntFromTtc); Windows does the same via CreateFontPackage
+    .ttc: just the face, rebuilt as an sfnt (ExtractSfntFromTtc) - FreeType
+          the face it loaded, GDI the face TtcFaceIndex finds (since
+          2026-10-09; before, Windows embedded the whole collection)
     the stream is shared: TPdfDocument.GetOrCreateFontFile2() reuses one
     TPdfStream for byte-identical data, so Regular and Bold resolving to the
     same physical file embed it once, not twice
@@ -459,12 +498,9 @@ Font embedding decision:
   if EmbeddedWholeTtf = false (the default):
     Linux/macOS: the subset prepared by PrepareFontSubsets replaces the bytes
       (see §3 "POSIX subset input"); the name gets its ABCDEF+ tag
-    Windows - the branch sits inside {$ifdef USE_UNISCRIBE}:
-      input: Unicode code points from fWinAnsiUsed + fUsedWideChar
-      CreateFontPackage(input) → subset TTF bytes (FontSub.dll, resolved via
-        HasCreateFontPackage; falls back to the whole face if absent)
-      if fUsedWideChar.Count = 0 and fGlyphMin/fGlyphMax = 0:
-        0 code points passed → degenerate/unusable subset → boxes in output
+    Windows: the same, the subset made by FontSub (TFontSubSubsetter,
+      CreateFontPackage) in PrepareFontSubsets since W2; FontSub.dll absent
+      or NO_USE_UNISCRIBE → no FontSubsetter → the whole face
 ```
 
 ---
@@ -500,13 +536,16 @@ compile if it is ever gated again; `TestShapingSwitch` checks the output.
 - Uniscribe shapes Arabic contextual forms via `ScriptShape` → GSUB glyph IDs
 - `GetAndMarkGlyphAsUsed` registers shaped glyph IDs via reverse CMAP scan (Step 2)
 - Fonts like Tahoma: shaped glyphs found in Arabic Presentation Forms (U+FE70–U+FEFF)
-- For fonts without Presentation-Form coverage: Step 3 (`GetCharABCWidthsI` + PUA slot) handles remaining GSUB-only glyphs (Windows only)
+- For fonts without Presentation-Form coverage: Step 3 (`GetGlyphAdvance` + `fShapedGlyph`) handles remaining GSUB-only glyphs
 
 ### Step 3 on Linux/macOS — HarfBuzz path (P2-A, APPLIED)
 
-`GetAndMarkGlyphAsUsed` Step 3 uses `GetCharABCWidthsI` (GDI API, Windows only).
-On Linux/macOS the equivalent is `GetAndMarkGlyphAsUsedWithWidth(aGlyph, aWidth)`:
-- Called from `AddUnicodeHexTextHarfBuzz` instead of `GetAndMarkGlyphAsUsed`
+`GetAndMarkGlyphAsUsed` Step 3 uses `FontProvider.GetGlyphAdvance` (every
+platform since W3; before, `GetCharABCWidthsI`, Windows only). A HarfBuzz run
+brings its own advances, so Linux/macOS use
+`GetAndMarkGlyphAsUsedWithWidth(aGlyph, aWidth)` there:
+- Called from `AddShapedRun` for a run with `Advances` (HarfBuzz) instead of
+  `GetAndMarkGlyphAsUsed`
 - the width written to `/W` comes from `GlyphHmtxWidth()`, i.e. the font's own
   `hmtx` advance. `aWidth` — the HarfBuzz `x_advance` — is only a fallback for
   when the tables cannot be read.
@@ -517,7 +556,7 @@ On Linux/macOS the equivalent is `GetAndMarkGlyphAsUsedWithWidth(aGlyph, aWidth)
   pen still moves by the shaper's advance. Writing `aWidth` into `/W` made both
   wrong at once and cancelled out on screen — invisible in a viewer, a PDF/UA
   failure (U-2).
-- Same PUA slot logic as Step 3: `synChar := WideChar($E000 or (aGlyph and $0FFF))`
+- Same registration as Step 3: `AddShapedGlyph` into `fShapedGlyph`
 - Result: GSUB-only shaped glyphs get correct `/W` entries; no `/DW` overlap
 
 **Whether Step 3 is reached at all depends on the font's CMAP**, and this is the
@@ -536,8 +575,8 @@ U+06xx code points mean Step 2, PUA U+E0xx values mean Step 3.
 ### HarfBuzz scaling — do NOT use FT_LOAD_NO_SCALE
 
 `hb_ft_font_create` copies its scale out of `ft_face^.size^.metrics`, so the
-FT_Face **must be sized first** — `PdfFTSetEmSize1000()` in the FreeType backend
-does this (1000 units per em at 72 dpi). `CreateFont` deliberately does not size
+FT_Face **must be sized first** — `FreeTypeSetEmSize1000()` in the FreeType backend
+does this (1000 units per em at 72 dpi). `CreateFace` deliberately does not size
 the face, because every other entry point uses `FT_LOAD_NO_SCALE` or reads
 design-unit fields.
 
@@ -554,7 +593,7 @@ back as 0** and all shaped glyphs stacked on one spot. Measured on HarfBuzz
 | **yes** | **default / `NO_HINTING`** | **253 292 636 404 456** (26.6, `div 64`) |
 | yes | `NO_SCALE` | 0 0 1 0 0 |
 
-`ShapeText` therefore sizes the face, sets `FT_LOAD_NO_HINTING`, and converts
+`Shape` therefore sizes the face, sets `FT_LOAD_NO_HINTING`, and converts
 26.6 to PDF units with `From26Dot6()`. Regression test:
 `TestTextShaperAdvances` in `tests/test_pdf_crossplatform.pas`.
 
@@ -583,39 +622,28 @@ Fix (P3-C, applied): `(int64(hmtx_advance) * 1000) div UnitsPerEm` in `TPdfTtf.C
 
 ---
 
-### P3-B — Implementiert (aktuell wirkungslos für Noto Naskh Arabic)
+### P3-B — Implemented (no effect with Noto Naskh Arabic)
 
-P3-B ist implementiert:
-- `IPdfTextShaper.ShapeText` hat `out AOffsets: TIntegerDynArray` (`mormot.pdf.types.pas`)
-- `ShapeText` fills `AOffsets[i] = From26Dot6(positions[i].x_offset)` (`harfbuzz.pas`)
-- `AddUnicodeHexTextHarfBuzz` verwendet `TJ`-Operator wenn ein Offset ≠ 0
+- `IFontShaper.Shape` returns the offset per glyph in `Runs[0].Offsets`
+  (`TFontShapedRun`, `mormot.lib.core`)
+- the HarfBuzz shaper fills `Offsets[i] = From26Dot6(positions[i].x_offset)`
+- `AddShapedRun` writes a `TJ` when an offset is not 0
 
-Für Noto Naskh Arabic sind alle `x_offset = 0` → `hasOffsets` immer false → `Tj`-Pfad immer aktiv.
-P3-B kann bei anderen Fonts mit GPOS-Kerning relevant werden.
+With Noto Naskh Arabic every `x_offset` is 0, so `hasOffsets` stays false and
+the `Tj` path is taken; fonts with GPOS positioning take the `TJ` path.
 
 ---
 
-## 10b. RTL Paragraph — `VisualToLogical` Loop in `AddUnicodeHexTextUniScribe`
+## 10b. RTL Paragraph — `VisualToLogical` Loop in `TUniscribeShaper.Shape`
 
-`RightToLeftText := true` sets `AScriptState.uBidiLevel := 1` before `ScriptItemize`.
+`RightToLeftText := true` sets `uBidiLevel := 1` before `ScriptItemize`.
 
-`ScriptLayout` with uniform RTL level places the sentinel (logical index `count-1`) at
-visual position 0: `VisualToLogical = [count-1, 0, 1, …]`.
-
-Current loop (`pdf.pas:~5420`):
-```pascal
-for j := 0 to count - 1 do
-  if VisualToLogical[j] < count - 1 then   // sentinel always has logical index count-1
-    Append(VisualToLogical[j]);
-```
-
-The guard skips the sentinel by logical index regardless of its visual position.
-
-| Scenario | VisualToLogical | Loop result |
-|---|---|---|
-| LTR, uBidiLevel=0, count=2 | [0, 1] | Append(0); skip sentinel |
-| RTL, uBidiLevel=1, count=2 | [1, 0] | skip sentinel; Append(0) |
-| Mixed, count=3 | [1, 0, 2] | Append(1); Append(0); skip sentinel |
+Since W2 the shaper itemizes exactly the text (`Len` code units) and takes
+every item `ScriptLayout` orders: `for j := 0 to count - 1 do i :=
+VisualToLogical[j]`. Before W2 the engine itemized `Len + 1` units (the `#0`
+after the text) and skipped item `count - 1` as "the sentinel", which the RTL
+level placed at visual position 0 - but that item may hold real text before
+the `#0` (`platform-backends.md`, "The Windows paths").
 
 ---
 
@@ -676,7 +704,7 @@ For full interface documentation see `.claude/skills/platform-backends.md`.
 `GetFontData` / `FT_Load_Sfnt_Table` are used by `TPdfTtf.Create` to read raw TTF table bytes
 (`cmap`, `hmtx`, `head`, `hhea`) for CMAP loading and glyph width extraction.
 
-The platform layer is reached via the global `PdfPlatformFont: IPdfPlatformFont` interface.
+The platform layer is reached via the global `FontProvider: IFontProvider` interface.
 Registration happens in the `initialization` section of the backend unit.
 
 ---
@@ -687,8 +715,8 @@ Table tags are formed in `GetTtfData` (`pdf.pas:3610`) as `PCardinal(aTableName)
 a 4-char ASCII name read as a little-endian DWORD on LE machines.
 
 FreeType's `FT_Load_Sfnt_Table` uses the `FT_MAKE_TAG` big-endian convention.
-`TPdfFreeTypeFontProvider.GetFontData` applies `SwapEndian(ATableTag)` before calling
-`FT_Load_Sfnt_Table`. `SwapEndian(0)` = 0, preserving the tag=0 convention
+`TFreeTypeFontFace.GetFontData` applies `bswap32(TableTag)` before calling
+`FT_Load_Sfnt_Table`. `bswap32(0)` = 0, preserving the tag=0 convention
 ("return entire font file") used by the whole-font embedding path.
 
 | Table | LE tag (PDF engine) | BE tag (FreeType) |
@@ -704,11 +732,14 @@ FreeType's `FT_Load_Sfnt_Table` uses the `FT_MAKE_TAG` big-endian convention.
 
 ## 13. GSUB Glyph Width — Implementation Notes (`pdf.pas:6247`)
 
-Relevant for `GetAndMarkGlyphAsUsed` Step 3 when `UseUniscribe=true` on Windows.
+Relevant for `GetAndMarkGlyphAsUsed` Step 3: a run without advances
+(Uniscribe) or the public `AddGlyphs`.
 
 ### `GetCharABCWidthsI` — API details
 
-Not in FPC's standard `windows` unit (commented out in `redef.inc`). Must be declared manually in `{$ifdef OSWINDOWS}` block at the start of `implementation`:
+Behind `IFontProvider.GetGlyphAdvance` in `mormot.lib.uniscribe` since W3.
+Not in FPC's standard `windows` unit (commented out in `redef.inc`), so it is
+declared there by hand:
 
 ```pascal
 // 5 parameters — pgi=nil means consecutive glyphs starting at giFirst
@@ -725,26 +756,41 @@ FPC type: use `TABC` (not `ABC`) in `var` blocks — `TABC = ABC` is the FPC ali
 `fUsedWide[].Width` (from `hmtx` via `TPdfTtf.Create`) is also 1000-per-em.
 → No unit conversion needed; values are directly comparable.
 
-### Synthetic PUA entry approach
+### Glyphs without a code point (`fShapedGlyph`)
 
-GSUB-substituted glyph IDs are not in the font CMAP. To give them a slot in the parallel arrays `fUsedWideChar`/`fUsedWide`, a synthetic Unicode code point in the Private Use Area is used:
+GSUB-substituted glyph IDs are not in the font CMAP. They are kept on the
+WinAnsi font in their own sorted list, `fShapedGlyph` (glyph IDs) with
+`fShapedWidth` in parallel, beside `fUsedWideChar`/`fUsedWide` (characters).
+`GetUsedGlyphs` merges both for `/W` and `/ToUnicode`, listing a shaped glyph
+under the value it had before:
 
 ```
-synChar = WideChar($E000 or (aGlyph and $0FFF))   → U+E000..U+EFFF range
+$E000 or (aGlyph and $0FFF)   → U+E000..U+EFFF, sorted by that value, then by glyph
 ```
 
-`FindOrAddUsedWideChar(synChar)` adds the PUA code point to `fUsedWideChar` (not in CMAP → i=0 default). After the call, `fUsedWide[idx].Glyph` and `.Width` are overridden with the correct values.
+**Until 2026-10-08 that value was the glyph's key in `fUsedWideChar`.** Two
+shaped glyphs 4096 apart, or a shaped glyph and a real character of that value,
+then shared one slot: the later one overwrote glyph and width of the earlier,
+which vanished from `/W`, `/ToUnicode` and the subset keep list, and the
+synthetic keys went to hb-subset as code points (`TestShapedGlyphKeys`). The
+merge keeps the old order, so `/W`, `/ToUnicode` and the codespace bounds are
+unchanged without such a collision. The subset may still change on POSIX:
+hb-subset no longer gets the synthetic keys as code points.
 
-**Side effect:** The `ToUnicode` CMap in the PDF maps these shaped glyphs to PUA code points instead of their base Arabic characters. Text extraction / copy-paste is thus incorrect for shaped Arabic, but rendering is correct.
+**Still open:** `/ToUnicode` maps these shaped glyphs to the PUA values instead
+of their source text. Text extraction / copy-paste is thus incorrect for shaped
+Arabic, but rendering is correct. The fix needs the source text per glyph
+(shaper clusters) and `/ActualText` where one glyph stands for different text
+- a PR of its own
 
 ### Safety scope
 
 `GetAndMarkGlyphAsUsed` Step 3 is only reached when:
-- `{$ifdef OSWINDOWS}` — Windows only
-- Called from `AddGlyphs` — only reached when Uniscribe is active
-- `AddGlyphs` is only called from `AddUnicodeHexTextUniScribe`
-- Which is gated by: `complex=true or R2L=true` (ScriptItemize flag check)
+- (every platform since W3; Windows only before)
+- Called from `AddShapedRun` for a run without `Advances` (Uniscribe), or from
+  the public `AddGlyphs`
+- Uniscribe gives runs only when an item is complex or right-to-left
 
-Latin text: `complex=false`, `R2L=false` → never reaches `AddGlyphs` → Step 3 unreachable.
-CJK: `UseUniscribe=false` → `AddUnicodeHexTextUniScribe` not called → Step 3 unreachable.
+Latin text: the shaper returns false → the simple path → Step 3 unreachable.
+CJK: `UseUniscribe=false` → no shaper call → Step 3 unreachable.
 Existing demos and tests: unaffected.

@@ -139,7 +139,7 @@ Doc.Free;
 | `Canvas` | `TPdfCanvas` | Draw on current page |
 | `Info` | `TPdfInfo` | Document metadata |
 | `EmbeddedTtf` | boolean | True = embed TrueType fonts (full TTF) |
-| `EmbeddedTtfIgnore` | `TRawUtf8List` | Font names to exclude from embedding |
+| `EmbeddedTtfIgnore` | `TRawUtf8List` | Font names excluded from optional embedding; ignored for PDF/A and tagged output |
 | `StandardFontsReplace` | boolean | True = Type1 fallback for Helvetica/Times/Courier |
 | `DefaultPaperSize` | `TPdfPaperSize` | psA4, psLetter, etc. |
 | `DefaultPageWidth` | cardinal | Page width in PDF points (overrides PaperSize) |

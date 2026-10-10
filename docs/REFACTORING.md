@@ -23,9 +23,13 @@ section.
    identical to the baseline after normalization (Phase 0); existing tests
    stay valid. A difference is a defect until it is explained and accepted
    in this file. For the refactoring this replaces ROADMAP's pixel check.
-2. **One step, one PR, one kind of change.** Never two of: move units,
+2. **One step, one commit, one kind of change.** Never two of: move units,
    rename public API, change font metrics, change PDF serialization, change
-   report layout. Each must be reviewable on its own.
+   report layout. Each must be reviewable on its own. PRs (agreed with
+   Martin, 2026-10-09): per phase one PR with the complete implementation
+   and one with the bug fixes found on the way; the commits inside keep
+   the steps apart. Sven runs the check session on Windows (FPC, Delphi 7,
+   Delphi 13), Linux and macOS, Martin adds Delphi 2010.
 
 **Architecture**
 
@@ -56,12 +60,12 @@ section.
 
 | Check | Where |
 |---|---|
-| `test_runner` green, same assertion count, golden files unchanged | Windows: FPC Win64, Delphi 7, Delphi 2010 |
+| `test_runner` green, same assertion count, golden files unchanged | Windows: FPC, Delphi 7, Delphi 13 Win32/Win64 (Sven), Delphi 2010 (Martin) - since 2026-10-09, rule 2 |
 | All eight demos rebuilt (`-B`) and run (GUI demos with `--export`) — never an executable of an earlier state | the same |
 | Demo PDFs identical to the baseline after normalization | the same |
-| `test_runner`, demos, PDFs against the baseline | Linux and macOS — every step that touches POSIX code, otherwise at the end of the phase |
+| `test_runner`, demos, PDFs against the baseline | Linux and macOS (Sven, every PR since 2026-10-09) — every step that touches POSIX code, otherwise at the end of the phase |
 | PAC 2024, veraPDF | only when a PDF differs, and at the end of each phase |
-| Delphi 13 (Win64, Linux64, Android64) | the community; asked for at the end of each phase |
+| Delphi 13 (Linux64, Android64) | the community; asked for at the end of each phase |
 
 ---
 
@@ -82,7 +86,12 @@ session (Windows: per compiler) does exactly this:
    into the output folder it shares with `mormot2`
 3. `test_runner`: the expected count, no failure. At a baseline also
    `test_runner --golden-record`; at a step, the plain run compares
-4. `pdfcheck run <compiler> <folder>` into the state's folder
+4. `pdfcheck run <compiler> <folder>` into the state's folder. It sets
+   `SOURCE_DATE_EPOCH` to 2026-01-01 unless it is set, and `report_demo` and
+   `mormot_demo` print that date: with the same valid value, unchanged demo
+   output compares equal across days. A folder made before (Phase 1b) differs
+   in the printed date, and possibly in what it moves (the text after it, the
+   subset) - look at every difference
 5. `tagged_unicode_<system>.pdf` from `test_runner`'s folder copied into it
 6. Reported: the count, the golden result, `pdfcheck`'s output
 
@@ -120,7 +129,9 @@ checked against that record:
    - `compare <dirA> <dirB>`: both sides normalized — streams inflated;
      dates, `/ID`, XMP uuids, subset prefixes, stream lengths and the
      cross-reference offsets masked (the method used by hand so far, ROADMAP
-     R-26, R-25) — then compared; the first differing line is shown
+     R-26, R-25) — then compared: up to ten differences across the objects
+     (members of object streams included) and the text outside them are
+     shown, the rest counted
    - `fonts <file>`: the fonts as `pdffonts` lists them — type, font file
      key, subset, `/ToUnicode`
    - `struct <file>`: the roles of the structure tree and their counts
@@ -152,8 +163,11 @@ checked against that record:
      real difference
    - the same assertion count with and without a recorded baseline: two per
      case, a difference by `Check(false)`, not `TestFailed()`
-   - one report of a difference: `ComparePdfText` names the object, the byte
-     and the line of each side, for the golden files and `pdfcheck` alike
+   - one report of a difference: `ComparePdfText` shows up to ten
+     differences across the objects (members of object streams included) and
+     the text outside them, the rest counted - an added or removed object by
+     number and generation, a changed one with the byte and the line of each
+     side - for the golden files and `pdfcheck` alike
 
    **Checked** on Windows (FPC Win64, Delphi 7, Delphi 2010): `test_runner`
    279/279 without a baseline, while recording and comparing; a changed
@@ -177,9 +191,56 @@ checked against that record:
      and its commit recorded here — never between two baselines, or a
      difference cannot be told from the change under test
 
-   **Pinned:** `d60cc6e80` (2026-10-02). **Checked:** today's `main`,
+   **Pinned:** `d60cc6e80` (2026-10-02); from Phase 1 on a commit of the
+   `pdf-font-layer` branch of `landrix/mORMot2`, which is `d60cc6e80` plus
+   the new `mormot.lib.*` units (see Phase 1, "Where the code lives"):
+   `89d652a77` (2026-10-04, `mormot.lib.core` added, no other change), then
+   `5a1fb60fc` (2026-10-04, `mormot.lib.freetype` and `mormot.lib.harfbuzz`
+   added, unused here until the old POSIX backends are replaced; in
+   `mormot.lib.core` the out parameter of `IFontSubsetter.Subset` renamed
+   `Output` and two comments corrected), then `2dce8feb6` (2026-10-07, the
+   GDI services in `mormot.lib.uniscribe`, replacing `mormot.pdf.gdi`), then
+   `0da9d7adc` (2026-10-08, `TFontShapedRun.YOffsets` and `Outcome`, filled
+   by `mormot.lib.harfbuzz`, not used by the engine yet), then `54f47c547`
+   (2026-10-08, the zero values of `TFontShapeKind` and `TFontShapeOutcome`
+   are the safe ones: `fskPlain`, and the new `fsoUnknown`), then `2f8bf3d76`
+   (2026-10-08, step W2: the Uniscribe shaper and the FontSub subsetter in
+   `mormot.lib.uniscribe`, `NeedsShaping` in the HarfBuzz shaper,
+   `IFontSubsetter.SupportsSymbolic`), then `0e40ec95c` (2026-10-09:
+   `IFontProvider.GetFaceFile`, the face of a `.ttc` as one font file;
+   `ExtractSfntFromTtc` and `TtcFaceIndex` in `mormot.lib.core`; new GUIDs
+   for `IFontProvider` and `IFontSubsetter`), then `84012287b` (2026-10-09, step
+   W3: `IFontProvider.GetGlyphAdvance`), then `2f0e02243` (2026-10-09, the
+   bounds of `ExtractSfntFromTtc`), then `681bbe2a1` (2026-10-09, Phase 1b:
+   `IFontFace` replaces the device context).
+   **Checked:** against `d60cc6e80`, today's `main`,
    `test_runner` 259/259 on Windows (FPC Win64, Delphi 7, Delphi 2010),
-   298/298 on Linux, 317/317 on macOS (fpcupdeluxe, FPC 3.2.3).
+   298/298 on Linux, 317/317 on macOS (fpcupdeluxe, FPC 3.2.3). Against
+   `89d652a77` (PR #12): 296/296 on Windows aarch64 (FPC 3.3.1), 347/347 on
+   Linux aarch64 (WSL, FPC 3.2.2), golden files unchanged. Against
+   `5a1fb60fc` (PR #13): 296/296 on Windows x64 (FPC 3.2.2), Windows x86
+   (Delphi 7, Delphi 2010), Windows aarch64 (FPC 3.3.1) and with Delphi 13
+   Win32/Win64, 335/335 on Debian 13 aarch64 and 354/354 on macOS aarch64
+   (FPC 3.2.3), 347/347 on Linux aarch64 (WSL, FPC 3.2.2); golden files
+   unchanged, the 45 demo PDFs identical to `2026-10-04_pr9` but for the
+   date in two footers. Still against `5a1fb60fc`, PR #14 (HarfBuzz guard)
+   and PR #15 (the old POSIX backends replaced by `mormot.lib.freetype` and
+   `mormot.lib.harfbuzz`): 296/296 on Windows x64 (FPC 3.2.2) and Windows x86
+   (Delphi 7, Delphi 2010), 335/335 on Debian 13 aarch64, 354/354 on macOS
+   aarch64 (FPC 3.2.3), 347/347 on Linux aarch64 (WSL, FPC 3.2.2), 296/296
+   on Windows aarch64 (FPC 3.3.1); golden files unchanged, the 45 demo PDFs
+   of `2026-10-07_pr15` identical to `2026-10-07_pr13` after normalization,
+   veraPDF 1.30.2 `ua1` 35/35 and `3u` 5/5. Against `2dce8feb6` and
+   `0da9d7adc`, PRs #19 to #21 as one block (checked on #21): 306/306 on
+   Windows x64 (FPC 3.2.2) and Windows x86 (Delphi 7, Delphi 2010), 360/360
+   on Linux aarch64 (FPC 3.2.3, with fonts-noto-cjk; 348 without), 363/363
+   on macOS aarch64 (FPC 3.2.3); golden files unchanged, `pdfcheck` 9/9,
+   veraPDF `ua1` and `3u` pass. Against `2f8bf3d76`, PRs #23 to #25 as one
+   block (Martin, checked on #25): 368/368 on Windows x64 (FPC 3.2.2) and
+   Windows x86 (Delphi 7, Delphi 2010), 366/366 on Linux aarch64, 373/373
+   on macOS aarch64; golden files unchanged; `pdfcheck` 9/9 on Linux and
+   macOS, 8/9 on Windows - `rtl_demo`, explained in Phase 1 (W2); veraPDF
+   `ua1` 35/35, `3u` 5/5.
    `mormot_demo` (SQLite from `static/`) builds and exports on all three
    Windows compilers, the PDFs identical after normalization. FPC warns of
    a duplicate `mormot.lib.uniscribe` (the package's and our copy) — gone
@@ -255,22 +316,62 @@ units of their libraries:
 | `mormot.lib.freetype` | FreeType bindings and backend | `mormot.pdf.freetype` |
 | `mormot.lib.harfbuzz` | HarfBuzz shaping and subsetting | `mormot.pdf.harfbuzz`, `mormot.pdf.hbsubset` |
 
-**Where the code lives** (agreed 2026-10-02 in PR #2, adjusted 2026-10-03):
-the new units `mormot.lib.freetype` and `mormot.lib.harfbuzz` here in `src/`,
-where `pdfcheck`, the golden files and the check machines are, under their
-target names, so the final move is a plain copy. `mormot.lib.uniscribe` is a
-trunk unit - a copy here would shadow the package's one, as before PR #2 - so
-`mormot.lib.core` and the additions to `mormot.lib.uniscribe` go to the trunk
-as small PRs of their own, and the pin moves with them.
+**Where the code lives** (agreed with Martin 2026-10-04, replacing the plan
+of PR #2): the `mormot.lib.*` units in the branch `pdf-font-layer` of
+`landrix/mORMot2`, at their final place `src/lib` - `mormot.lib.uniscribe` is
+extended in place, where a copy here would shadow the package's unit, as
+before PR #2. This repository keeps the PDF units, the tests, the golden
+files, `pdfcheck`, the demos and the CI, and builds against a pinned commit
+of that branch (Phase 0 step 3); it gets PRs only where it has to follow -
+the pin, the PDF units switching to the new interfaces. The branch starts
+from the pinned trunk commit and is synchronized with the trunk per
+baseline - by merging the trunk in, never by rebasing or force-pushing, so
+that every commit pinned here (CI, baselines) stays reachable; the end of
+Phase 1 is one PR to `synopse/mORMot2`.
 
 - `Pdf` dropped from names that are not PDF-specific; the PDF types
   (`TPdfFileFormat`, `TPdfStructRole`, the font name constants) stay on the
   PDF side (gist §17)
-- **Windows shaping and subsetting behind the interfaces:** Uniscribe and
-  `CreateFontPackage` are called from `mormot.ui.pdf` today; they become the
-  shaper and subsetter in `mormot.lib.uniscribe` (not in the gist). The two
-  paths differ in shape, not only in library - see
-  `.claude/skills/platform-backends.md`, "Phase 1 Notes"
+- **Windows shaping and subsetting behind the interfaces** (done in step W2,
+  2026-10-08): Uniscribe and `CreateFontPackage` were called from
+  `mormot.ui.pdf`; they are the shaper and the subsetter of
+  `mormot.lib.uniscribe` now (not in the gist), and the engine has one path
+  for both platforms. The two paths differed in shape, not only in library -
+  see `.claude/skills/platform-backends.md`, "Phase 1 Notes"
+- **The engine's direct GDI calls behind the interfaces** (done in step W3,
+  2026-10-09): the document DC (`FontDC`), font creation and release, metrics,
+  character widths, tables and glyph advances by index (the new
+  `IFontProvider.GetGlyphAdvance`) go through `mormot.lib.core` on every
+  platform; `TPdfFontTrueType` holds a `TFontRequest`, `TFontMetrics` and
+  `TFontOutlineMetrics` everywhere. The `TLogFontW` API stays as Windows
+  adapters (decided with Sven, three alternatives, as cairo keeps its
+  LOGFONT constructors beside the generic ones); the `TLogFontW` constructor
+  still creates its font from the whole LOGFONT (`lfWidth`, found by Codex),
+  whether it should ignore it as cairo does is left to Phase 5. The EMF code
+  casts the DC back to a `HDC`. Output identical (golden files on every platform).
+  Intended difference: `GetAndMarkGlyphAsUsed` step 3 - a glyph no character
+  maps to, from the public `ShowGlyph` or a shaper giving no advances - now
+  gets its width on Linux/macOS too, where it stayed out of `/W` before
+  (`/DW` and overlap); HarfBuzz runs, which bring their advances, never went
+  there
+  - **Accepted difference (rule 1), found by Martin on #25:** `rtl_demo` on
+    Windows, line `EXPECTED_2A` (`Expected: U+0628 BA - ...`, shaped because
+    Uniscribe calls the em dash complex): the space after `0628` moved from
+    the start of one `Tj` to the end of the one before - same glyphs, same
+    font, no positioning between them, the same page. W2 itemizes exactly
+    the text: `ScriptItemize` on the text with the `#0` gave `0628` at bidi
+    level 2 and ` BA ` as items, without it `0628 ` at level 0 and `BA `
+    (measured 2026-10-09, Windows 11). The trailing `#0` changed the level
+    of the digits, and with it where the space went. PR #23 said "the same
+    items": that held for the 15,000 Arabic and Hebrew strings Codex
+    probed, which had no digits, not for this line
+- **The whole face of a `.ttc` on Windows** (bug fix, 2026-10-09): the
+  whole-face embedding read the collection with `'ttcf'`, computed an index
+  with `GetTtcIndex` and never used it - the whole collection went to
+  `/FontFile2` (9 to 21 MB, no font program; from the trunk original). Now
+  `IFontProvider.GetFaceFile` gives the face as one font file on every
+  platform (GDI: `TtcFaceIndex` and `ExtractSfntFromTtc`; FreeType: the
+  face it loaded), and `GetTtcIndex` is gone
 - `libharfbuzz` and `libharfbuzz-subset` stay separately loaded
 - The device-context interface moves unchanged, marked transitional
 
@@ -278,9 +379,76 @@ as small PRs of their own, and the pin moves with them.
 
 Gist §19. Its own phase: the step most likely to change metrics.
 
-- `IPdfPlatformDC`, `SelectFont`, `CreateDC`, the screen `LOGPIXELSY`
+- `IFontDC`, `SelectFont`, `CreateDC`, the screen `LOGPIXELSY`
   replaced by a face object that owns its state
 - Output identical; every difference explained
+
+**Done** (2026-10-09; design decided with Sven, three alternatives each,
+discussed with Codex against Skia `SkTypeface`, DirectWrite
+`IDWriteFontFace`, FreeType `FT_Face`, HarfBuzz `hb_face`, cairo, PDFium and
+Qt `QRawFont`):
+
+- **`IFontFace`**, reference counted, from `IFontProvider.CreateFace`:
+  metrics, character widths, glyph advances, tables and the face file are
+  its methods, without a selection. The GDI face owns its HFONT and a
+  compatible DC made when first needed; the FreeType face its
+  `PFreeTypeFont`. The WinAnsi and the Unicode instance of a font share one
+  face. The shaper and the subsetter keep their signatures and get the
+  face's `Handle`. The `TLogFontW` constructor takes its face from
+  `GdiCreateFace` of `mormot.lib.uniscribe`, from the whole LOGFONT
+- `IFontDC`, `TFontDC`, the `FontDC` global, the DC parameter of
+  `RegisterFontPlatform` and of `IFontEnumerator.EnumTrueTypeFonts`,
+  `IFontProvider.CreateFont`/`DeleteFont`/`SelectFont`/`FontDataError`
+  (now the constant `FONT_DATA_ERROR`) and the aliases
+  `TPdfPlatformDC`/`IPdfPlatformDC` are gone - the contract was never
+  released. New GUIDs for `IFontProvider` and `IFontEnumerator`
+- **`ScreenLogPixels`:** `GdiScreenLogPixels` on Windows (the same
+  `GetDeviceCaps(LOGPIXELSY)` of a compatible DC), 96 on POSIX - outside
+  `mormot.lib.core`; Phase 3 moves it to the canvas adapter. It follows the
+  process's DPI awareness: compare demo PDFs only between builds with the
+  same `.res` (a Lazarus-made one carries the DPI-aware manifest; 144 at
+  150 % scaling where an empty one gives 96 - found while checking this step)
+- **EMF** (Windows): `TPdfDocument.EmfDC`, made when first needed; the text
+  measure selects the face's HFONT for that call only
+- `TPdfTtf.Create` read four tables relying on the font its caller had
+  selected: it reads the face now
+- A font no backend resolves gives `TPdfNoFace`, whose queries fail, as the
+  nil font of the FreeType backend did
+- Output identical: golden files on every platform, the Windows demo PDFs
+  (same `.res`) against `main`
+
+**Bug fixes** (one PR with the implementation PR, rule 2):
+
+- from Martin's review of #26: when embedding is required and neither a
+  subset nor the whole face is available, the save fails
+  (`EPdfInvalidOperation`) instead of writing the font without a font file -
+  and `Tagged` forces embedding as PDF/A does; the
+  bounds of `ExtractSfntFromTtc` cannot wrap on 32-bit; the FreeType side of
+  `GetFaceFile` is tested on a `.ttc` (Noto Sans CJK JP on Linux, Hiragino
+  Sans GB and Helvetica on macOS); `report_demo` and `mormot_demo` print the
+  date of `SOURCE_DATE_EPOCH`, which `pdfcheck run` sets, and `pdfcheck
+  compare` names up to ten changed, added or removed objects - paired by
+  number, also inside object streams - and counts the rest
+- **CFF - moved to the bug-fix PR of Phase 2** (decided with Sven
+  2026-10-09: eight commits that change the output on macOS and Linux, too
+  much for this PR). A CID-keyed CFF face (all CJK CFF faces measured: Noto
+  Sans CJK, Hiragino Sans GB) may not be a simple `/Type1` font (ISO 32000-1
+  table 126), and the codes of a `CIDFontType0` are CIDs, not glyph IDs -
+  Hiragino Sans GB has 288 glyphs whose CID differs. Decided: all text of a
+  CFF face through the Type0 font - a CID-keyed face writes the CIDs of its
+  charset, a name-keyed face its glyph IDs unchanged;
+  a CID-keyed face embedded as the bare `CFF ` table, `/FontFile3 /Subtype
+  /CIDFontType0C` (PDF 1.3, also PDF/A-1); a name-keyed face (a Latin OTF,
+  e.g. Nimbus Sans of Ubuntu's desktop) as `/OpenType`, the document raised
+  to PDF 1.6 before its header is written, refused under PDF/A-1 - no CFF
+  rewriter (cairo and LuaTeX convert name-keyed CFF to CID-keyed: a project
+  of its own). The plan, discussed with Codex: a bounded CFF reader with
+  synthetic fixtures, the internal WinAnsi peer kept out of the file, the
+  program kind deciding the descendant (not the subset), the codes of the
+  face (CIDs of a CID-keyed one) in content, `/W` (sorted by code) and
+  `/ToUnicode`, word spacing as `TJ`
+  adjustments (`Tw` does not reach two-byte codes), the routing, then
+  veraPDF/PAC and the Mac golden files
 
 ### Phase 2 — Raw PDF Without VCL/LCL
 

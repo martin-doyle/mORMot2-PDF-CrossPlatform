@@ -150,7 +150,7 @@ const
     'width on an A4 page with 15mm margins on all sides.';
 var
   Report: TGDIPages;
-  Source, Joined: string;
+  Source, Joined: RawUtf8;
   i, Lines, Unmeasured, W, Widest: Integer;
 begin
   Source := SENTENCE + ' ' + SENTENCE + ' ' + SENTENCE + ' ' + SENTENCE;

@@ -62,6 +62,124 @@ v0.10.0 (2026-09-30).
   (issue #4, Ubuntu 24.04). The README now says which distributions ship a
   HarfBuzz older than 2.9 and do not subset at all: Debian 11, Ubuntu 22.04,
   RHEL 8/9
+- **Font interfaces renamed (R-28, refactoring Phase 1):** the platform
+  interfaces and their records moved from `mormot.pdf.types` to
+  `mormot.lib.core` of mORMot2 and lost the `Pdf` prefix -
+  `IFontProvider`, `IFontEnumerator`, `IFontDC`, `TFontRequest`,
+  `TFontMetrics`... `mormot.pdf.types` keeps the former record and
+  interface names as aliases. Removed without an alias, so code that
+  registers or calls a backend of its own no longer compiles:
+  `PdfPlatformFont`, `PdfSystemFonts`, `PdfPlatformDCProvider`,
+  `PdfTextShaper`, `PdfFontSubsetter`, `RegisterPdfPlatform`,
+  `PdfPlatformRegistered` (now `FontProvider`, `FontEnumerator`, `FontDC`,
+  `FontShaper`, `FontSubsetter`, `RegisterFontPlatform`,
+  `FontPlatformRegistered`), and `IPdfTextShaper` and `IPdfFontSubsetter`,
+  whose signatures changed (`IFontShaper.Shape` returns a boolean and the
+  shaped parts through `out Runs: TFontShapedRuns`, `IFontSubsetter.Subset`
+  takes the font handle). The PDF output is unchanged
+- **POSIX backends moved to mORMot2 (R-28, refactoring Phase 1):**
+  `mormot.pdf.freetype`, `mormot.pdf.harfbuzz` and `mormot.pdf.hbsubset` are
+  gone; `mormot.lib.freetype` and `mormot.lib.harfbuzz` of mORMot2 replace
+  them (`src/lib`, during the refactoring the `pdf-font-layer` branch of
+  `landrix/mORMot2`). A program that names one of the old units uses the new
+  one instead (`ExtractSfntFromTtc`, `LoadFreeType`, `HbSubsetFlags` keep
+  their names); the `src/platform/unix` search path is no longer needed.
+  The PDF output is unchanged
+- **Windows backend moved to mORMot2 (R-28, refactoring Phase 1):**
+  `mormot.pdf.gdi` is gone; its GDI services are in `mormot.lib.uniscribe`
+  of mORMot2, beside the Uniscribe and FontSub bindings (`TGdiFontProvider`,
+  `TGdiFontEnumerator`, `TGdiFontDC`). The `src/platform/windows` search path
+  is no longer needed, and `src/platform` is gone. The PDF output is
+  unchanged
+- **Fixed (Windows, `UseUniscribe`):** a run mixing a script the font lacks
+  with one it shapes, e.g. Devanagari then Arabic in Tahoma, drew the shaped
+  part in the fallback font with the glyph numbers of the main font - wrong
+  characters on the page, and in the fallback font's subset and widths. The
+  shaped part is now drawn in the font it was shaped with
+- **Fixed (shaped text, all platforms):** two shaped glyphs without a
+  character of their own whose numbers differ by a multiple of 4096 (fonts
+  with more glyphs than that), or such a glyph and a character of the
+  Private Use Area, overwrote each other: one of them lost its width, its
+  `/ToUnicode` entry and its place in the font subset. On Linux/macOS the
+  subset no longer gets their stand-in code points either, which may change
+  the embedded subset of such documents
+- **Shaping contract completed (R-28, `mormot.lib.core`):** a
+  `TFontShapedRun` carries `YOffsets` (vertical glyph offsets, positive
+  upwards) and `Outcome` (`fsoUnknown`, `fsoDone`, `fsoNotNeeded`,
+  `fsoFailed`) beside
+  `Kind`; `mormot.lib.harfbuzz` fills both. A shaper of your own sets them;
+  the PDF output is unchanged - the engine does not draw vertical offsets yet.
+  The zero values are the safe ones: `TFontShapeKind` starts with `fskPlain`,
+  `TFontShapeOutcome` with `fsoUnknown`, which the engine draws unshaped - a
+  shaper of your own sets both fields on every run
+- **Windows shaping and subsetting through the font interfaces (R-28,
+  refactoring Phase 1):** `mormot.lib.uniscribe` registers a Uniscribe
+  `FontShaper` and a FontSub `FontSubsetter`, and the engine shapes and
+  subsets through them on every platform - one code path instead of two.
+  The PDF output is unchanged, but for these cases:
+  - **Fixed:** a face of a `.ttc` collection other than face 0 is subset
+    from the right face - the index used to come from a list of family
+    names, wrong on Windows 11 for 14 of 30 collections (e.g. `MS UI
+    Gothic`, `Yu Gothic UI`, `Microsoft YaHei UI`)
+  - **Fixed:** Uniscribe no longer drops real text that shared its last item
+    with the terminating `#0`, and frees its glyph cache after each call
+  - `ShowText(..., NextLine = true)` with shaped text on Linux/macOS writes
+    the line feed (`T*`) before the font switch instead of after it - the
+    same page
+  - code that reads `FontShaper = nil` or `FontSubsetter = nil` as "on
+    Windows" no longer can; `NO_USE_UNISCRIBE`, set for the whole project,
+    still turns both off
+- **Fixed: the whole face of a `.ttc` collection on Windows (R-28):** with
+  `EmbeddedWholeTtf`, for PDF/A-1 and without a subsetter, a font from a
+  `.ttc` (`MS Gothic`, `Microsoft YaHei`, `Cambria`...) embedded the whole
+  collection - megabytes, and no valid font program for a PDF reader or
+  validator. Now only its face is embedded, as on Linux/macOS; a face that
+  cannot be found in its collection fails the save (see below). A font backend of your
+  own implements the new `IFontProvider.GetFaceFile`; `IFontProvider` and
+  `IFontSubsetter` have new GUIDs
+- **One font path on every platform (R-28, refactoring Phase 1, step W3):**
+  `TPdfDocument` and `TPdfFontTrueType` create, measure and read fonts
+  through the `mormot.lib.core` interfaces on Windows too - but for the
+  `TLogFontW` constructor, which still creates its font from the whole
+  LOGFONT; the PDF output is
+  unchanged. For code of your own: `IFontProvider` has a new
+  `GetGlyphAdvance` (glyph advance by glyph index); `TPdfFontTrueType` keeps
+  its request and metrics as `TFontRequest`, `TFontMetrics` and
+  `TFontOutlineMetrics` on Windows as well; the `TLogFontW` overloads stay
+  and behave as before. On
+  Linux/macOS, `TPdfCanvas.ShowGlyph` now gives a glyph no character maps
+  to its width in `/W`, as Windows did
+- **No device context in the font layer (R-28, refactoring Phase 1b):**
+  `IFontProvider.CreateFace` returns an `IFontFace`, reference counted,
+  which reads metrics, widths, glyph advances, tables and the face file
+  itself - no selection into a DC. Gone without an alias: `IFontDC`,
+  `TFontDC`, the `FontDC` global, `IFontProvider.CreateFont`, `DeleteFont`,
+  `SelectFont` and `FontDataError` (now the constant `FONT_DATA_ERROR`), the
+  DC parameter of `RegisterFontPlatform` and `EnumTrueTypeFonts`, and
+  `TPdfPlatformDC`/`IPdfPlatformDC` of `mormot.pdf.types`. `IFontProvider`
+  and `IFontEnumerator` have new GUIDs; a shaper or subsetter of your own
+  gets `IFontFace.Handle` as before the handle. On Windows
+  `mormot.lib.uniscribe` adds `GdiCreateFace(TLogFontW)` and
+  `GdiScreenLogPixels`. The PDF output is unchanged
+- **Fixed: a font asked to be embedded is never left out silently:** when
+  embedding is on (`EmbeddedTtf`, `Tagged`, PDF/A) and neither a subset nor
+  the whole face of a font can be read, saving raises `EPdfInvalidOperation`
+  naming the font. Before, the font was written without a font file - a
+  PDF/A or PDF/UA file that fails validation, without a word. And `Tagged`
+  embeds every font now even when `EmbeddedTtf` is switched off or the font
+  is put in `EmbeddedTtfIgnore` afterwards, as PDF/A always did
+- **Fixed (Win32): malformed `.ttc` collections:** `ExtractSfntFromTtc`
+  (`mormot.lib.core`) checked offsets and lengths with sums that could wrap
+  around on 32-bit, reading outside the collection; and it patched the
+  checksum of a `head` table shorter than 12 bytes past its end. Only
+  system fonts are read, so the risk was low
+- **Demos: the print date of `SOURCE_DATE_EPOCH`:** `report_demo` and
+  `mormot_demo` print the day of `SOURCE_DATE_EPOCH` (UTC, ISO 8601) when it
+  is set, as reproducible builds do, and today's date otherwise.
+  `pdfcheck run` sets it, so unchanged demo PDFs of two days compare equal,
+  and `pdfcheck compare` (as the golden-file tests) names up to ten changed,
+  added or removed objects, paired by number and also inside object streams,
+  and counts the rest - instead of only the first differing byte
 - **New (`TGDIPages`, R-29):** `BeginFrame(X, Y, Width)`/`EndFrame` let
   headings, paragraphs, tables and lists flow inside a rectangle, e.g. a
   window address with an info block beside it; `BeginArtifact`/`EndArtifact`
@@ -129,7 +247,7 @@ prefix) from a whole face well enough.
 **macOS.** Target **aarch64-darwin**. Linking prints a wall of `ld: warning:
 object file ... built for newer macOS version (11.0) than being linked
 (10.15)` — noise from the prebuilt mORMot2 units, not an error. HarfBuzz from
-Homebrew (`/opt/homebrew/lib`) is on one of the paths `mormot.pdf.hbsubset`
+Homebrew (`/opt/homebrew/lib`) is on one of the paths `mormot.lib.harfbuzz`
 probes, so no linker flag is needed; `hb-info` ships with it and is the
 quickest way to tell a CFF face from a `glyf` one. Where the poppler tools are
 missing, output is checked by file size and by reading the font dictionaries
@@ -163,8 +281,9 @@ https://gist.github.com/synopse/9e31d8808ed2575ad5ad23da6fe41e4f
 
 **Plan:** [REFACTORING.md](REFACTORING.md) — phases, steps, checks.
 
-**Alongside it** only work outside `src/`, where every refactoring PR
-lands: R-24, the checks in V (old HarfBuzz, `.ttc` on Linux — the paths
+**Alongside it** only work outside `src/`, where the refactoring PRs of this
+repository land (the `mormot.lib.*` units of Phase 1 are written in the
+`pdf-font-layer` branch of `landrix/mORMot2`): R-24, the checks in V (old HarfBuzz, `.ttc` on Linux — the paths
 Phase 1 moves), and preparing the open decisions in REFACTORING.md. Waiting
 for R-28, because a refactoring step touches the same code or the freeze
 forbids it:
@@ -610,6 +729,31 @@ instead of being shown on a failure.
 mORMot2 fork and as a PR to Synopse; then drop the `{$ifdef OSPOSIX}` in
 `tests/pdfcheck.lpr`.
 
+### `/ToUnicode` Codespace Bounds — unprioritised
+
+**Files:** `src/core/mormot.ui.pdf.pas` (`PrepareForSaving`)
+
+The codespace range of a Type0 font's `/ToUnicode` CMap is written as the
+glyphs of the first and last entry in key order, not the smallest and largest
+glyph, so it need not enclose every glyph the CMap maps (ISO 32000-1 9.10.3).
+Found in the Codex review of #20 (2026-10-08); older than that change: with
+Segoe UI's shaped glyphs 240, 241 and 4336 the range is `<0000> <00F1>` and
+`<10F0>` lies outside. **Fix:** the range from the emitted glyphs (or
+`<0000> <FFFF>`), with a test that every mapping lies inside it. Details:
+`fonts.md` §9.
+
+### Shaped Text: Real `/ToUnicode` and Vertical Offsets — after R-28 Phase 1
+
+Two gaps of shaped text, each a change of its own:
+- **Text extraction:** a shaped glyph without a code point of its own maps to
+  a PUA value (`$E000` + glyph mod 4096) in `/ToUnicode`, so copy/paste and
+  screen readers get no Arabic for it (PDF/UA relevant). Needs the source
+  text per glyph from the shaper's `Clusters`, and `/ActualText` where one
+  glyph stands for different text in different places (`fonts.md` §8)
+- **Vertical offsets:** `TFontShapedRun.YOffsets` (since `0da9d7adc`) are not
+  drawn; `TJ` moves horizontally only. Needs a text rise (`Ts`) per glyph,
+  and on Windows Uniscribe `ScriptPlace` first (`platform-backends.md`)
+
 ### The Unused WinAnsi Peer Beside a CJK or Arabic Font — unprioritised
 
 The engine creates a WinAnsi peer beside every Identity-H font and emits a `Tf`
@@ -636,16 +780,18 @@ valid; `TestTaggedUnicode` asserts that no simple TrueType font lacks
 shown, and leave an unused peer out of the page resources and the file. That
 touches the font lifecycle on every platform — see `fonts.md` §4 on the
 dual-instance model. Whether the `/Type1` peer of a CFF face needs the same
-stopgap (it too lacks `/Widths`) is to be checked with it.
+stopgap (it too lacks `/Widths`) is to be checked with it. For CFF faces the
+peer goes anyway with the CFF series of R-28 (Phase 2's bug-fix PR,
+`docs/REFACTORING.md`): a CID-keyed CFF may not be a simple `/Type1` at all.
 
 ### R-15b — Symbolic Fonts Are Not Subset on POSIX — unprioritised
 
 **Effort:** 0.5 day | **Files:** `src/core/mormot.ui.pdf.pas`,
-`src/platform/unix/mormot.pdf.freetype.pas`
+`mormot.lib.freetype` (mORMot2)
 
 The one remaining difference between the platforms that is **not** a property of
 the platform. `PrepareFontSubsets` skips a symbolic font when
-`PdfFontSubsetter <> nil`: such a font reaches its glyphs through the `(3,0)`
+`FontSubsetter <> nil`: such a font reaches its glyphs through the `(3,0)`
 cmap under the `F0xx` convention, and `AddToSubsetRequest` knows neither those
 code points nor the glyph IDs behind them, so hb-subset would drop every glyph
 the WinAnsi instance draws. Keeping the whole face is the safe answer there.
@@ -653,7 +799,7 @@ the WinAnsi instance draws. Keeping the whole face is the safe answer there.
 Windows does not need the exclusion since R-15a: `AddWinAnsiGlyphs` resolves the
 characters to glyph indices through the face itself, which works whatever cmap
 the lookup goes through. Aligning the two therefore means **improving POSIX**,
-not restricting Windows — give `IPdfPlatformFont` a character-to-glyph lookup
+not restricting Windows — give `IFontProvider` a character-to-glyph lookup
 (FreeType has `FT_Get_Char_Index`) and let `AddToSubsetRequest` fill the glyph
 list on both platforms, then drop the exclusion.
 
@@ -679,10 +825,10 @@ text blocks (B-2) and is the model to follow.
 
 ### R-11 — TTC Face Index — unprioritised
 
-**Effort:** 1 day | **Files:** `src/platform/unix/mormot.pdf.freetype.pas`,
-`src/core/mormot.pdf.types.pas`
+**Effort:** 1 day | **Files:** `mormot.lib.freetype`, `mormot.lib.core`
+(mORMot2)
 
-Only face index 0 of a `.ttc` is reachable, because `TPdfFontMap` carries no
+Only face index 0 of a `.ttc` is reachable, because `TFontFileMap` carries no
 face index. Add one so the remaining faces can be selected by name. The
 FreeType backend already extracts a single face as a standalone sfnt
 (`ExtractSfntFromTtc`), so the embedding side needs no change.

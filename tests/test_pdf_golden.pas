@@ -55,6 +55,8 @@ type
   protected
     function SaveDoc(Doc: TPdfDocument): RawByteString;
   published
+    procedure CompareReportsEveryObject;
+    procedure CompareSyntheticObjects;
     procedure Base14Untagged;
     procedure Base14Compressed;
     procedure TaggedEmbedded;
@@ -90,11 +92,12 @@ procedure TPdfGoldenTestCase.CheckGolden(const Name: RawUtf8;
 var
   fn: TFileName;
   expected, actual, err, diff: RawUtf8;
+  oe, oa: TPdfObjectSpans;
 begin
   fn := GoldenFolder + Utf8ToString(Name) + '.pdf';
   // the first assertion: the new file itself - a broken one would also make
   // a baseline every later run fails against
-  actual := NormalizePdf(Pdf, err);
+  actual := NormalizePdf(Pdf, err, oa);
   if CheckFailed(err = '', FormatString('%: %', [Name, err])) then
     exit;
   // the second: recorded, skipped or compared - a difference by Check(false),
@@ -109,10 +112,10 @@ begin
     Check(true, 'SKIP: no golden baseline - run test_runner --golden-record')
   else
   begin
-    expected := NormalizePdf(StringFromFile(fn), err);
+    expected := NormalizePdf(StringFromFile(fn), err, oe);
     if err <> '' then
       Check(false, FormatString('% golden file: %', [Name, err]))
-    else if ComparePdfText(expected, actual, diff) then
+    else if ComparePdfText(expected, actual, oe, oa, diff) then
       Check(true)
     else
     begin
@@ -164,6 +167,175 @@ begin
   finally
     ms.Free;
   end;
+end;
+
+// a tagged document: its structure elements go to an object stream
+function CompareDoc(const Alt1, Alt2, Text: RawUtf8; Pages: integer): RawByteString;
+var
+  doc: TPdfDocument;
+  ms: TMemoryStream;
+  sans, serif, mono: string;
+  p: integer;
+begin
+  doc := TPdfDocument.Create;
+  ms := TMemoryStream.Create;
+  try
+    doc.CompressionMethod := cmNone;
+    doc.Tagged := true;
+    GetPdfFonts(doc.EmbeddedTTF, sans, serif, mono);
+    for p := 1 to Pages do
+    begin
+      doc.AddPage;
+      doc.Canvas.BeginStructContent(psrFigure, Alt1);
+      doc.Canvas.Rectangle(56, 600, 120, 80);
+      doc.Canvas.Stroke;
+      doc.Canvas.EndStructContent;
+      doc.Canvas.BeginStructContent(psrFigure, Alt2);
+      doc.Canvas.Ellipse(200, 600, 120, 80);
+      doc.Canvas.Stroke;
+      doc.Canvas.EndStructContent;
+      doc.Canvas.BeginStructContent(psrP);
+      doc.Canvas.SetFont(StringToUtf8(sans), 12, [], PDF_DEFAULT_CHARSET);
+      DrawUtf8Text(doc, 56, 500, Text);
+      doc.Canvas.EndStructContent;
+    end;
+    doc.SaveToStream(ms, GOLDEN_DATE);
+    FastSetRawByteString(result, ms.Memory, ms.Size);
+  finally
+    ms.Free;
+    doc.Free;
+  end;
+end;
+
+procedure TPdfGoldenTests.CompareReportsEveryObject;
+var
+  a, b, err, diff: RawUtf8;
+  oa, ob: TPdfObjectSpans;
+
+  function Differs(const PdfB: RawByteString): boolean;
+  begin
+    b := NormalizePdf(PdfB, err, ob);
+    CheckEqual(err, '', 'b normalized');
+    result := not ComparePdfText(a, b, oa, ob, diff);
+  end;
+
+begin
+  { pdfcheck and CheckGolden name every differing object, paired by number:
+    an expected difference (a date) must not hide another one further on -
+    also inside one object stream, and text that looks like an object
+    header is no object }
+  a := NormalizePdf(CompareDoc('one', 'two', 'x 99 0 obj y', 1), err, oa);
+  CheckEqual(err, '', 'normalized');
+  Check(length(oa) > 5, 'objects found');
+  Check(not Differs(CompareDoc('one', 'two', 'x 99 0 obj y', 1)), 'equal');
+  CheckEqual(diff, '', 'no difference to tell');
+  Check(Differs(CompareDoc('ONE', 'TWO', 'x 99 0 obj y', 1)),
+    'two structure elements differ');
+  Check(PosEx('object', diff, PosEx('object', diff) + 1) > 0,
+    'both named: ' + Utf8ToString(diff));
+  Check(PosEx('added', diff) + PosEx('removed', diff) = 0, 'none added');
+  Check(Differs(CompareDoc('one', 'two', 'x 99 0 obj z', 1)), 'text differs');
+  Check(PosEx('object 99 0', diff) = 0, 'no object 99 in a string');
+  Check(Differs(CompareDoc('one', 'two', 'x 99 0 obj y', 2)), 'a page more');
+  Check(PosEx('added', diff) > 0, 'the objects of the new page added');
+end;
+
+// a minimal PDF of the objects (number, body), in this order, with a valid
+// xref table: what NormalizePdf checks
+function MiniPdf(const Nums: array of integer;
+  const Bodies: array of RawUtf8): RawUtf8;
+var
+  i, n, x: integer;
+  offs: array of integer;
+  num: RawUtf8;
+begin
+  result := '%PDF-1.4'#10;
+  n := 0;
+  for i := 0 to high(Nums) do
+    if Nums[i] > n then
+      n := Nums[i];
+  SetLength(offs, n + 1);
+  for i := 0 to high(Nums) do
+  begin
+    offs[Nums[i]] := length(result);
+    result := result + Int32ToUtf8(Nums[i]) + ' 0 obj'#10 + Bodies[i] +
+      #10'endobj'#10;
+  end;
+  x := length(result);
+  result := result + 'xref'#10'0 ' + Int32ToUtf8(n + 1) + #10 +
+    '0000000000 65535 f '#10;
+  for i := 1 to n do
+  begin
+    num := Int32ToUtf8(offs[i]);
+    while length(num) < 10 do
+      num := '0' + num;
+    result := result + num + ' 00000 n '#10;
+  end;
+  result := result + 'trailer'#10'<</Size ' + Int32ToUtf8(n + 1) + '>>'#10 +
+    'startxref'#10 + Int32ToUtf8(x) + #10'%%EOF'#10;
+end;
+
+// an uncompressed object stream of the members 10, 11..., offsets from
+// /First; Prefix goes before the first member, which no offset covers
+function ObjStm(const Members: array of RawUtf8; const Prefix: RawUtf8): RawUtf8;
+var
+  i, o: integer;
+  head, data: RawUtf8;
+begin
+  head := '';
+  data := Prefix;
+  o := length(Prefix);
+  for i := 0 to high(Members) do
+  begin
+    head := head + Int32ToUtf8(10 + i) + ' ' + Int32ToUtf8(o) + ' ';
+    data := data + Members[i];
+    inc(o, length(Members[i]));
+  end;
+  result := '<</Type/ObjStm/N ' + Int32ToUtf8(length(Members)) + '/First ' +
+    Int32ToUtf8(length(head)) + '/Length ' + Int32ToUtf8(length(head + data)) +
+    '>>stream'#10 + head + data + #10'endstream';
+end;
+
+procedure TPdfGoldenTests.CompareSyntheticObjects;
+var
+  a, b, err, diff: RawUtf8;
+  oa, ob: TPdfObjectSpans;
+
+  function Compare(const PdfA, PdfB: RawUtf8): boolean;
+  begin
+    a := NormalizePdf(PdfA, err, oa);
+    CheckEqual(err, '', 'a normalized');
+    b := NormalizePdf(PdfB, err, ob);
+    CheckEqual(err, '', 'b normalized');
+    result := ComparePdfText(a, b, oa, ob, diff);
+  end;
+
+begin
+  // a string that looks like an object header is no object
+  Check(not Compare(MiniPdf([1], ['(x'#10'99 0 obj'#10'y)']),
+                    MiniPdf([1], ['(x'#10'99 0 obj'#10'z)'])), 'string');
+  Check(PosEx('object 1 0', diff) > 0, 'the object named');
+  Check(PosEx('object 99', diff) = 0, 'no object 99');
+  // two members of one object stream, each named
+  Check(not Compare(MiniPdf([1], [ObjStm(['(a) ', '(b) '], '')]),
+                    MiniPdf([1], [ObjStm(['(A) ', '(B) '], '')])), 'object stream');
+  Check((PosEx('object 10 0', diff) > 0) and (PosEx('object 11 0', diff) > 0),
+    'both members named');
+  // bytes before the first member are no member: the stream is compared
+  // as one piece, and they are not lost
+  Check(not Compare(MiniPdf([1], [ObjStm(['(z)'], '(A) ')]),
+                    MiniPdf([1], [ObjStm(['(z)'], '(B) ')])), 'bytes before');
+  // the same objects in another order
+  Check(not Compare(MiniPdf([1, 2], ['(x)', '(y)']),
+                    MiniPdf([2, 1], ['(y)', '(x)'])), 'reordered');
+  Check(diff <> '', 'the order named');
+  // an object defined twice (incremental update): the second one compared
+  Check(not Compare(MiniPdf([1, 1], ['(x)', '(y)']),
+                    MiniPdf([1, 1], ['(x)', '(z)'])), 'redefined');
+  Check(diff <> '', 'the second definition named');
+  // empty on either side
+  Check(not ComparePdfText('', 'x', nil, nil, diff), 'empty a');
+  Check(not ComparePdfText('x', '', nil, nil, diff), 'empty b');
 end;
 
 procedure TPdfGoldenTests.Base14Untagged;

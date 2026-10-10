@@ -47,9 +47,27 @@ function BatchExportFile(out FileName: TFileName): boolean;
 implementation
 
 uses
+  mormot.core.datetime,
   mormot.core.text,
   mormot.core.os,
   mormot.core.unicode;
+
+/// the date the report shows: today, or the day of SOURCE_DATE_EPOCH (UTC,
+// ISO 8601) when set - pdfcheck sets it, so that two runs on other days
+// give the same PDF (reproducible builds, as pdfTeX or Sphinx do)
+function ReportDate: RawUtf8;
+var
+  epoch: RawUtf8;
+  seconds: Int64;
+begin
+  epoch := StringToUtf8(GetEnvironmentVariable('SOURCE_DATE_EPOCH'));
+  if (epoch <> '') and
+     ToInt64(epoch, seconds) and
+     (seconds >= 0) then
+    result := DateToIso8601(UnixTimeToDateTime(seconds), true)
+  else
+    result := StringToUtf8(DateToStr(Now));
+end;
 
 const
   // the placeholder of an empty table, an em dash as UTF-8
@@ -202,7 +220,7 @@ begin
   Report.FontStyle := [];
   Report.TextColor := clBlack;
   Report.DrawText(0, Report.CurrentY,
-    Options.Company + '  |  ' + StringToUtf8(DateToStr(Now)));
+    Options.Company + '  |  ' + ReportDate);
   Report.MoveToNextLine(800);
 
   // Decorative line
@@ -295,7 +313,7 @@ begin
     if Options.Header then
       Result.SetHeader(Options.Company + '   |   ' + Options.Title);
     if Options.Footer then
-      Result.SetFooter('Created: ' + StringToUtf8(DateToStr(Now)) +
+      Result.SetFooter('Created: ' + ReportDate +
         '   Page {#} of {total}');
 
     // --- Begin first page ---
