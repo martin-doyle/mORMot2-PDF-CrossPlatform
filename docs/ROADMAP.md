@@ -20,7 +20,8 @@ the invoice XML) also veraPDF `3u` and Mustang. **Next:** R-28, the
 integration into the mORMot2 trunk, under a feature freeze. Alongside it only
 what stays out of `src/`: R-24 (CI) and the open checks in V. The rest of
 R-26, R-20 steps 7–8, R-22, the Windows subset size, thinner table
-borders and the richer structure of R-29 wait until R-28 is done.
+borders, the undrawn underline and strike-out and the richer structure of
+R-29 wait until R-28 is done.
 
 ---
 
@@ -512,6 +513,78 @@ integer. Where to start: whether `TPdfVclCanvas` can take a fractional pen
 width beside `Pen.Width` (as `TextOutFrac` does for text positions), then a
 `TTableLayout.GridWidth` in 1/100 mm, 0 = today's pixel. Delphi 7 draws
 through the bridge reference too (R-20), so both paths need it.
+
+### Underline and Strike-Out Are Not Drawn — bug, fix after R-28
+
+Found on 2026-10-10 in `invoice_demo` (branch `feature/invoice-demo`), whose
+mail link shows two font objects of one face in `pdffonts`. **No layer draws
+underline or strike-out into the PDF**: after the text the content stream
+has no line, only `BT … Tj ET`. Measured on Linux with small test programs,
+on that branch and on `main` (`ad6c632`) alike:
+
+| Layer | Call | Line drawn | Font objects |
+|---|---|---|---|
+| 1 `TPdfCanvas` | `SetFont(…, [pfsUnderline])` / `[pfsStrikeOut]` | none | 3 (plain, underline, strike-out) |
+| 1, `StandardFontsReplace` | the same | none | 1 (Helvetica) |
+| 2 `TPdfVclCanvas` | `Font.Style := [fsUnderline]` / `[fsStrikeOut]` | none | 3 |
+| 2, `StandardFontsReplace` | the same | none | 1 |
+| 3 `TGDIPages` | `FontStyle := [fsUnderline]` / `[fsStrikeOut]`, `DrawLink` | none | 2 |
+
+So the style only costs a second font dictionary, descriptor and
+`/ToUnicode` (about 1 KB; the `/FontFile2` is shared, the subset tag the
+same), and with the base-14 fonts it is lost without a trace. Text set
+struck through reads as plain text (a cancelled price), and a link is told
+from its sentence by its colour alone (WCAG 1.4.1) — in a tagged
+`invoice_demo`, of all files. The preview probably shows the line, the
+widgetset draws it there: not checked, nor Windows and macOS (same path,
+same result expected; the macOS `invoice_demo` has the same two font
+objects).
+
+**Why.** The original never drew it in `TPdfCanvas` either: only the EMF
+path did, `TPdfEnum.TextOut` drawing a line after the text for
+`lfUnderline`/`lfStrikeOut` (`reference/mormot.ui.pdf.pas`, around line
+12464). The Windows report went through a metafile then; the cross-platform
+engine draws through `TPdfVclCanvas` straight onto `TPdfCanvas`, and the
+line was lost on the way. The second font object: in the original the font
+lookup by name (`GetRegisteredTrueTypeFont`, around line 7578) compares the
+whole `TPdfFontStyles`, `pfsUnderline` included — where the lookup by
+`TLogFontW` (`CompareLogFontW`) ignores underline and strike-out on purpose,
+"internal to PDF graphics state". The measurements fit that; `src/` was not
+read for this entry.
+
+**The fix.** In `TPdfCanvas`, so that all three layers and the base-14 fonts
+get it: after the text a line in the text colour, position and thickness
+from the face (`post` underline position and thickness, `OS/2` strike-out
+position and size; for the base-14 fonts from their AFM values), over the
+advance of the run, shaped runs included. Compare `pfsBold`/`pfsItalic`
+only in the font lookup, so one face is one font object again.
+
+In tagged output the line is decoration and the meaning goes into the
+structure, as for table grids and frames:
+- the line as an artifact, drawn **after** the `EMC` of the text's marked
+  content: drawn while the element is open it would be real content of it
+  (`pdf-engine.md`, Artifacts), and an artifact inside tagged content is
+  not allowed - `BeginArtifact` inside a region raises, veraPDF `ua1`
+  checks it
+- the meaning as a layout attribute of the text's element (`Span`, `Link`,
+  `P`): `/A <</O /Layout /TextDecorationType /Underline>>`, or
+  `/LineThrough` for strike-out (ISO 32000-1, inline-level layout
+  attributes; `TextDecorationColor`, `TextDecorationThickness` optional).
+  The engine writes `/A` attributes already (`/O /Table /Scope` on `TH`,
+  `/O /Layout /BBox` on `Figure`). On a `Link` the role says enough, the
+  attribute does no harm
+
+Screen readers hardly announce `TextDecorationType` (NVDA, JAWS; not
+tested): where a strike-out carries meaning, a cancelled price, it belongs
+in the text ("statt 50,00") or an `/ActualText` - the caller's part, not
+the engine's.
+
+Tests: the line in the content stream for both styles, on layer 1 and
+through `TGDIPages`; in tagged output the line inside `/Artifact BMC … EMC`
+and outside every MCID sequence, the attribute on the element. The golden
+files of every demo that underlines change (`invoice_demo`'s link at
+least); veraPDF `ua1` and PAC 2024 on them. Leaves `src/` alone until R-28
+is done.
 
 ### R-29 — Richer Logical Structure — after R-28
 
