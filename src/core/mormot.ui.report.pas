@@ -38,7 +38,7 @@ uses
               // also re-exports TPdfFontMeasurer (layout metrics)
 
 { what the ExportPdf* options take, re-exported: a report program uses this
-  unit only - mormot.ui.pdf beside it hides psA4 or TRect, depending on the
+  unit only - mormot.pdf beside it hides psA4 or TRect, depending on the
   order of the uses clause }
 type
   TPdfALevel = mormot.ui.pdfcanvas.TPdfALevel;
@@ -660,7 +660,7 @@ type
     /// remove the files added by AddExportPdfAttachment
     procedure ClearExportPdfAttachments;
     /// raw XMP added to the metadata of a PDF/A export
-    // - e.g. PdfMetadataFacturX() from mormot.ui.pdf
+    // - e.g. PdfMetadataFacturX() from mormot.pdf
     property ExportPdfMetadataExtension: RawUtf8
       read fExportPdfMetadataExtension write fExportPdfMetadataExtension;
     /// how a viewer opens the exported PDF, pmUseNone (default) by its choice
@@ -680,7 +680,7 @@ function MMToPixels(Value100: Integer; DPI: Integer): Integer;
 function PixelsToMM(Pixels: Integer; DPI: Integer): Integer;
 
 /// the ZUGFeRD/Factur-X XMP for ExportPdfMetadataExtension
-// - re-exports mormot.ui.pdf.PdfMetadataFacturX, see there
+// - re-exports mormot.pdf.PdfMetadataFacturX, see there
 function PdfMetadataFacturX(const ConformanceLevel: RawUtf8;
   const DocumentFileName: RawUtf8 = 'factur-x.xml';
   const Version: RawUtf8 = '1.0'; const DocumentType: RawUtf8 = 'INVOICE'): RawUtf8;

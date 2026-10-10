@@ -22,7 +22,7 @@ veraPDF and PAC 2024 on all three platforms.
 ```
 TGDIPages           mormot.ui.report     Document layout, tables, H1-H6
 TPdfDocumentVcl     mormot.ui.pdfcanvas  TCanvas-compatible wrapper
-TPdfDocument        mormot.ui.pdf        Direct PDF API, no TCanvas (links the LCL/VCL Graphics unit)
+TPdfDocument        mormot.pdf           Direct PDF API, no TCanvas, no VCL/LCL
 ```
 
 ### Which unit to use
@@ -33,13 +33,13 @@ layer's API takes from below, that layer re-exports:
 | Layer | `uses` | Re-exports |
 |---|---|---|
 | 3 — `TGDIPages` | `mormot.ui.report`; a GUI adds `mormot.ui.reportpreview` for preview and printing | what the `ExportPdf*` options take: `TPdfALevel` (`pdfaNone` … `pdfa3U`), `TPdfFileFormat` (`pdf13` … `pdf17`), `TPdfAFRelationship` (`afr*`), `PdfMetadataFacturX` |
-| 2 — `TPdfDocumentVcl` | `mormot.ui.pdfcanvas`, `mormot.ui.pdf` | `TPdfALevel`, `TPdfAFRelationship`, `PdfMetadataFacturX`; the rest of the document API comes from `mormot.ui.pdf` |
-| 1 — `TPdfDocument` | `mormot.ui.pdf` | — |
+| 2 — `TPdfDocumentVcl` | `mormot.ui.pdfcanvas`, `mormot.pdf` | `TPdfALevel`, `TPdfAFRelationship`, `PdfMetadataFacturX`; the rest of the document API comes from `mormot.pdf` |
+| 1 — `TPdfDocument` | `mormot.pdf` | — |
 
-`mormot.pdf.types` goes beside layers 1 and 2 for the structure roles
-(`psrH1`, `psrP`, …) and `GetPdfFonts`.
+The structure roles (`psrH1`, `psrP`, …) and `GetPdfFonts` come with
+`mormot.pdf` (declared in `mormot.pdf.types`, re-exported).
 
-**The platform units need no `uses` of yours.** `mormot.ui.pdf` pulls in GDI
+**The platform units need no `uses` of yours.** `mormot.pdf` pulls in GDI
 and Uniscribe on Windows, and FreeType2, the HarfBuzz shaper and the hb-subset
 font subsetter on Linux and macOS. HarfBuzz is loaded at run time: where the
 library is missing, text is drawn unshaped and fonts are embedded whole.
@@ -51,11 +51,11 @@ either way. `RightToLeftText := True` on the canvas sets the paragraph
 direction; without it the direction comes from the script. Set the switch
 without a conditional — see [rtl_demo](examples/rtl_demo/).
 
-**Never put `mormot.ui.pdf` beside `mormot.ui.report`.** The two use some of
+**Never put `mormot.pdf` beside `mormot.ui.report`.** The two use some of
 the same names for different things — `psA4` is a `TPdfPaperSize` in one and
-a `TGdiPagePaperSize` in the other, and `mormot.ui.pdf`'s `TRect` is not the
+a `TGdiPagePaperSize` in the other, and `mormot.pdf`'s `TRect` is not the
 LCL's — so the order of the `uses` clause decides which one a name means.
-With `mormot.ui.pdf` last, `Report.PaperSize := psA4` does not compile. What a
+With `mormot.pdf` last, `Report.PaperSize := psA4` does not compile. What a
 report needs from below is re-exported by `mormot.ui.report`; if something is
 missing, it belongs there, not in your `uses` clause.
 
@@ -66,7 +66,7 @@ missing, it belongs there, not in your `uses` clause.
 ### Layer 1 — Direct PDF API (no TCanvas)
 
 ```pascal
-uses mormot.ui.pdf;
+uses mormot.pdf;
 
 Doc := TPdfDocument.Create;
 Doc.DefaultPaperSize := psA4;
@@ -84,7 +84,7 @@ Coordinates are in PDF points (72 DPI), Y = 0 at the lower-left corner.
 ### Layer 2 — TCanvas API
 
 ```pascal
-uses mormot.ui.pdf, mormot.ui.pdfcanvas;
+uses mormot.pdf, mormot.ui.pdfcanvas;
 
 Doc := TPdfDocumentVcl.Create;
 Doc.EmbeddedTTF := False;
@@ -336,7 +336,8 @@ as exit code. The app needs an NDK build of `libfreetype.so`, see
 [BUILD-FREETYPE.md](tests/delphi13/android/BUILD-FREETYPE.md).
 
 Do not put `mORMot2\src\ui` on a Delphi search path: it holds the original
-`mormot.ui.pdf`, which the compiler would take instead of this project's.
+`mormot.ui.pdf`, `mormot.ui.report` and `mormot.ui.core` - the last two have
+the names of this project's units, which the compiler would take instead.
 
 The two GUI demos also export without their window, which is what the
 automated checks use:

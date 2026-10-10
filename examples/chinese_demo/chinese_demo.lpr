@@ -30,8 +30,7 @@ uses
   mormot.core.base,
   mormot.core.os,
   mormot.core.unicode,
-  mormot.pdf.types,   // GetPdfFonts
-  mormot.ui.pdf,
+  mormot.pdf,         // TPdfDocument, GetPdfFonts
   mormot.ui.pdfcanvas;
 
 {$R *.res}

@@ -2,7 +2,7 @@
 
 Contracts: `src/lib/mormot.lib.core.pas` of mORMot2 (during the refactoring
 the branch `pdf-font-layer` of `landrix/mORMot2`, see `docs/REFACTORING.md`)
-Former names, as aliases: `src/core/mormot.pdf.types.pas`
+Former names, as aliases: `src/pdf/mormot.pdf.types.pas`
 Windows backend: mORMot2 `src/lib/mormot.lib.uniscribe.pas` (the GDI services)
 Unix/macOS backends: mORMot2 `src/lib/mormot.lib.freetype.pas` and
 `mormot.lib.harfbuzz.pas` (shaper and subsetter), in the same branch
@@ -20,7 +20,7 @@ counted - no destructor deletes a font any more). `TPdfFaceMetrics`
 (`TPdfFontMeasurer`) holds a face as well. Shaping and subsetting go through
 `FontShaper` and `FontSubsetter` (W2) with the face's native `Handle`.
 
-What stays Windows-only in `mormot.ui.pdf`:
+What stays Windows-only in `mormot.pdf`:
 - the `TLogFontW` overloads (`TPdfCanvas.SetFont(HDC, TLogFontW)`,
   `TPdfFontTrueType.Create(..., TLogFontW, ...)`,
   `GetRegisteredTrueTypeFont(TLogFontW)`). `SetFont(HDC, ...)` reduces the
@@ -36,12 +36,14 @@ What stays Windows-only in `mormot.ui.pdf`:
   whose `.res` carries the Lazarus DPI-aware manifest gets the real DPI (144
   at 150 % scaling), and `TGDIPages` lays its pages out with it - compare
   demo PDFs only between builds with the same `.res`
-- the EMF code (`USE_METAFILE`): `TPdfDocument.EmfDC`, a compatible DC made
-  when first needed, for `TMetaFileCanvas`, `EnumEnhMetaFile`, `TPdfEnum`'s
-  own fonts and `GetTextExtentPoint32W`, which selects the face's HFONT for
-  that one measure
-- `AddGlyphs` with `TScriptVisAttr`; the printer and GDI+ code; the code page
-  helpers (`LCIDToCodePage`, `CharNextA`), which are no font matter
+- `TPdfDocument.EmfDC` (`USE_METAFILE`), a compatible DC made when first
+  needed - it stays in the engine, protected; the EMF renderer that uses it
+  for `TMetaFileCanvas`, `EnumEnhMetaFile`, `TPdfEnum`'s own fonts and
+  `GetTextExtentPoint32W` (which selects the face's HFONT for that one
+  measure) moved to `mormot.pdf.canvas` in R-28 Phase 2, with the printer
+  helpers and the `TBitmap`/`TGraphic` conversion (GDI+ JPEG)
+- `AddGlyphs` with `TScriptVisAttr`; the code page helpers
+  (`LCIDToCodePage`, `CharNextA`), which are no font matter
 
 Before W3, under `{$ifdef OSWINDOWS}` the core called GDI directly:
 `CreateCompatibleDC`/`GetDeviceCaps` in the constructor,
@@ -231,7 +233,7 @@ if not FontPlatformRegistered then
   raise ESynException.Create('No PDF platform registered');
 ```
 
-**Who pulls the units in — `mormot.ui.pdf`, never the application.** Its
+**Who pulls the units in — `mormot.pdf`, never the application.** Its
 interface `uses` takes `mormot.lib.uniscribe` on Windows (always: it holds
 the GDI services; `NO_USE_UNISCRIBE`, set for the whole project, leaves its
 shaper and subsetter unregistered, so no shaping and the whole faces
@@ -425,7 +427,7 @@ end;
 var FontSubsetter: IFontSubsetter;  // mormot.lib.core; nil = no subsetter
 ```
 
-- `mormot.ui.pdf` uses `mormot.lib.harfbuzz` on POSIX itself, like the FreeType
+- `mormot.pdf` uses `mormot.lib.harfbuzz` on POSIX itself, like the FreeType
   backend: no project-side `uses` needed. Its `initialization` calls
   `LoadHarfBuzzSubset` and registers only when every symbol resolved, so
   `FontSubsetter <> nil` means "usable"
@@ -484,7 +486,7 @@ var FontSubsetter: IFontSubsetter;  // mormot.lib.core; nil = no subsetter
 
 ## Document-Independent Measurement — TPdfFontMeasurer
 
-`mormot.ui.pdf.pas` exposes the metrics of a face **without a `TPdfDocument`**, so `TGDIPages` can lay out its pages with the widths the PDF will really use (ROADMAP B-5):
+`mormot.pdf.pas` exposes the metrics of a face **without a `TPdfDocument`**, so `TGDIPages` can lay out its pages with the widths the PDF will really use (ROADMAP B-5):
 
 ```pascal
 var M: TPdfFontMeasurer;
@@ -509,10 +511,10 @@ end;
 Every unit starts with `{$I mormot.defines.inc}` after `interface` (by name, no relative path).
 
 - **Enum size does not reach the C libraries.** `mormot.defines.inc` sets `{$MINENUMSIZE 1}` and `{$PACKSET 1}`, but the bindings in `mormot.lib.freetype` and `mormot.lib.harfbuzz` declare every C enum as `integer` and hold no set. Keep it that way in new bindings.
-- **The `{$ifdef FPC}` branches that remain are real differences.** The six in `mormot.ui.pdf` all come from the original (`reference/`): LCL against VCL units, the compatibility types, and three Windows API calls FPC declares differently — `EnumPrinters` (pointers), `GdiComment` (`var`), `EnumEnhMetaFile` (`RECT`); the fourth, `CreateFontIndirectW` on a `const` parameter in the `TPdfFontTrueType` constructor, went with W3: the `TLogFontW` constructor passes a local copy, a `var` that fits both declarations. No mORMot2 function wraps them. The GDI services in `mormot.lib.uniscribe` need no branch: a local `var` fits both. The branches in `mormot.ui.core` and `mormot.ui.gdiplus` come with the mORMot2 originals. The one around all of `mormot.ui.report` is gone since R-20.
+- **The `{$ifdef FPC}` branches that remain are real differences.** Those of `mormot.pdf` and `mormot.pdf.canvas` (six in one unit before R-28 Phase 2) all come from the original (`reference/`): LCL against VCL units, the compatibility types, and three Windows API calls FPC declares differently — `EnumPrinters` (pointers), `GdiComment` (`var`), `EnumEnhMetaFile` (`RECT`); the fourth, `CreateFontIndirectW` on a `const` parameter in the `TPdfFontTrueType` constructor, went with W3: the `TLogFontW` constructor passes a local copy, a `var` that fits both declarations. No mORMot2 function wraps them. The GDI services in `mormot.lib.uniscribe` need no branch: a local `var` fits both. The branches in `mormot.ui.core` and `mormot.ui.gdiplus` come with the mORMot2 originals. The one around all of `mormot.ui.report` is gone since R-20.
 - **LCL against VCL units** (R-20): `mormot.ui.pdfcanvas` and `mormot.ui.report` take `LCLIntf`/`LCLType` under FPC and `Windows` under Delphi — `Windows` *before* `Graphics`, or its record `TBitmap` hides the class (dozens of errors on every `TBitmap.Create`).
 - **`PDF_CANVASVIRTUAL`** (`mormot.ui.pdfcanvas`, defined under FPC): the LCL's `TCanvas` drawing methods are virtual, Delphi 7's are static. The bridge declares `TextOut`, `TextExtent`, `TextWidth`, `TextHeight`, `Rectangle`, `Ellipse`, `RoundRect`, `Draw` with `override` or `reintroduce` by this switch, and has `DoMoveTo`/`DoLineTo` (LCL) or reintroduced `MoveTo`/`LineTo` (Delphi). `DoLineTo` checks `psClear` itself: `TFPCustomCanvas.LineTo` skips it then, our Delphi `LineTo` does not.
-- **Delphi on Linux/Android** (R-27): the POSIX backends load their libraries through `TSynLibrary` of `mormot.core.os` (before Phase 1: `LibraryOpen`/`LibraryResolve`) — FPC's `dynlibs` does not exist there, and `TLibHandle` comes from `System` under FPC, from `mormot.core.os` under Delphi. `mormot.ui.pdf` turns `USE_GRAPHICS_UNIT` off for Delphi on `OSPOSIX` (no VCL): the `TBitmap`/`TGraphic` image API is left out, `GetSysColor` and `MM_TEXT` get local fallbacks. Android: `/system/fonts` is scanned, Roboto is the last fallback face; the app has to ship an NDK-built `libfreetype.so` (a glibc build does not load), and a program without a configured `TSynLog` family crashed in `TSynLog.FillInfo` on the first raised exception — configure it as `TSynTests.RunAsConsole` does.
+- **Delphi on Linux/Android** (R-27): the POSIX backends load their libraries through `TSynLibrary` of `mormot.core.os` (before Phase 1: `LibraryOpen`/`LibraryResolve`) — FPC's `dynlibs` does not exist there, and `TLibHandle` comes from `System` under FPC, from `mormot.core.os` under Delphi. There is no VCL there: `mormot.pdf.canvas` (the `TBitmap`/`TGraphic` image functions, EMF) is not for these targets, and `mormot.pdf` - which needs no VCL/LCL since R-28 Phase 2 - takes `GetSysColor` and `MM_TEXT` from its fallback block on every POSIX target, FPC included. Android: `/system/fonts` is scanned, Roboto is the last fallback face; the app has to ship an NDK-built `libfreetype.so` (a glibc build does not load), and a program without a configured `TSynLog` family crashed in `TSynLog.FillInfo` on the first raised exception — configure it as `TSynTests.RunAsConsole` does.
 - **Delphi 7 syntax** met in R-20: every declaration of an overloaded method needs `overload` (FPC accepts it on one); no `Default(T)` — `mormot.ui.report` has `NewCommand` (`Finalize` + `FillChar`); no typed constants with dynamic-array fields — build a `TTableLayout` in a function, zeroed first like a constant's omitted fields.
 
 ---
@@ -527,7 +529,7 @@ Every unit starts with `{$I mormot.defines.inc}` after `interface` (by name, no 
 3. Register in `initialization` via `RegisterFontPlatform(Provider, Enumerator)`
 4. Add conditional `uses` in the application project
 
-No changes to `mormot.ui.pdf.pas` required.
+No changes to `mormot.pdf.pas` required.
 
 ---
 
@@ -541,7 +543,7 @@ uses those of `mormot.lib.core` (`PdfPlatformFont` -> `FontProvider`,
 `PdfPlatformDCProvider` -> `FontDC`, `IPdfTextShaper.ShapeText` ->
 `IFontShaper.Shape`...).
 
-**Global use in `mormot.ui.pdf`** (code references, comments not counted):
+**Global use in `mormot.pdf`** (code references, comments not counted):
 `PdfPlatformFont` 29, `PdfPlatformDCProvider` 6, `PdfFontSubsetter` 4,
 `PdfTextShaper` 3, `PdfSystemFonts` 1 - 43 in all. Besides,
 `PdfPlatformRegistered` in `mormot.pdf.types` reads three of them, and the
@@ -630,7 +632,7 @@ branch (`docs/REFACTORING.md`, Phase 1, "Where the code lives").
 - The HarfBuzz shaper reaches the FreeType face through the public
   `TPdfFTContext` record behind the font handle, and sizes it to 1000 per em
   with `PdfFTSetEmSize1000` first (`hb_ft_font_create` copies the scale)
-- `NeedsShaping` is not in the shaper: `mormot.ui.pdf` decides before it
+- `NeedsShaping` is not in the shaper: `mormot.pdf` decides before it
   calls `ShapeText`. The shaper returns one run - glyphs, advances, offsets,
   clusters - or false; it filters nothing
 - `hbsubset` ignores any face index (`hb_face_create(blob, 0)`): the engine
@@ -643,7 +645,7 @@ branch (`docs/REFACTORING.md`, Phase 1, "Where the code lives").
   turned into a function would break them
 
 **The Windows paths, read on 2026-10-07** (for the Uniscribe shaper and the
-FontSub subsetter in `mormot.lib.uniscribe`; read in `mormot.ui.pdf`:
+FontSub subsetter in `mormot.lib.uniscribe`; read in `mormot.pdf`:
 `AddUnicodeHexTextUniScribe`, `AddGlyphs`, `AddUnicodeHexText`,
 `AddUnicodeHexTextNoUniScribe`, `SubsetWithFontPackage`, `AddWinAnsiGlyphs`,
 `GetTtcIndex`, `PrepareFontSubsets`):
@@ -698,7 +700,7 @@ FontSub subsetter in `mormot.lib.uniscribe`; read in `mormot.ui.pdf`:
   `Request.Unicodes`, which also hold the code points of Identity-H text
 
 **The Windows bypass, checked on 2026-10-07** (search for the GDI font calls
-in `mormot.ui.pdf`, hit lines with their POSIX branch read): still there.
+in `mormot.pdf`, hit lines with their POSIX branch read): still there.
 Under `OSWINDOWS` the engine calls GDI itself where POSIX calls the
 `mormot.lib.core` services - `GetTtfData` (`windows.GetFontData`),
 `TPdfFontTrueType.Create` (`CreateFontIndirectW`, `GetTextMetrics`,
@@ -718,7 +720,7 @@ as a bug fix (2026-10-09): it read the whole collection and wrote it to
 
 **W2 done (2026-10-08):** `TUniscribeShaper` and `TFontSubSubsetter` in
 `mormot.lib.uniscribe`, `NeedsShaping` in the HarfBuzz shaper,
-`SupportsSymbolic` in the contract; in `mormot.ui.pdf` one caller
+`SupportsSymbolic` in the contract; in `mormot.pdf` one caller
 (`AddUnicodeHexTextShaped`/`AddShapedRun`), `PrepareFontSubsets` through
 `FontSubsetter` only - `AddUnicodeHexTextUniScribe`,
 `AddUnicodeHexTextHarfBuzz`, `SubsetWithFontPackage`, `AddWinAnsiGlyphs`,

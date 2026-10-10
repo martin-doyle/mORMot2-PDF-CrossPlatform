@@ -1,16 +1,19 @@
 # PDF Engine — TPdfDocument / TPdfDocumentVcl
 
-Source: `src/core/mormot.ui.pdf.pas`, canvas bridge: `src/core/mormot.ui.pdfcanvas.pas`
-FPImage adapter: `src/core/mormot.pdf.fpimage.pas`
+Source: `src/pdf/mormot.pdf.pas`, canvas bridge: `src/core/mormot.ui.pdfcanvas.pas`
+FPImage adapter: `src/pdf/mormot.pdf.fpimage.pas`
 
 ## Two Entry Points
 
 | Class | Coordinates | Dependency | When to use |
 |---|---|---|---|
-| `TPdfDocument` | PDF points (72 DPI), Y=0 bottom | mORMot2-Core + the LCL/VCL `Graphics` unit | Server/CLI, no TCanvas |
+| `TPdfDocument` | PDF points (72 DPI), Y=0 bottom | mORMot2-Core and the font backend - no VCL/LCL (R-28 Phase 2; `TBitmap`/EMF: `mormot.pdf.canvas`) | Server/CLI, no TCanvas |
 | `TPdfDocumentVcl` | pixels (96 DPI), Y=0 top | + TCanvas bridge; LCL, and the VCL on Delphi 7 (R-20) | TCanvas-compatible code, GUI apps |
 
-`TPdfDocumentGdi` (Windows-only, Delphi) uses EMF/GDI — not ported.
+`TPdfDocumentGdi` (Windows-only) uses EMF/GDI — not ported; since R-28 Phase 2 it lives
+in `mormot.pdf.canvas` with `RenderMetaFile`, the `GdiComment*` procedures, the printer
+helpers and the `TBitmap`/`TGraphic` image functions. The adapter reaches the engine's
+protected state through implementation-local access classes (`TPdfCanvasAccess` ...).
 
 **Compilers.** `TPdfDocument`/`TPdfCanvas` build with FPC everywhere and with
 Delphi 7 for Win32 (R-19, `tests\build_delphi7.bat`), and so does
@@ -115,7 +118,7 @@ PDF_PERMISSION_NOCOPYNORPRINT // no copy and no print
 ## TPdfDocument — Direct PDF API
 
 ```pascal
-uses mormot.ui.pdf;
+uses mormot.pdf;
 
 Doc := TPdfDocument.Create;
 Doc.DefaultPaperSize := psA4;     // psA4, psLetter, psA3, psA5, ...
@@ -178,7 +181,8 @@ Doc.CreateHyperLink(Rect, 'http://', ...)  // external link
 Doc.CreateAnnotation(Type, Rect, Border)   // free annotation
 
 // Images
-Doc.CreateOrGetImage(Bitmap, ...)          // embed image, deduplicated; returns XObject name
+Doc.CreateOrGetImage(Pixels, ...)          // raw pixels (TPdfImagePixels), deduplicated; returns XObject name
+CreateOrGetBitmapImage(Doc, Bitmap, ...)   // a VCL/LCL TBitmap, the same way (was Doc.CreateOrGetImage(Bitmap))
 Doc.AddTrueTypeFont('Calibri')             // pre-register font explicitly; returns true on success
 
 // Optional content (layers)
@@ -348,11 +352,98 @@ C.ConcatToCTM(a, b, c, d, e, f: single); // multiply current transform matrix
 ### XObjects (Images & Forms)
 
 ```pascal
-// Embed and draw an image registered with Doc.CreateOrGetImage:
+// Draw an image registered with Doc.CreateOrGetImage / CreateOrGetBitmapImage:
 C.DrawXObject(X, Y, Width, Height, 'ImageName');
 C.DrawXObjectEx(X, Y, Width, Height, 'ImageName', ClipRect, Angle);
 C.ExecuteXObject('ImageName');  // raw Do operator
 ```
+
+**Raw pixels, no VCL/LCL** (R-28 Phase 2) - what a framework adapter feeds:
+
+```pascal
+var px: TPdfImagePixels;
+px.Width := W; px.Height := H;
+px.Format := ipfRgb24;            // ipfBgr24, ipfBgrx32 (x skipped, no alpha), ipfIndexed8
+px.Data := TopRow;                // row y at Data + y * Stride
+px.Stride := RowBytes;            // negative for a bottom-up DIB
+px.Size := BufferBytes;           // >= (H - 1) * Abs(Stride) + one row
+px.Palette := Rgb768;             // ipfIndexed8 only: 256 x R, G, B
+px.HasColorKey := true; px.ColorKey := $BBGGRR; // /Mask, RGB formats only
+Name := Doc.CreateOrGetImage(px, @DrawAt, @ClipRc); // reuse by row bytes + palette
+// JPEG bytes as they are (/DeviceRGB; grayscale: CreateJpegDirect):
+Img := TPdfImage.CreateJpeg(Doc, Data, Len, W, H, {DontAddToFXref=}false);
+Name := Doc.RegisterImage(Img);   // 'SynImg<n>'; AddXObject or RegisterXObject by xref state
+Doc.DrawImage(Name, @DrawAt);
+```
+
+`CheckPixels` raises `EPdfInvalidValue` for an empty image, a stride below a
+row, a short `Size`, a palette that is missing, not 768 bytes or given to an
+RGB format, a color key with `ipfIndexed8`. `ForceJPEGCompression` does not
+apply to raw pixels (no encoder in the engine). The reuse key of raw pixels
+(CRC32C lanes over the row bytes, after the palette, the format and the
+color key, one lane seeded apart) does not equal the key of
+a `TBitmap` (padded DIB rows, after its `TPaletteEntry` array) - the same
+picture added both ways gives two images. `CreateGraphicImage(Doc, Graphic,
+..)` and `CreateOrGetBitmapImage(Doc, Bitmap, ..)` - functions since Phase 2,
+the former `TPdfImage.Create(TGraphic)` and `TPdfDocument.CreateOrGetImage
+(TBitmap)` - fill a `TPdfImagePixels` from `ScanLine[]` and call the same
+code.
+
+How the image paths behave today (measured by `tests/test_pdf_images.pas`,
+before Phase 2 moves the `TBitmap` conversion out of the engine):
+
+- `CreateOrGetBitmapImage`: pf24bit and pf32bit become `/DeviceRGB` (alpha
+  dropped); a fixed transparent color writes `/Mask`. The same pixels give the
+  same image (a hash over the padded rows and the palette), across pages too
+- pf1bit/pf4bit/pf8bit: indexed (`/Indexed /DeviceRGB 255`) with the VCL,
+  from the bitmap's palette. The LCL keeps no palette (`GetPaletteEntries`
+  returns 0 on win32, GTK2 and Cocoa): such a bitmap is 8-bit gray (pf4bit,
+  pf8bit) or 1-bit mono, and the adapter writes it indexed with a gray ramp
+  (`<000000 010101 ...>`) - until Phase 2's bug-fix PR it raised
+  `EPdfInvalidValue('TPdfImage')`
+- **The LCL's layouts** (`LclPixels`, from `RawImage.Description`, measured by
+  Fable): pf24bit is 24-bit B,G,R on win32 but 32 bits B,G,R,x on GTK2 and
+  A,R,G,B on Cocoa; pf32bit is B,G,R,A on win32, R,G,B,A on GTK2, A,R,G,B on
+  Cocoa. A Windows DIB layout (B,G,R or B,G,R,x little-endian) goes through
+  as `ipfBgr24`/`ipfBgrx32`, gray 8-bit as `ipfIndexed8`; every other layout
+  is repacked to `ipfRgb24` through `TLazIntfImage.Colors`. Before the
+  bug-fix PR the adapter read every layout as B,G,R: the pixels of a Linux or
+  macOS PDF were misread. The tests compare with `TLazIntfImage.Colors`, not
+  with an assumed layout
+- `CreateGraphicImage(Doc, Graphic, false)`, `CreateJpeg(.., false)` and
+  `CreateJpegDirect(.., false)` are already in the xref: register them with
+  `RegisterImage` or `RegisterXObject`, not `AddXObject` (which adds them
+  again and raises)
+- `TPdfForm.Create(DocGdi, MetaFile)` raised an access violation in the
+  original, the trunk and here until Phase 2's bug-fix PR: its page had no
+  MediaBox for `SetPageHeight`, no `/Resources` for the metafile's bitmaps,
+  and with no current page its `finally` left the canvas on the page it
+  freed. Now: `TPdfPage.Create(nil)` makes a MediaBox, the form shares its
+  `/XObject` and `/ExtGState` dictionaries with that page (indirect objects,
+  `TPdfDocument.ShareFormResources` - `TPdfFormWithCanvas` too), and the
+  document canvas is saved and restored field by field; the form's `/BBox`
+  is the metafile's `Width`/`Height`, which follow the reference DC's DPI.
+  Outline, bookmark and link comments of the metafile are left out in a
+  form (`TPdfEnum.HandleComment`): it has no page to point to.
+  `MetaFileForm` and `FormWithCanvasImage` test it.
+  `TPdfCanvas.DrawXObjectPrepare` copies the fonts of a `TPdfFormXObject`
+  (the base of `TPdfForm` since Phase 2) into the font list of the page:
+  `AddItem` wraps an indirect font in a new `TPdfVirtualObject`, so nothing
+  is shared - a direct value would be (no form adds one).
+  `TPdfImageRawTests.FormFonts` covers the copy. The original and the trunk
+  have the same code. `RenderMetaFile` into a page works
+- Found by the Fable review of Phase 2, fixed in its bug-fix PR (both older
+  than it): `TPdfDocumentVcl.Create` had no `AEncryption` parameter -
+  `mormot.ui.pdfcanvas` did not include `mormot.pdf.defines.inc`, so
+  `USE_PDFSECURITY` was undefined there (`TestVclCanvasEncryption`); and
+  `BitmapHash` read each row as a DIB pads it, past the end of the last row
+  on an LCL that aligns rows less (a pf1bit row of 10 pixels: 2 bytes on
+  LCL win32, 4 read). `BitmapHash` (public, `mormot.pdf.canvas`) reads
+  `RawImage.Description.BytesPerLine` on the LCL, the DIB row on the VCL, and
+  takes the color key of a pf24bit bitmap in (`BitmapKeys`)
+- An empty `TBitmap` (no width or no height) gives no image since Phase 2
+  (`CreateOrGetBitmapImage` returns ''), where the engine wrote a 0 x 0
+  image before; `CreateGraphicImage` raises `EPdfInvalidValue` for it
 
 ### Optional Content (Layers)
 
@@ -389,7 +480,7 @@ N := C.MeasureText('Long', MaxWidth);  // chars fitting within MaxWidth
 ## TPdfDocumentVcl — TCanvas-Compatible Wrapper
 
 ```pascal
-uses mormot.ui.pdf, mormot.ui.pdfcanvas;
+uses mormot.pdf, mormot.ui.pdfcanvas;
 
 Doc := TPdfDocumentVcl.Create;
 Doc.DefaultPaperSize := psA4;
@@ -455,7 +546,9 @@ writes `/S /TH` with `/Scope /Row` (PDF/UA-1 7.5); `psrTH` heads its column.
 
 ### Enum
 
-`TPdfStructRole` is defined in `mormot.pdf.types`:
+`TPdfStructRole` is defined in `mormot.pdf.types` and re-exported by `mormot.pdf`
+(the type, every `psr*` value, `TPdfFileFormat` with `pdf13`..`pdf17`, the
+`PDF_FONT_*` constants and `GetPdfFonts`), so `uses mormot.pdf` is enough:
 
 ```pascal
 TPdfStructRole = (psrDocument, psrH1, psrH2, psrH3, psrH4, psrH5, psrH6,
@@ -574,7 +667,7 @@ Doc.EndStructContent;            // delegates to Canvas.EndStructContent
 ### TGDIPages integration
 
 ```pascal
-// In mormot.ui.report.pas — uses mormot.pdf.types (not mormot.ui.pdf)
+// In mormot.ui.report.pas — uses mormot.pdf.types (not mormot.pdf)
 Report.ExportPdfTagged   := True;    // default False — set BEFORE drawing:
                                      // it forces ExportPdfEmbeddedTTF / clears
                                      // ExportPdfStandardFonts, and those decide
@@ -598,7 +691,7 @@ Report.ExportPdfLanguage := 'en';    // default 'en'
 Requires compile-time flag `USE_PDFSECURITY`.
 
 ```pascal
-uses mormot.ui.pdf;
+uses mormot.pdf;
 
 var Enc: TPdfEncryption;
 // RC4-40 (PDF 1.3), RC4-128 (PDF 1.4), AES-128-CBC (PDF 1.6):
@@ -665,10 +758,13 @@ the cmap — see `fonts.md` §10. The tests use `PDF_DEFAULT_CHARSET` from
 
 ## FPImage Bitmap Adapter (mormot.pdf.fpimage)
 
-Used on non-Windows platforms to embed PNG/JPEG images. Not needed on Windows (GDI handles bitmaps).
+Loads PNG/JPEG files with FPC's FPImage (non-Windows guard, FPC-only units).
+**Nothing calls it** - neither the engine nor the bridge: it is a standalone
+helper. Phase 2 keeps it as an optional FPC adapter whose `GetRawRGB` feeds a
+`TPdfImagePixels` (`ipfRgb24`, top-down); `GetJpegBytes` re-encodes, it does
+not pass a JPEG through.
 
 ```pascal
-// Only needed when calling TPdfDocument.CreateOrGetImage on Unix/macOS:
 uses mormot.pdf.fpimage;
 
 var Adapter: IPdfBitmapAdapter;
@@ -679,12 +775,10 @@ W := Adapter.GetWidth;
 H := Adapter.GetHeight;
 Raw := Adapter.GetRawRGB;              // RGB24 bytes
 Jpg := Adapter.GetJpegBytes(85);      // JPEG-encoded at quality 85
-
-// In practice, the adapter is used internally by TPdfDocument.CreateOrGetImage.
-// Application code calls CreateOrGetImage directly and does not need IPdfBitmapAdapter.
 ```
 
-`CreatePdfBitmapAdapter` is registered automatically by the unit's `initialization` section.
+`CreatePdfBitmapAdapter` is a plain factory: it returns a new
+`TPdfFPImageAdapter`; nothing is registered.
 
 ---
 

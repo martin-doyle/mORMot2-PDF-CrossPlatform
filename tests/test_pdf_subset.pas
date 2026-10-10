@@ -26,7 +26,7 @@ uses
   {$else}
   mormot.lib.harfbuzz,
   {$endif OSWINDOWS}
-  mormot.ui.pdf;
+  mormot.pdf;
 
 type
   /// IFontSubsetter test cases
@@ -1453,6 +1453,7 @@ var
   PDF: TPdfDocument;
   Stream: TMemoryStream;
   raised: boolean;
+  msg: string;
 begin
   { a face asked to be embedded whole that cannot be found fails the save:
     it was written without a font file before, which PDF/A and PDF/UA
@@ -1461,13 +1462,53 @@ begin
   FontProvider := TFaceFileFailProvider.Create(saved);
   try
     raised := false;
+    msg := '';
     try
       BuildPdf(SansFont, 'Hello', true, false, false);
     except
-      on EPdfInvalidOperation do
+      on E: EPdfInvalidOperation do
+      begin
         raised := true;
+        msg := E.Message;
+      end;
     end;
     Check(raised, 'embedding asked for, face not found: the save fails');
+    // the message names the font and, for plain EmbeddedTtf, the way out
+    Check(Pos(SansFont, msg) > 0, 'the font named: ' + msg);
+    Check(Pos('EmbeddedTtfIgnore', msg) > 0, 'the way out named');
+    Check(Pos('TPdfFontTrueType', msg) = 0, 'no internal class name');
+    // Tagged ignores EmbeddedTtfIgnore: no such hint; the style is named
+    raised := false;
+    msg := '';
+    Stream := TMemoryStream.Create;
+    try
+      PDF := TPdfDocument.Create(false, 0, pdfaNone);
+      try
+        PDF.Tagged := true;
+        PDF.EmbeddedWholeTtf := true; // the whole face, which is not found
+        PDF.AddPage;
+        PDF.Canvas.BeginStructContent(psrP);
+        PDF.Canvas.SetFont(StringToUtf8(SansFont), 12, [pfsBold]);
+        DrawUtf8Text(PDF, 15, 800, 'Hello');
+        PDF.Canvas.EndStructContent;
+        try
+          PDF.SaveToStream(Stream);
+        except
+          on E: EPdfInvalidOperation do
+          begin
+            raised := true;
+            msg := E.Message;
+          end;
+        end;
+      finally
+        PDF.Free;
+      end;
+    finally
+      Stream.Free;
+    end;
+    Check(raised, 'Tagged: the save fails');
+    Check(Pos('(bold)', msg) > 0, 'the style named: ' + msg);
+    Check(Pos('EmbeddedTtfIgnore', msg) = 0, 'no way out under Tagged');
     // a subset needs no face file: only a font without one fails
     if PdfCanSubsetRetainingGids then
     begin

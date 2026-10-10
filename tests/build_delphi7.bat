@@ -43,7 +43,7 @@ if not exist "%OUT%\dcu" mkdir "%OUT%\dcu"
 copy /y "%~f1" "%OUT%\%PRJ%.dpr" >nul
 
 set "M=%MORMOT2%\src"
-set "UNITS=%PRJDIR%;%ROOT%\src\core"
+set "UNITS=%PRJDIR%;%ROOT%\src\core;%ROOT%\src\pdf"
 set "UNITS=%UNITS%;%M%\core;%M%\lib;%M%\crypt;%M%\net;%M%\db;%M%\orm;%M%\rest;%M%\soa;%M%\misc"
 set "UNITS=%UNITS%;%DELPHI7%\Lib"
 rem %M% for mormot.defines.inc, which every unit of ours includes by name (R-21)

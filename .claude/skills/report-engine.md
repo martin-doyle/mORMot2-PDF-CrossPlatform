@@ -209,7 +209,7 @@ Default H1 size is 28pt; H2–H6 scale proportionally (75%, 57%, 46%, 39%, 36%).
 
 ## Measurement — PDF metrics, not the LCL
 
-Layout is measured with the font engine that will later place the glyphs, not with an LCL `TCanvas` (ROADMAP B-5, `mormot.ui.pdf.TPdfFontMeasurer`):
+Layout is measured with the font engine that will later place the glyphs, not with an LCL `TCanvas` (ROADMAP B-5, `mormot.pdf.TPdfFontMeasurer`):
 
 | Quantity | Source |
 |---|---|
@@ -369,7 +369,7 @@ there; the attachments are created after the outlines, before
 **A report program uses `mormot.ui.report` only.** It re-exports what the
 `ExportPdf*` options take — `TPdfALevel`/`pdfa*`, `TPdfFileFormat`/`pdf1x`,
 `TPdfAFRelationship`/`afr*`, `TPdfPageMode`/`pm*`, `PdfMetadataFacturX` — through
-`mormot.ui.pdfcanvas`. Never add `mormot.ui.pdf` beside it: its
+`mormot.ui.pdfcanvas`. Never add `mormot.pdf` beside it: its
 `TPdfPaperSize` has a `psA4` as `TGdiPagePaperSize` does, and its `TRect`
 differs from the LCL's, so the uses order decides which one a name means
 (`Report.PaperSize := psA4` then fails to compile). A new option taking a
