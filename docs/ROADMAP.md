@@ -165,7 +165,10 @@ v0.10.0 (2026-09-30).
 - **Fixed: a font asked to be embedded is never left out silently:** when
   embedding is on (`EmbeddedTtf`, `Tagged`, PDF/A) and neither a subset nor
   the whole face of a font can be read, saving raises `EPdfInvalidOperation`
-  naming the font. Before, the font was written without a font file - a
+  naming the font, its style and the cause. With plain `EmbeddedTtf` the
+  message names the way out: put the font in `EmbeddedTtfIgnore` to write
+  it without embedding (PDF/A and `Tagged` ignore that list, there is none
+  there). Before, the font was written without a font file - a
   PDF/A or PDF/UA file that fails validation, without a word. And `Tagged`
   embeds every font now even when `EmbeddedTtf` is switched off or the font
   is put in `EmbeddedTtfIgnore` afterwards, as PDF/A always did
@@ -181,6 +184,65 @@ v0.10.0 (2026-09-30).
   and `pdfcheck compare` (as the golden-file tests) names up to ten changed,
   added or removed objects, paired by number and also inside object streams,
   and counts the rest - instead of only the first differing byte
+- **Changed API: images from a `TBitmap`/`TGraphic`** (R-28 Phase 2, so that
+  the engine needs no VCL/LCL): `Doc.CreateOrGetImage(Bitmap, ..)` becomes
+  `CreateOrGetBitmapImage(Doc, Bitmap, ..)`, `TPdfImage.Create(Doc, Graphic,
+  ..)` becomes `CreateGraphicImage(Doc, Graphic, ..)` - same output. New,
+  without VCL/LCL: `TPdfImagePixels` with `Doc.CreateOrGetImage(Pixels, ..)`
+  (RGB, BGR, BGRx, indexed with palette; stride, color key) and
+  `TPdfImage.CreateJpeg`, `Doc.RegisterImage`, `Doc.DrawImage`
+- **`mormot.ui.pdf` is now `mormot.pdf`, without VCL/LCL** (R-28 Phase 2):
+  change the `uses` (no compatibility unit - the trunk has a different
+  `mormot.ui.pdf`); the file is `src/pdf/mormot.pdf.pas`, with
+  `mormot.pdf.types` beside it, so add `src/pdf` to the search path. The
+  engine unit builds in a console program with no GUI framework, on every
+  compiler; the VCL/LCL
+  parts are in `mormot.pdf.canvas` (`TBitmap`/`TGraphic` images,
+  `TPdfDocumentGdi`, `RenderMetaFile`, the `GdiComment*` procedures and
+  `CurrentPrinterPaperSize`/`CurrentPrinterRes` - add it to the `uses` of a
+  program that calls them). One consequence on Linux and macOS (FPC): a
+  system color (`clBtnFace` ...) given to the engine directly is resolved
+  from fixed Windows defaults, no longer from the LCL theme - as Delphi on
+  Linux did already; `TPdfVclCanvas` resolves its colors with `ColorToRGB`
+  first, as before. An empty `TBitmap` gives no image (`''`) and
+  `CreateGraphicImage` raises `EPdfInvalidValue` for an empty graphic, where
+  a 0 x 0 image was written before
+- **Fixed (EMF, Windows): `TPdfForm.Create(DocGdi, MetaFile)`** raised an
+  access violation in every version; it gives a form XObject now, with the
+  metafile's bitmaps and fonts (its outline, bookmark and link comments are
+  left out). `TPdfFormWithCanvas` can draw images and transparency now - its
+  `/Resources` gain an `/XObject` and an `/ExtGState` dictionary
+- **Fixed (Linux, macOS): the pixels of a `TBitmap`** - the adapter read
+  every LCL bitmap as Windows' B,G,R, where GTK2 and Cocoa hold 32 bits per
+  pixel in other orders: images drawn through `TPdfVclCanvas` or
+  `TGDIPages.DrawBitmap` came out with wrong colors. And a pf1bit, pf4bit or
+  pf8bit bitmap - gray in the LCL - raised `EPdfInvalidValue`; it is written
+  indexed with a gray ramp now, on Windows (FPC) too
+- **Fixed: text in a CFF face** (the CFF series of R-28; the CJK faces of
+  macOS and Linux, installed OTF fonts on Windows) -
+  the codes of a CID-keyed CFF face (the CJK faces of macOS and Linux) are
+  its CIDs, not its glyph indexes: Hiragino Sans GB drew another glyph for
+  92 BMP characters, e.g. U+9FA6. All text of a CFF face now goes through
+  its Type0 font (the Latin text went through a simple `/Type1` font, which
+  a CID-keyed CFF may not be); a CID-keyed face is embedded as its bare CFF
+  (`/CIDFontType0C`, PDF 1.3, so also PDF/A-1) with its ROS and its own
+  font name, a name-keyed one as an OpenType font file - which needs PDF
+  1.6: `FileFormat` is raised before the header is written, or the catalog
+  gets `/Version /1.6` (`TPdfDocumentGdi`, `TGDIPages`), and PDF/A-1 refuses
+  it with `EPdfInvalidOperation`. An unembedded name-keyed face keeps its
+  Latin text in the simple font. Word spacing reaches such text as `TJ`
+  adjustments
+- **Fixed: font fallback in the middle of a run** wrote the fallback face's
+  codes without an opening `<`, breaking the content stream (also in the
+  original `mormot.ui.pdf`)
+- **Fixed: Type0 fonts** - the `/ToUnicode` codespace could be an inverted
+  range (it is `<0000> <FFFF>` now), `/W` and `/ToUnicode` are sorted by
+  code, one entry per code - of two characters drawn with one glyph, text
+  extraction now gives the smaller one (it gave the last listed); `TextWidth` after Unicode text measured with the default width;
+  `GRestore` did not restore the font, size, spacing, scaling and leading
+  the canvas tracks, so a `Tf`, `Tw`, `Tc`, `Tz` or `TL` could be skipped
+  after `Q`; a space in a PDF name is
+  written `#20`
 - **Coming with R-20** (announce when done): the preview and the GUI demos
   on Delphi
 
@@ -472,11 +534,11 @@ comment shrinks to the rule it protects.
 
 **The state.** The older code carries the investigations themselves —
 measurements, validator runs, spec clauses argued out, roadmap IDs — above all
-`mormot.ui.pdf.pas` (`PrepareForSaving`, `PrepareFontSubsets`, the text
+`mormot.pdf.pas` (`PrepareForSaving`, `PrepareFontSubsets`, the text
 rendering chains), also `mormot.ui.report.pas`, the backends and the test
 units. Part of it repeats the skills, part of it is found nowhere else.
 
-**Work.** Unit by unit, one commit each; `mormot.ui.pdf.pas` by section. For
+**Work.** Unit by unit, one commit each; `mormot.pdf.pas` by section. For
 every long comment: is the knowledge in a skill? If not, move it there first,
 then cut the comment. Comments only — `test_runner` gives the same assertion
 count, and the demo PDFs are byte-identical apart from date and `/ID`.
@@ -783,18 +845,22 @@ instead of being shown on a failure.
 mORMot2 fork and as a PR to Synopse; then drop the `{$ifdef OSPOSIX}` in
 `tests/pdfcheck.lpr`.
 
-### `/ToUnicode` Codespace Bounds — unprioritised
+### CFF Faces the Reader Refuses — unprioritised
 
-**Files:** `src/core/mormot.ui.pdf.pas` (`PrepareForSaving`)
+A CFF face `PdfCffParse` refuses (`pcInvalid`: malformed, a ROS of CFF
+standard strings, CFF2) is embedded as an OpenType font file with
+glyph-index codes, as before the CFF series - not conforming (table 126 has
+no CFF2, and the codes of a CID-keyed program are CIDs). A policy is open:
+refuse before measuring, or substitute a face. No such face was found on
+the test machines.
 
-The codespace range of a Type0 font's `/ToUnicode` CMap is written as the
-glyphs of the first and last entry in key order, not the smallest and largest
-glyph, so it need not enclose every glyph the CMap maps (ISO 32000-1 9.10.3).
-Found in the Codex review of #20 (2026-10-08); older than that change: with
-Segoe UI's shaped glyphs 240, 241 and 4336 the range is `<0000> <00F1>` and
-`<10F0>` lies outside. **Fix:** the range from the emitted glyphs (or
-`<0000> <FFFF>`), with a test that every mapping lies inside it. Details:
-`fonts.md` §9.
+### Word Spacing in Shaped Runs — unprioritised
+
+`Tw` does not reach two-byte codes; the unshaped Type0 path writes a `TJ`
+adjustment after each space (the CFF series), `AddShapedRun` none. HarfBuzz
+gives the source cluster of each glyph, the Uniscribe adapter discards
+`logclust`; `ShowGlyph` has no source text at all. Matters for justified
+text in a CFF or complex-script face.
 
 ### Shaped Text: Real `/ToUnicode` and Vertical Offsets — after R-28 Phase 1
 
@@ -830,17 +896,16 @@ it on 2026-09-24.
 valid; `TestTaggedUnicode` asserts that no simple TrueType font lacks
 `/FirstChar` (fails 1/5 without the change).
 
-**The fix still open:** stop emitting the peer — write `Tf` only when text is
-shown, and leave an unused peer out of the page resources and the file. That
-touches the font lifecycle on every platform — see `fonts.md` §4 on the
-dual-instance model. Whether the `/Type1` peer of a CFF face needs the same
-stopgap (it too lacks `/Widths`) is to be checked with it. For CFF faces the
-peer goes anyway with the CFF series of R-28 (Phase 2's bug-fix PR,
-`docs/REFACTORING.md`): a CID-keyed CFF may not be a simple `/Type1` at all.
+**The fix still open for glyf faces:** stop emitting the peer — write `Tf`
+only when text is shown, and leave an unused peer out of the page resources
+and the file. That touches the font lifecycle on every platform — see
+`fonts.md` §4 on the dual-instance model. **Done for CFF faces** (the CFF
+series of R-28): their WinAnsi font is internal, never selected and not
+written - a CID-keyed CFF may not be a simple `/Type1` at all.
 
 ### R-15b — Symbolic Fonts Are Not Subset on POSIX — unprioritised
 
-**Effort:** 0.5 day | **Files:** `src/core/mormot.ui.pdf.pas`,
+**Effort:** 0.5 day | **Files:** `src/pdf/mormot.pdf.pas`,
 `mormot.lib.freetype` (mORMot2)
 
 The one remaining difference between the platforms that is **not** a property of
@@ -850,22 +915,34 @@ cmap under the `F0xx` convention, and `AddToSubsetRequest` knows neither those
 code points nor the glyph IDs behind them, so hb-subset would drop every glyph
 the WinAnsi instance draws. Keeping the whole face is the safe answer there.
 
-Windows does not need the exclusion since R-15a: `AddWinAnsiGlyphs` resolves the
-characters to glyph indices through the face itself, which works whatever cmap
-the lookup goes through. Aligning the two therefore means **improving POSIX**,
+Windows does not need the exclusion since R-15a: FontSub resolves the
+characters to glyph indices through the face itself (`GetGlyphIndicesW`),
+which works whatever cmap the lookup goes through. Aligning the two therefore means **improving POSIX**,
 not restricting Windows — give `IFontProvider` a character-to-glyph lookup
 (FreeType has `FT_Get_Char_Index`) and let `AddToSubsetRequest` fill the glyph
 list on both platforms, then drop the exclusion.
 
-Neither side is verified: no demo and no test uses a symbolic face, so the
-Windows claim above is an argument from the code, not a measurement. Whoever
-takes this should add a demo or test with Wingdings/Symbol first.
+`TestSubsetSymbolFont` covers both sides where Wingdings, Webdings or Symbol
+is installed (Windows: subset by FontSub; macOS: Symbol embedded whole); no
+demo uses a symbolic face.
 
 Related and equally untested: what `CreateFontPackage` does with a **CFF** face
-on Windows. POSIX subsets CFF since R-15c; every face in the demos is
-`glyf`-based, so the Windows CFF path has never run. Whether PDF/A or tagged
-output impose extra `/FontFile3` conditions is likewise unchecked —
-`chinese_demo`, the only CFF case, is neither.
+on Windows - Windows 11 ships none; a failed subset embeds the whole face.
+The CFF series of R-28 tests the CFF programs, the PDF/A-1 refusal of a
+name-keyed face and the routing with a synthetic face (`test_pdf_cff`, not
+tagged); veraPDF and PAC on real CFF output (macOS) are still to run.
+
+### `TGDIPages.ExportPDF` Ignores `Protect` and `Encrypt` — R-28 Phase 4
+
+`ExportPDF(FileName, Protect, Encrypt, ..)` takes both flags and passes
+neither on; `ExportPdfStream` creates its `TPdfDocumentVcl` without a
+`TPdfEncryption` (`src/core/mormot.ui.report.pas`, found by Codex while
+deciding the bug fixes of Phase 2). The trunk's `TGdiPages` has
+`ExportPdfEncryptionLevel`, `ExportPdfEncryptionUserPassword`,
+`ExportPdfEncryptionOwnerPassword` and `ExportPdfEncryptionPermissions` and passes
+`TPdfEncryption.New(..)`. Needs a password and permission policy; until
+then a requested protection should be refused rather than ignored. The
+bridge's own encryption parameter is scheduled for Phase 2's bug-fix PR.
 
 ### R-10 — Table Row Pagination — unprioritised
 

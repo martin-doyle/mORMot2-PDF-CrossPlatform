@@ -29,7 +29,9 @@ uses
   test_pdf_smoke,
   test_pdf_subset,
   test_pdf_pdfa,
-  test_pdf_golden
+  test_pdf_golden,
+  test_pdf_images,
+  test_pdf_cff
   {$ifdef PDF_HASVCLCANVAS},
   test_report_crossplatform,
   test_report_golden,
@@ -50,7 +52,11 @@ type
 procedure TIntegrationTests.TestPDF;
 begin
   AddCase([TPdfCrossPlatTests, TPdfSmokeTests, TPdfSubsetTests,
-    TPdfSubsetEngineTests, TPdfATests, TPdfGoldenTests]);
+    TPdfSubsetEngineTests, TPdfATests, TPdfGoldenTests, TPdfImageRawTests,
+    TPdfCffTests]);
+  {$ifdef PDF_HASVCLCANVAS}
+  AddCase([TPdfImageGoldenTests]);
+  {$endif PDF_HASVCLCANVAS}
 end;
 
 {$ifdef PDF_HASVCLCANVAS}

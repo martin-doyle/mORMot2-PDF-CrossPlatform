@@ -16,7 +16,7 @@ function InflatePdf(const s: RawUtf8): RawUtf8;
 
 /// the form in which two PDFs are compared
 // - parsed token by token: streams decoded (FlateDecode inflated, XRef streams
-// as one text line per object), the /ID, '/ABCDEF+' subset tags, the
+// as one text line per object, JPEG kept as it is), the /ID, '/ABCDEF+' subset tags, the
 // /CreationDate and /ModDate values, XMP dates, stream lengths and file offsets
 // replaced by placeholders
 // - the structure is checked before anything is blanked: each /Length has to
@@ -832,6 +832,18 @@ begin
       result := Data;
       exit;
     end
+  else if (filter = '/DCTDecode') or
+          (filter = '[/DCTDecode]') then
+  begin
+    // JPEG data: compared byte by byte as it is, nothing in it varies - an
+    // image only, so that no xref or object stream escapes its checks
+    typ := DictValue(Dict, '/Type');
+    if (DictValue(Dict, '/Subtype') <> '/Image') or
+       ((typ <> '') and
+        (typ <> '/XObject')) then
+      Fail('object %: /DCTDecode on a stream that is no image', [ObjNum]);
+    exit;
+  end
   else if filter <> '' then
   begin
     Fail('object %: unexpected /Filter %', [ObjNum, filter]);

@@ -1,8 +1,8 @@
 /// Layer 1 Demo - mORMot2 PDF Cross-Platform
 // Produces a two-page tagged PDF with TPdfDocument and TPdfCanvas alone - no
-// TCanvas bridge, no report engine - so it builds with FPC on every platform
-// and with Delphi 7 on Win32 (tests\build_delphi7.bat): text, a figure, and
-// a table with header, body and totals row.
+// TCanvas bridge, no report engine, no VCL or LCL - so it builds with FPC on
+// every platform and with Delphi 7 on Win32 (tests\build_delphi7.bat): text,
+// a figure, and a table with header, body and totals row.
 //
 // Worth noting:
 // - coordinates are PDF points (1/72 inch), X from the left edge and Y from
@@ -33,16 +33,12 @@ program layer1_demo;
 {$endif OSWINDOWS}
 
 uses
-  {$ifdef FPC}
-  Interfaces,   // registers the LCL widgetset - Delphi has no counterpart
-  {$endif FPC}
   SysUtils,
   mormot.core.base,
   mormot.core.os,
   mormot.core.text,   // FormatUtf8
   mormot.core.unicode,
-  mormot.pdf.types,   // TPdfStructRole, GetPdfFonts
-  mormot.ui.pdf;      // registers the platform backend itself
+  mormot.pdf;         // TPdfStructRole, GetPdfFonts; brings the platform backend
 
 const
   /// the face's full cmap, not the ANSI part only (fonts.md 10)

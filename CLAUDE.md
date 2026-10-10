@@ -9,7 +9,7 @@ The original document (`reference/mormot.ui.pdf.pas`) was Windows/GDI-only; this
 
 **RULE: Read the relevant skill file(s) BEFORE doing anything else — before reading source files, before searching, before planning.**
 
-Skills contain complete, distilled API and architectural knowledge. The main source files are very large (mormot.ui.pdf.pas is 15,000+ lines, mormot.ui.report.pas 2,900+); reading them without necessity wastes context and time.
+Skills contain complete, distilled API and architectural knowledge. The main source files are very large (mormot.pdf.pas is 11,800+ lines, mormot.pdf.canvas.pas 3,000+, mormot.ui.report.pas 2,900+); reading them without necessity wastes context and time.
 
 | Skill | When to use |
 |---|---|
@@ -43,27 +43,31 @@ All files under `src/` require justification and user approval before reading.
 
 | File | Purpose | Status |
 |---|---|---|
-| `src/core/mormot.ui.pdf.pas` | PDF engine (cross-platform) | Production |
+| `src/pdf/mormot.pdf.pas` | PDF engine (cross-platform) | Production |
 | `src/core/mormot.ui.report.pas` | Report engine (`TGDIPages`) | Production |
 | `src/core/mormot.ui.reportpreview.pas` | Preview window and printing for `TGDIPages` (LCL) | Production |
 | `src/core/mormot.ui.pdfcanvas.pas` | TCanvas bridge (`TPdfDocumentVcl`) | Production |
-| `src/core/mormot.pdf.types.pas` | PDF types; former font type names as aliases of mormot.lib.core | Production |
+| `src/pdf/mormot.pdf.canvas.pas` | VCL/LCL adapter: `TBitmap`/`TGraphic` images; `TPdfDocumentGdi`, `RenderMetaFile`, printer helpers (Windows) - R-28 Phase 2 | Production |
+| `src/pdf/mormot.pdf.types.pas` | PDF types; former font type names as aliases of mormot.lib.core | Production |
 | mORMot2 `src/lib/mormot.lib.uniscribe.pas` | GDI backend (Windows), Uniscribe shaper and FontSub subsetter, beside their bindings | Production |
 | mORMot2 `src/lib/mormot.lib.freetype.pas` | FreeType2 backend (POSIX) | Production |
 | mORMot2 `src/lib/mormot.lib.harfbuzz.pas` | HarfBuzz shaper (RTL/complex scripts) and hb-subset subsetter (R-12) | Production |
-| `src/core/mormot.pdf.fpimage.pas` | FPImage bitmap adapter | Production |
+| `src/pdf/mormot.pdf.fpimage.pas` | FPImage bitmap adapter | Production |
 
 ## File Structure
 
 ```
 src/
-  core/
-    mormot.ui.pdf.pas           PDF objects, TPdfDocument, TPdfCanvas
+  pdf/                          the units under their trunk names (R-28)
+    mormot.pdf.pas              PDF objects, TPdfDocument, TPdfCanvas - no VCL/LCL
+    mormot.pdf.canvas.pas       TBitmap/TGraphic images, TPdfDocumentGdi and EMF (Windows)
+    mormot.pdf.defines.inc      the USE_* switches of mormot.pdf and mormot.pdf.canvas
+    mormot.pdf.types.pas        PDF types, aliases of the mormot.lib.core font types
+    mormot.pdf.fpimage.pas      Bitmap embedding (FPImage)
+  core/                         the units of the later phases
     mormot.ui.report.pas        TGDIPages — layout engine, no forms or printer
     mormot.ui.reportpreview.pas ShowReportPreview, PrintReport (LCL)
     mormot.ui.pdfcanvas.pas     TPdfDocumentVcl, TPdfVclCanvas
-    mormot.pdf.types.pas        PDF types, aliases of the mormot.lib.core font types
-    mormot.pdf.fpimage.pas      Bitmap embedding (FPImage)
     mormot.ui.core.pas          UI helper functions   } the trunk's units of mORMot2 src/ui (only the include path differs),
     mormot.ui.gdiplus.pas       GDI+ support (Windows) } which is not on the search path
   (the backends are mORMot2 units in src/lib: mormot.lib.uniscribe on Windows
@@ -81,7 +85,7 @@ examples/
   (each demo folder carries a short README.md; the source header of its .lpr
    (`layer1_demo`: .dpr) says the same thing in two sentences)
 tests/
-  test_runner.lpr              runs every suite below (green: 506 assertions on Windows with FPC, Delphi 13 and Delphi 7, with the CJK and symbol faces of Windows 11 - Delphi 2010 last measured at 448 (#27); 477 on macOS with Geeza Pro, Hiragino Sans GB and Helvetica, 453 on Linux with fonts-noto-cjk — the rest are skips; the golden files add two per case with or without a baseline. Delphi 13, measured before the golden files: 259 on Windows, 171 on Linux64, 129 on Android64, layer 1 only)
+  test_runner.lpr              runs every suite below (green: 779 assertions on Windows with FPC, Delphi 13 and Delphi 7, with the CJK and symbol faces of Windows 11 - Delphi 2010 last measured at 506 (#29); 755 on macOS with Geeza Pro, Hiragino Sans GB and Helvetica, 728 on Linux with fonts-noto-cjk — the rest are skips; the golden files add two per case with or without a baseline. Delphi 13, measured before the golden files: 259 on Windows, 171 on Linux64, 129 on Android64, layer 1 only)
   test_defines.inc             PDF_HASVCLCANVAS: the TCanvas bridge suites (all compilers since R-20)
   build_delphi7.bat            dcc32 build of one project (R-19)
   build_delphi2010.bat         the same with Delphi 2010, warnings on (R-25, Unicode Delphi)
@@ -97,6 +101,8 @@ tests/
   test_pdf_subset.pas          font subsetting: IFontSubsetter and TPdfDocument
   test_pdf_pdfa.pas            PDF/A-3: associated files, XMP schemas, PdfMetadataFacturX, level U
   test_pdf_golden.pas          golden files: generated PDFs against this machine's baseline (layers 1-2)
+  test_pdf_cff.pas             the CFF reader on tables built in code, and every CFF path through a synthetic face swapped into FontProvider (codes, /W, /ToUnicode, routing, word spacing, programs, names)
+  test_pdf_images.pas          golden files of the image paths (raw pixels on every compiler; TBitmap formats, reuse, color key, JPEG) and of EMF (TPdfDocumentGdi, RenderMetaFile; Windows)
   test_report_golden.pas       the same for TGDIPages (layer 3)
   test_coordinates.pas         page geometry
   test_report_coordinates.pas  report geometry
@@ -126,7 +132,7 @@ TGDIPages (mormot.ui.report)          <- High-level layout
     | RenderPageToCanvas()
 TPdfDocumentVcl / TPdfVclCanvas       <- TCanvas bridge
     | automatic coordinate conversion
-TPdfCanvas / TPdfDocument (mormot.ui.pdf) <- Low-level PDF
+TPdfCanvas / TPdfDocument (mormot.pdf) <- Low-level PDF
     | via interfaces
 IFontProvider (→ IFontFace) / IFontEnumerator
     |                + optional: IFontShaper, IFontSubsetter
@@ -149,7 +155,7 @@ For interface and backend details: `.claude/skills/platform-backends.md`
 | chinese_demo | `TPdfDocumentVcl` | Console | CJK text, subset embedding |
 | rtl_demo | `TPdfDocumentVcl` | Console | Arabic RTL, HarfBuzz/Uniscribe shaping |
 | zugferd_demo | `TGDIPages` | Console | PDF/A-3U + PDF/UA-1, page read from the embedded XML, `AddExportPdfAttachment`, `PdfMetadataFacturX`, sample invoice XML of XRechnung for Delphi |
-| layer1_demo | `TPdfDocument` | Console | Layer 1 only, PDF points (Y=0 bottom), tagged H1/H2/P/Figure and a Table with THead/TBody/TFoot, UTF-8 via `TextOutW`; builds with Delphi 7, as do all console demos |
+| layer1_demo | `TPdfDocument` | Console | Layer 1 only, PDF points (Y=0 bottom), tagged H1/H2/P/Figure and a Table with THead/TBody/TFoot, UTF-8 via `TextOutW`; `uses mormot.pdf` alone, no VCL/LCL; builds with Delphi 7, as do all console demos |
 
 Detailed description with code examples: `docs/DEMOS.md`
 
@@ -206,14 +212,14 @@ Details: `.claude/skills/report-engine.md` (Tables), `.claude/skills/call-graph.
 ### One Unit per Layer
 
 A program uses the unit of its layer: `mormot.ui.report` (layer 3),
-`mormot.ui.pdfcanvas` with `mormot.ui.pdf` (layer 2), `mormot.ui.pdf`
+`mormot.ui.pdfcanvas` with `mormot.pdf` (layer 2), `mormot.pdf`
 (layer 1). What a layer's API takes from below is re-exported by that layer —
 `mormot.ui.report` re-exports the PDF/A levels, `TPdfFileFormat`, `afr*` and
-`PdfMetadataFacturX`. Never put `mormot.ui.pdf` beside `mormot.ui.report`:
+`PdfMetadataFacturX`. Never put `mormot.pdf` beside `mormot.ui.report`:
 both declare `psA4`, and `TRect` differs from the LCL's, so the uses order
 decides which one a name means. Details: `.claude/skills/report-engine.md`
 
-The platform units need no `uses` in a program: `mormot.ui.pdf` brings
+The platform units need no `uses` in a program: `mormot.pdf` brings
 `mormot.lib.uniscribe`, or `mormot.lib.freetype` and `mormot.lib.harfbuzz`; a
 missing HarfBuzz library only leaves shaping or subsetting off, a missing
 `libfreetype` makes `TPdfDocument.Create` raise.
@@ -224,7 +230,7 @@ conditional. Details: `.claude/skills/platform-backends.md` (Registration)
 
 ### Platform Abstraction
 
-New platform feature: use interface method, do not add `{$ifdef}` inside `mormot.ui.pdf.pas`.
+New platform feature: use interface method, do not add `{$ifdef}` inside `mormot.pdf.pas`.
 Details on interfaces and registration: `.claude/skills/platform-backends.md`
 
 ## Coding Conventions (mORMot2 style)
@@ -356,11 +362,11 @@ itself is in each demo's `uReport.pas`; the form only passes its options.
 - **mORMot Refactoring** (R-28, in progress): before any step of it, read
   `docs/REFACTORING.md` — its rules apply on top of this file
 - **Font subsetting**: default (`EmbeddedWholeTtf = False`) on all platforms, two implementations, both keeping the original glyph IDs and therefore safe for CJK, shaped Arabic and tagged output. **Linux/macOS** (R-12): `IFontSubsetter` (`mormot.lib.core`) implemented by `mormot.lib.harfbuzz` (`libharfbuzz-subset`); 97–99.5% smaller PDFs. **Windows** (R-15): `IFontSubsetter` implemented by `mormot.lib.uniscribe` (`CreateFontPackage` with a glyph keep list, `TTFCFP_FLAGS_GLYPHLIST`; the face of a `.ttc` found from the bytes) - one path through `FontSubsetter` on every platform since R-28 Phase 1 W2. The whole face is embedded instead for PDF/A-1 (no `/CIDSet`), for symbol fonts on POSIX (R-15b) and when `libharfbuzz-subset` is missing. See `.claude/skills/fonts.md` §3, §9
-- **CFF faces are subset too** (R-15c, done): a CFF-flavoured face goes to `/FontFile3` with `/Subtype /OpenType` as a `CIDFontType0`; `glyf` goes to `/FontFile2`. `PdfFontFileKey()` picks the key. Embedding CFF in `/FontFile2` is a spec violation (ISO 32000-1 9.9) — do not reintroduce it by assuming one key fits both
+- **CFF faces: Type0 only** (R-15c, then the CFF series of R-28): a CFF face draws all its text through its Type0 font as a `CIDFontType0` - the codes of a CID-keyed face are its CIDs, not glyph indexes; it is embedded as its bare CFF (`/FontFile3 /Subtype /CIDFontType0C`), a name-keyed one as an OpenType font file (PDF 1.6, by the header or the catalog `/Version`; not PDF/A-1); its WinAnsi font is internal and not written. An unembedded name-keyed face keeps its Latin text in the simple font. `glyf` goes to `/FontFile2`. Embedding CFF in `/FontFile2` is a spec violation (ISO 32000-1 9.9). See `.claude/skills/fonts.md` "CFF Faces: Type0 Only"
 - **RTL / Arabic text**: one switch, `UseUniscribe` — HarfBuzz delivers correct ligatures on Linux/macOS, Windows uses Uniscribe; `RightToLeftText` is the direction only — see `.claude/skills/fonts.md` §10
 - **Testing RTL**: Linux fonts (Noto Naskh Arabic) resolve shaped glyphs through the CMAP, so they never exercise the shaper's own advance path. Validate RTL work against a font without Arabic presentation forms — see `.claude/skills/fonts.md` §10
 - **TTC collections**: only face index 0 is reachable; `TFontFileMap` (`mormot.lib.freetype`) has no face index, so the other faces of a `.ttc` cannot be selected by name
-- **EMF/MetaFile**: Windows-only (`TPdfDocumentGdi`), not portable
+- **EMF/MetaFile**: Windows-only (`TPdfDocumentGdi`, `mormot.pdf.canvas`), not portable
 - **GDI+/gradient fills**: Windows-only via EMF
 - **Table pagination**: no row break within a cell (roadmap R-10)
 - **Symbol fonts on POSIX**: excluded from subsetting, the whole face is embedded (roadmap R-15b); `TestSubsetSymbolFont` covers both sides where Wingdings, Webdings or Symbol is installed (Windows: subset by FontSub; macOS: Symbol embedded whole), no demo
@@ -373,7 +379,8 @@ itself is in each demo's `uReport.pas`; the form only passes its options.
 - **Links in tagged output**: no `Link` role, `OBJR` or `/StructParent` for annotations — `CreateHyperLink` in tagged output fails veraPDF `ua1` on four 7.18 rules (measured). `TGDIPages.DrawLink` draws link-styled text as a `Span` and drops the URL: conformant, not clickable (roadmap R-29, item 7)
 - **Delphi** (R-19, R-21, R-23, R-25, R-27 done; R-20 steps 1–6 done): layer 1,
   the TCanvas bridge and the `TGDIPages` core build on Delphi 7 and Delphi
-  2010 (Unicode Delphi), Win32; `test_runner` 506/506 on Delphi 7 (Delphi 2010 last measured at 448/448, #27). All six console
+  2010 (Unicode Delphi), Win32; `test_runner` green on Delphi 7 (counts: the
+  test list above; Delphi 2010 last measured at 506/506, #29). All six console
   demos and the `--export` of the two GUI demos build and give the same PDF as
   FPC (the GUI demos build their report in `uReport.pas`, without a form);
   PAC 2024 and veraPDF pass the files of both compilers. Open: the preview and
@@ -390,7 +397,7 @@ itself is in each demo's `uReport.pas`; the form only passes its options.
   `mormot.defines.inc` include: FPC's project makes a console executable,
   dcc32 a GUI one without it, where `WriteLn` raises I/O error 105. Never put
   `mORMot2/src/ui` on a Delphi search path: it holds the original
-  `mormot.ui.pdf`/`report`/`core`
+  `mormot.ui.pdf`/`report`/`core` - the last two have the names of ours
 
 Current verification status per platform, and the open items in detail:
 `docs/ROADMAP.md`

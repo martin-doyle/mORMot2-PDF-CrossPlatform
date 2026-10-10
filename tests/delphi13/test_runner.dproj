@@ -103,7 +103,7 @@
         <DCC_N>false</DCC_N>
         <DCC_S>false</DCC_S>
         <DCC_Namespace>System;Xml;Data;Datasnap;Web;Soap;$(DCC_Namespace)</DCC_Namespace>
-        <DCC_UnitSearchPath>..;..\..\src\core;$(MORMOT2)\src;$(MORMOT2)\src\core;$(MORMOT2)\src\lib;$(MORMOT2)\src\crypt;$(MORMOT2)\src\net;$(MORMOT2)\src\db;$(MORMOT2)\src\orm;$(MORMOT2)\src\rest;$(MORMOT2)\src\soa;$(MORMOT2)\src\misc;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
+        <DCC_UnitSearchPath>..;..\..\src\core;..\..\src\pdf;$(MORMOT2)\src;$(MORMOT2)\src\core;$(MORMOT2)\src\lib;$(MORMOT2)\src\crypt;$(MORMOT2)\src\net;$(MORMOT2)\src\db;$(MORMOT2)\src\orm;$(MORMOT2)\src\rest;$(MORMOT2)\src\soa;$(MORMOT2)\src\misc;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
         <DCC_ExeOutput>..\..\bin\d13\test_runner\$(Platform)\$(Config)</DCC_ExeOutput>
         <DCC_DcuOutput>..\..\bin\d13\test_runner\$(Platform)\$(Config)\dcu</DCC_DcuOutput>
         <VerInfo_Locale>1031</VerInfo_Locale>

@@ -10,7 +10,7 @@ uses
   mormot.core.base,
   mormot.pdf.types,
   mormot.lib.uniscribe,
-  mormot.ui.pdf;
+  mormot.pdf;
 
 begin
   writeln('delphi7_core: the R-19 units compile');

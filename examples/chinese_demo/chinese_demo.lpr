@@ -9,8 +9,9 @@
 // - subsetting is what keeps the file small: the whole face costs about 24 MB
 //   against roughly 39 KB for the glyphs actually drawn
 // - the CJK face is picked per platform (see CJK_FONT below)
-// - macOS resolves a CFF face (Hiragino Sans GB), whose subset goes to
-//   /FontFile3 with /Subtype /OpenType instead of /FontFile2 (roadmap R-15c)
+// - macOS resolves a CID-keyed CFF face (Hiragino Sans GB): its text is
+//   written as CIDs, its subset as the bare CFF in /FontFile3 with /Subtype
+//   /CIDFontType0C instead of /FontFile2
 //
 // Font requirement:
 //   Windows : Microsoft YaHei - pre-installed on Vista+ (all locales)
@@ -30,8 +31,7 @@ uses
   mormot.core.base,
   mormot.core.os,
   mormot.core.unicode,
-  mormot.pdf.types,   // GetPdfFonts
-  mormot.ui.pdf,
+  mormot.pdf,         // TPdfDocument, GetPdfFonts
   mormot.ui.pdfcanvas;
 
 {$R *.res}
@@ -158,7 +158,8 @@ begin
   WriteLn('Set EmbeddedWholeTtf := true to embed the complete face instead.');
   {$ifdef OSDARWIN}
   WriteLn('');
-  WriteLn('Hiragino Sans GB is OpenType/CFF, so its subset is embedded as');
-  WriteLn('/FontFile3 with /Subtype /OpenType, as a CIDFontType0 (R-15c).');
+  WriteLn('Hiragino Sans GB is a CID-keyed CFF face: its text is written as');
+  WriteLn('CIDs, its subset embedded as the bare CFF, /FontFile3 with');
+  WriteLn('/Subtype /CIDFontType0C, as a CIDFontType0.');
   {$endif OSDARWIN}
 end.

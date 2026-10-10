@@ -25,9 +25,9 @@ and no file name.
 
 **One unit per layer.** Each demo uses the units of its layer only: Demos 2–4
 and 7 `mormot.ui.report` (the GUI forms add `mormot.ui.reportpreview`), Demos
-1, 5 and 6 `mormot.ui.pdfcanvas` with `mormot.ui.pdf`, Demo 8 `mormot.ui.pdf`. A
+1, 5 and 6 `mormot.ui.pdfcanvas` with `mormot.pdf`, Demo 8 `mormot.pdf`. A
 layer re-exports what its API takes from below, so a report never needs
-`mormot.ui.pdf` — and must not have it: both units declare `psA4`, and the
+`mormot.pdf` — and must not have it: both units declare `psA4`, and the
 order of the `uses` clause would decide which one is meant. See the main
 README, "Which unit to use".
 
@@ -62,7 +62,7 @@ Shows how to produce a 3-page PDF from TCanvas commands using `TPdfDocumentVcl` 
 **Core pattern:**
 
 ```pascal
-uses mormot.pdf.types, mormot.ui.pdf, mormot.ui.pdfcanvas;
+uses mormot.pdf, mormot.ui.pdfcanvas;
 
 var Doc: TPdfDocumentVcl; C: TPdfVclCanvas;
 begin
@@ -468,7 +468,7 @@ Shows how to render Chinese (CJK) text with `TPdfDocumentVcl`. CJK ideographs re
 **Core pattern:**
 
 ```pascal
-uses mormot.pdf.types, mormot.ui.pdf, mormot.ui.pdfcanvas;
+uses mormot.pdf, mormot.ui.pdfcanvas;
 
 const CJK_FONT = 'Microsoft YaHei'; // Windows example
 
@@ -528,9 +528,9 @@ Shows Arabic right-to-left text in two sections: an unshared isolated-letter bas
 - `PdfC.RightToLeftText := True` signals RTL direction to the PDF canvas
 - Section 1 (no shaper): isolated Arabic letters verify the CMAP fix and per-glyph advance widths
 - Section 2 (shaper): contextual Arabic letter forms (connected ligatures) via Uniscribe or HarfBuzz
-- Why HarfBuzz: FreeType alone cannot perform Arabic GSUB substitutions. `mormot.ui.pdf` brings `mormot.lib.harfbuzz` itself, like the FreeType2 backend; it shapes when `libharfbuzz` loads
+- Why HarfBuzz: FreeType alone cannot perform Arabic GSUB substitutions. `mormot.pdf` brings `mormot.lib.harfbuzz` itself, like the FreeType2 backend; it shapes when `libharfbuzz` loads
 - `EmbeddedWholeTtf := False` is safe on every platform: both subsetters receive the shaped glyph IDs themselves — hb-subset on Linux/macOS (ROADMAP R-12), `CreateFontPackage` with a glyph keep list on Windows (R-15)
-- **Set `UseUniscribe := True` without a conditional.** `USE_UNISCRIBE` is defined inside `mormot.ui.pdf` and does not reach your unit, so `{$ifdef USE_UNISCRIBE}` around the assignment compiles to nothing and the shaper never runs. That was ROADMAP R-16, and it is why the property is declared on every platform — on Linux and macOS the same switch shapes with HarfBuzz. `RightToLeftText` only sets the direction
+- **Set `UseUniscribe := True` without a conditional.** `USE_UNISCRIBE` is defined in `mormot.pdf.defines.inc` for `mormot.pdf` and does not reach your unit, so `{$ifdef USE_UNISCRIBE}` around the assignment compiles to nothing and the shaper never runs. That was ROADMAP R-16, and it is why the property is declared on every platform — on Linux and macOS the same switch shapes with HarfBuzz. `RightToLeftText` only sets the direction
 - Platform-specific Arabic fonts: Tahoma (Windows) / Geeza Pro (macOS) / Noto Naskh Arabic (Linux)
 
 **Font and library requirements:**
@@ -545,7 +545,7 @@ Shows Arabic right-to-left text in two sections: an unshared isolated-letter bas
 
 ```pascal
 uses
-  mormot.ui.pdf, mormot.ui.pdfcanvas;  // mormot.ui.pdf brings backend and shaper
+  mormot.pdf, mormot.ui.pdfcanvas;  // mormot.pdf brings backend and shaper
 
 var Doc: TPdfDocumentVcl; C: TPdfVclCanvas; PdfC: TPdfCanvas;
 begin
@@ -707,7 +707,7 @@ until roadmap R-20 is done.
 - Text in the same encoding on both compilers: UTF-8 in, `Utf8ToSynUnicode`,
   `TextOutW`. Non-ASCII characters are UTF-8 bytes in a `RawUtf8` constant,
   never literal characters in the source
-- `GetPdfFonts` from `mormot.pdf.types` gives the platform's faces without the
+- `GetPdfFonts` of `mormot.pdf` gives the platform's faces without the
   report engine; ask for them after `Tagged := True`
 - With this API you build the structure yourself: `BeginStructContent` for
   `H1`/`H2`/`P`, a `Figure` with alternate text, and `CreateOutline` for
@@ -727,8 +727,8 @@ until roadmap R-20 is done.
 
 ```pascal
 uses
-  mormot.core.base, mormot.core.unicode, mormot.pdf.types,
-  mormot.ui.pdf;   // brings the platform backend itself
+  mormot.core.base, mormot.core.unicode,
+  mormot.pdf;   // roles, GetPdfFonts; brings the platform backend itself
 
 procedure DrawText(C: TPdfCanvas; X, Y: single; const Text: RawUtf8);
 var W: SynUnicode;

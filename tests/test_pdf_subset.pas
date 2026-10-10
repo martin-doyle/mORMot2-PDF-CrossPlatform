@@ -26,7 +26,7 @@ uses
   {$else}
   mormot.lib.harfbuzz,
   {$endif OSWINDOWS}
-  mormot.ui.pdf;
+  mormot.pdf;
 
 type
   /// IFontSubsetter test cases
@@ -70,6 +70,10 @@ type
     function SansFont: string;
     // check the font file of every installed .ttc face of a list against the
     // face the platform selects: cmap and hhea
+    // the bare CFF program of a CID-keyed face (CheckTtcFaces): 3 checks, as
+    // the three of a font file for the other faces
+    procedure CheckBareCff(const aFont, aSample: RawUtf8;
+      const aProgram: RawByteString; const aName: string);
     procedure CheckTtcFaces(aWholeTtf: boolean; aPdfA: TPdfALevel;
       aSubset: boolean; const aWhat: string);
   published
@@ -267,7 +271,8 @@ var
   p, q, len: PtrInt;
 begin
   { the glyf flavour has /Length1, a CFF face (/FontFile3) /Subtype
-    /OpenType instead: then its /Length, read from the stream dictionary }
+    /OpenType or /CIDFontType0C (the bare CFF of a CID-keyed face) instead:
+    then its /Length, read from the stream dictionary }
   result := '';
   p := Pos(RawByteString('/Length1 '), Pdf);
   if p > 0 then
@@ -275,6 +280,8 @@ begin
   else
   begin
     p := Pos(RawByteString('/OpenType'), Pdf);
+    if p = 0 then
+      p := Pos(RawByteString('/CIDFontType0C'), Pdf);
     if p = 0 then
       exit;
     q := PosEx(RawByteString(#10'stream'#10), Pdf, p);
@@ -549,8 +556,8 @@ begin
     FaceHandle(font), sub),
     'a truncated CFF face must not be subset');
   CheckEqual(sub, '', 'no output expected');
-  // a real CFF face is subset like any other: it goes to /FontFile3 with
-  // /Subtype /OpenType, which the engine picks through PdfFontFileKey()
+  // a real CFF face is subset like any other - the engine embeds a CID-keyed
+  // one as its bare CFF (/CIDFontType0C), a name-keyed one as /OpenType
   if not LoadCffFace(face, font) then
     exit;
   ClearRequest(req);
@@ -956,6 +963,41 @@ begin
   end;
 end;
 
+procedure TPdfSubsetEngineTests.CheckBareCff(const aFont, aSample: RawUtf8;
+  const aProgram: RawByteString; const aName: string);
+var
+  cmap: RawByteString;
+  face, prog: TPdfCffInfo;
+  facecff: RawByteString;
+  i, g: integer;
+  o, l: cardinal;
+  same: boolean;
+begin
+  cmap := PlatformFontTable(aFont, 'cmap');
+  facecff := PlatformFontTable(aFont, 'CFF '); // in an sfnt of its own
+  if SfntFindTable(facecff, 'CFF ', o, l) then
+    facecff := copy(facecff, o + 1, l)
+  else
+    facecff := '';
+  Check(PdfCffParse(pointer(aProgram), length(aProgram), prog) = pcCidKeyed,
+    aName + ': one CID-keyed CFF program, not a collection');
+  Check(PdfCffParse(pointer(facecff), length(facecff), face) = pcCidKeyed,
+    aName + ': the face is CID-keyed');
+  same := (prog.Registry = face.Registry) and
+          (prog.Ordering = face.Ordering) and
+          (prog.Supplement = face.Supplement);
+  for i := 1 to length(aSample) do
+  begin
+    g := SfntCmapLookup(cmap, ord(aSample[i]));
+    same := same and
+            (g > 0) and
+            (g < length(prog.Cid)) and
+            (g < length(face.Cid)) and
+            (prog.Cid[g] = face.Cid[g]);
+  end;
+  Check(same, aName + ': the program gives the glyphs of the text their CIDs');
+end;
+
 procedure TPdfSubsetEngineTests.CheckTtcFaces(aWholeTtf: boolean;
   aPdfA: TPdfALevel; aSubset: boolean; const aWhat: string);
 const
@@ -997,6 +1039,12 @@ begin
       aPdfA);
     face := FirstFontFile(pdf);
     Check((FirstSubsetTag(pdf) <> '') = aSubset, name + ': subset or whole');
+    if copy(face, 1, 1) = #1 then
+    begin
+      // the bare CFF of a CID-keyed face: its glyphs and name, not its cmap
+      CheckBareCff(TTC_FONTS[f], SAMPLE, face, name);
+      continue;
+    end;
     Check((copy(face, 1, 4) = #0#1#0#0) or
           (copy(face, 1, 4) = 'OTTO'), name + ': one face, not a collection');
     same := true;
@@ -1453,6 +1501,7 @@ var
   PDF: TPdfDocument;
   Stream: TMemoryStream;
   raised: boolean;
+  msg: string;
 begin
   { a face asked to be embedded whole that cannot be found fails the save:
     it was written without a font file before, which PDF/A and PDF/UA
@@ -1461,13 +1510,53 @@ begin
   FontProvider := TFaceFileFailProvider.Create(saved);
   try
     raised := false;
+    msg := '';
     try
       BuildPdf(SansFont, 'Hello', true, false, false);
     except
-      on EPdfInvalidOperation do
+      on E: EPdfInvalidOperation do
+      begin
         raised := true;
+        msg := E.Message;
+      end;
     end;
     Check(raised, 'embedding asked for, face not found: the save fails');
+    // the message names the font and, for plain EmbeddedTtf, the way out
+    Check(Pos(SansFont, msg) > 0, 'the font named: ' + msg);
+    Check(Pos('EmbeddedTtfIgnore', msg) > 0, 'the way out named');
+    Check(Pos('TPdfFontTrueType', msg) = 0, 'no internal class name');
+    // Tagged ignores EmbeddedTtfIgnore: no such hint; the style is named
+    raised := false;
+    msg := '';
+    Stream := TMemoryStream.Create;
+    try
+      PDF := TPdfDocument.Create(false, 0, pdfaNone);
+      try
+        PDF.Tagged := true;
+        PDF.EmbeddedWholeTtf := true; // the whole face, which is not found
+        PDF.AddPage;
+        PDF.Canvas.BeginStructContent(psrP);
+        PDF.Canvas.SetFont(StringToUtf8(SansFont), 12, [pfsBold]);
+        DrawUtf8Text(PDF, 15, 800, 'Hello');
+        PDF.Canvas.EndStructContent;
+        try
+          PDF.SaveToStream(Stream);
+        except
+          on E: EPdfInvalidOperation do
+          begin
+            raised := true;
+            msg := E.Message;
+          end;
+        end;
+      finally
+        PDF.Free;
+      end;
+    finally
+      Stream.Free;
+    end;
+    Check(raised, 'Tagged: the save fails');
+    Check(Pos('(bold)', msg) > 0, 'the style named: ' + msg);
+    Check(Pos('EmbeddedTtfIgnore', msg) = 0, 'no way out under Tagged');
     // a subset needs no face file: only a font without one fails
     if PdfCanSubsetRetainingGids then
     begin

@@ -23,7 +23,7 @@ uses
   mormot.core.unicode,  // StringToUtf8
   mormot.lib.core,      // FontShaper
   mormot.pdf.types,     // TPdfStructRole, GetPdfFonts
-  mormot.ui.pdf,        // TPdfDocument, TPdfCanvas
+  mormot.pdf,        // TPdfDocument, TPdfCanvas
   test_pdf_subset;      // DrawUtf8Text
 
 type
@@ -37,6 +37,9 @@ type
     {$ifdef PDF_HASVCLCANVAS}
     procedure TestVclCanvasTextMetrics;
     procedure TestVclCanvasUtf8Text;
+    {$ifndef NO_USE_PDFSECURITY}
+    procedure TestVclCanvasEncryption;
+    {$endif NO_USE_PDFSECURITY}
     {$endif PDF_HASVCLCANVAS}
     procedure TestTaggedAltTextIsPdfString;
     procedure TestTaggedImpliesEmbeddedFonts;
@@ -171,6 +174,40 @@ begin
     p := PosEx(RawByteString(' m'#10), s, p + 1);
   end;
 end;
+
+{$ifdef PDF_HASVCLCANVAS}
+{$ifndef NO_USE_PDFSECURITY}
+// TPdfDocumentVcl.Create has the AEncryption of TPdfDocument.Create: the bridge
+// sees USE_PDFSECURITY through mormot.pdf.defines.inc
+procedure TPdfSmokeTests.TestVclCanvasEncryption;
+var
+  PDF: TPdfDocumentVcl;
+  Stream: TMemoryStream;
+  s: RawByteString;
+begin
+  Stream := TMemoryStream.Create;
+  try
+    PDF := TPdfDocumentVcl.Create(false, 0, pdfaNone,
+      TPdfEncryption.New(elRC4_128, '', 'owner', PDF_PERMISSION_ALL));
+    try
+      PDF.CompressionMethod := cmNone;
+      PDF.StandardFontsReplace := true;
+      PDF.AddPage;
+      PDF.VclCanvas.Font.Name := 'Helvetica';
+      PDF.VclCanvas.TextOut(40, 40, 'Plain words');
+      PDF.SaveToStream(Stream);
+    finally
+      PDF.Free;
+    end;
+    s := StreamToRaw(Stream);
+    Check(PosEx('/Encrypt', s) > 0, 'an /Encrypt dictionary');
+    Check(PosEx('Plain words', s) = 0, 'the text is encrypted');
+  finally
+    Stream.Free;
+  end;
+end;
+{$endif NO_USE_PDFSECURITY}
+{$endif PDF_HASVCLCANVAS}
 
 {$ifdef PDF_HASVCLCANVAS} // SyncPen of the TCanvas bridge (R-20)
 procedure TPdfSmokeTests.TestLineToWritesCompletePath;
@@ -1104,12 +1141,13 @@ begin
       entry in a Type 2 CID font" }
     CheckEqual(FontsWithout(s, '/Subtype/CIDFontType2', '/CIDToGIDMap/Identity'), 0,
       'every CIDFontType2 has CIDToGIDMap Identity');
-    { a .ttc face is embedded alone, a CFF face in /FontFile3 (fonts.md 3);
-      the defect behind this depended on the heap, so it may not show }
+    { a .ttc face is embedded alone, an OpenType font file with its subtype
+      (fonts.md 3); the defect behind this depended on the heap, so it may
+      not show }
     CheckEqual(CountOf('stream'#10'ttcf', s), 0,
       'no whole .ttc collection embedded');
     CheckEqual(StreamsWithout(s, 'OTTO', '/Subtype/OpenType'), 0,
-      'every CFF face is a /FontFile3 with Subtype OpenType');
+      'every OpenType font file has Subtype OpenType');
   finally
     Stream.Free;
   end;

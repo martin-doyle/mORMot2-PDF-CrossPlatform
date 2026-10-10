@@ -22,7 +22,7 @@ veraPDF und PAC 2024 auf allen drei Plattformen geprüft.
 ```
 TGDIPages           mormot.ui.report     Dokument-Layout, Tabellen, H1-H6
 TPdfDocumentVcl     mormot.ui.pdfcanvas  TCanvas-kompatibler Wrapper
-TPdfDocument        mormot.ui.pdf        Direkte PDF-API, ohne TCanvas (bindet die Unit Graphics von LCL/VCL ein)
+TPdfDocument        mormot.pdf           Direkte PDF-API, ohne TCanvas, ohne VCL/LCL
 ```
 
 ### Welche Unit wofür
@@ -34,13 +34,13 @@ selbst weiter:
 | Ebene | `uses` | Re-Exporte |
 |---|---|---|
 | 3 — `TGDIPages` | `mormot.ui.report`; eine GUI nimmt `mormot.ui.reportpreview` für Vorschau und Druck dazu | was die `ExportPdf*`-Optionen erwarten: `TPdfALevel` (`pdfaNone` … `pdfa3U`), `TPdfFileFormat` (`pdf13` … `pdf17`), `TPdfAFRelationship` (`afr*`), `PdfMetadataFacturX` |
-| 2 — `TPdfDocumentVcl` | `mormot.ui.pdfcanvas`, `mormot.ui.pdf` | `TPdfALevel`, `TPdfAFRelationship`, `PdfMetadataFacturX`; der Rest der Dokument-API kommt aus `mormot.ui.pdf` |
-| 1 — `TPdfDocument` | `mormot.ui.pdf` | — |
+| 2 — `TPdfDocumentVcl` | `mormot.ui.pdfcanvas`, `mormot.pdf` | `TPdfALevel`, `TPdfAFRelationship`, `PdfMetadataFacturX`; der Rest der Dokument-API kommt aus `mormot.pdf` |
+| 1 — `TPdfDocument` | `mormot.pdf` | — |
 
-`mormot.pdf.types` kommt bei Ebene 1 und 2 für die Strukturrollen
-(`psrH1`, `psrP`, …) und `GetPdfFonts` dazu.
+Die Strukturrollen (`psrH1`, `psrP`, …) und `GetPdfFonts` kommen mit
+`mormot.pdf` (deklariert in `mormot.pdf.types`, re-exportiert).
 
-**Die Plattform-Units brauchen kein eigenes `uses`.** `mormot.ui.pdf` bindet
+**Die Plattform-Units brauchen kein eigenes `uses`.** `mormot.pdf` bindet
 unter Windows GDI und Uniscribe ein, unter Linux und macOS FreeType2, den
 HarfBuzz-Shaper und den hb-subset-Subsetter. HarfBuzz wird zur Laufzeit
 geladen: Fehlt die Bibliothek, wird Text ungeformt gezeichnet und Schriften
@@ -49,16 +49,17 @@ werden ganz eingebettet.
 **Shaping** von arabischem, hebräischem, indischem oder thailändischem Text
 ist auf jeder Plattform ein Schalter, `UseUniscribe := True` — der Name stammt
 aus der Original-API; unter Linux und macOS formt HarfBuzz. Lateinischer Text
-bleibt in beiden Fällen in der einfachen Schrift. `RightToLeftText := True`
+bleibt in beiden Fällen in der einfachen Schrift - außer bei einer CFF-Schrift,
+die ihren ganzen Text als Glyphen schreibt. `RightToLeftText := True`
 auf dem Canvas setzt die Absatzrichtung; ohne ihn ergibt sich die Richtung aus
 der Schrift. Den Schalter ohne Bedingung setzen — siehe
 [rtl_demo](examples/rtl_demo/).
 
-**`mormot.ui.pdf` nie neben `mormot.ui.report` einbinden.** Beide verwenden
+**`mormot.pdf` nie neben `mormot.ui.report` einbinden.** Beide verwenden
 einige Namen für Verschiedenes — `psA4` ist in der einen ein `TPdfPaperSize`,
-in der anderen ein `TGdiPagePaperSize`, und das `TRect` von `mormot.ui.pdf`
+in der anderen ein `TGdiPagePaperSize`, und das `TRect` von `mormot.pdf`
 ist nicht das der LCL —, also entscheidet die Reihenfolge der `uses`-Klausel,
-welches ein Name meint. Mit `mormot.ui.pdf` zuletzt kompiliert
+welches ein Name meint. Mit `mormot.pdf` zuletzt kompiliert
 `Report.PaperSize := psA4` nicht. Was ein Report von unten braucht, exportiert
 `mormot.ui.report` weiter; fehlt etwas, gehört es dorthin, nicht in die eigene
 `uses`-Klausel.
@@ -70,7 +71,7 @@ welches ein Name meint. Mit `mormot.ui.pdf` zuletzt kompiliert
 ### Ebene 1 — Direkte PDF-API (ohne TCanvas)
 
 ```pascal
-uses mormot.ui.pdf;
+uses mormot.pdf;
 
 Doc := TPdfDocument.Create;
 Doc.DefaultPaperSize := psA4;
@@ -88,7 +89,7 @@ Koordinaten in PDF-Points (72 DPI), Y=0 unten-links.
 ### Ebene 2 — TCanvas-API
 
 ```pascal
-uses mormot.ui.pdf, mormot.ui.pdfcanvas;
+uses mormot.pdf, mormot.ui.pdfcanvas;
 
 Doc := TPdfDocumentVcl.Create;
 Doc.EmbeddedTTF := False;
@@ -220,11 +221,12 @@ unter Linux/macOS. Textextraktion und Kopieren sind in beiden Fällen
 unverändert.
 
 Beide Umriss-Varianten werden gesubsettet. Eine `glyf`-Schrift landet in
-`/FontFile2`, eine CFF-OpenType-Schrift in `/FontFile3` mit
-`/Subtype /OpenType` als `CIDFontType0`. Das ist unter macOS relevant, dessen
-CJK-Systemschriften CFF sind: `chinese_demo` schrumpfte dort von 10 MB auf
-23 KB, nachdem dies korrekt behandelt wurde (siehe R-15c in
-[docs/ROADMAP.md](docs/ROADMAP.md)).
+`/FontFile2`. Eine CFF-Schrift (die CJK-Systemschriften von macOS und Linux)
+schreibt ihren ganzen Text als `CIDFontType0` und landet in `/FontFile3`:
+eine CID-basierte als nacktes CFF (`/Subtype /CIDFontType0C`, PDF 1.3, auch
+PDF/A-1), eine namensbasierte als OpenType-Datei (PDF 1.6). Unter macOS
+schrumpfte `chinese_demo` von 10 MB auf 23 KB, seit CFF gesubsettet wird
+(siehe R-15c in [docs/ROADMAP.md](docs/ROADMAP.md)).
 
 ## PDF/A und E-Rechnungen (ZUGFeRD / Factur-X)
 

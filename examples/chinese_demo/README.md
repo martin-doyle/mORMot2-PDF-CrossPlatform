@@ -2,8 +2,8 @@
 
 Demo 5 of the [learning path](../../docs/DEMOS.md#demo-5--chinese_demo).
 
-**Layer 2.** `uses mormot.ui.pdfcanvas, mormot.ui.pdf`, plus `mormot.pdf.types`
-for `GetPdfFonts`.
+**Layer 2.** `uses mormot.ui.pdfcanvas, mormot.pdf` - `GetPdfFonts` comes
+with `mormot.pdf`.
 
 Draws multi-line Chinese with `TPdfDocumentVcl` and embeds the face as a
 subset on every platform.
@@ -16,9 +16,10 @@ subset on every platform.
   glyph numbering, so Identity-H and `/ToUnicode` stay valid
 - set `EmbeddedWholeTtf := True` if a consumer needs the complete CMAP
 
-**macOS uses a CFF face.** `Hiragino Sans GB.ttc` is OpenType/CFF, so its
-subset goes to `/FontFile3` with `/Subtype /OpenType` rather than `/FontFile2`
-(roadmap R-15c). Before that was handled the file was ~10 MB; it is ~23 KB now.
+**macOS uses a CFF face.** `Hiragino Sans GB.ttc` is a CID-keyed CFF face:
+its text is written as CIDs, and its subset goes to `/FontFile3` as the bare
+CFF (`/Subtype /CIDFontType0C`) rather than to `/FontFile2`. Before CFF was
+subset (roadmap R-15c) the file was ~10 MB; it is ~23 KB now.
 
 ```bash
 grep -a -oE "/BaseFont[ ]*/[A-Za-z0-9+,#_-]+" chinese_demo_<os>_<cpu>_<compiler>.pdf | sort -u
