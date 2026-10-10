@@ -99,7 +99,7 @@ Doc.SetStrokeAlpha(0.8);  // stroke opacity 0..1
 Requires compile-time flag `USE_PDFSECURITY` (enabled by default).
 
 ```pascal
-uses mormot.ui.pdf;
+uses mormot.pdf;
 
 var Enc: TPdfEncryption;
 Enc := TPdfEncryption.New(
@@ -260,7 +260,7 @@ All of this needs `mormot.ui.report` only: it re-exports the PDF/A levels,
 `PdfMetadataFacturX`. `ExportPdfPageMode` (default `pmUseNone`, which writes
 nothing) decides how a viewer opens the file; `pmUseAttachments` needs PDF 1.6
 and is refused with PDF/A-1. Do not add
-`mormot.ui.pdf` to a report program — its `psA4` and `TRect` hide the
+`mormot.pdf` to a report program — its `psA4` and `TRect` hide the
 report's, depending on the order of the uses clause.
 
 ---

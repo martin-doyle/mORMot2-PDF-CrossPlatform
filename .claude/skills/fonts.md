@@ -1,6 +1,6 @@
 # Font Handling — Deep Reference
 
-Sources: `src/core/mormot.ui.pdf.pas`, `src/core/mormot.pdf.types.pas`,
+Sources: `src/pdf/mormot.pdf.pas`, `src/pdf/mormot.pdf.types.pas`,
 mORMot2 `src/lib/mormot.lib.uniscribe.pas` (GDI), `src/lib/mormot.lib.freetype.pas`
 
 **Skill boundaries:**
@@ -523,7 +523,8 @@ On Unix/macOS: `fCodePage = CP_UTF8 → fCharSet = DEFAULT_CHARSET (1)` — safe
 ### Arabic rendering
 
 **Setting the flag: never behind `{$ifdef USE_UNISCRIBE}`.** That symbol is
-defined in `mormot.ui.pdf.pas` and does not reach the units that use it, so a
+defined in `mormot.pdf.defines.inc`, which only `mormot.pdf` and `mormot.pdf.canvas`
+include: it does not reach the units that use them, so a
 guarded `Doc.UseUniscribe := true` compiles to nothing and the shaper never
 runs — Section 2 of `rtl_demo` then produces output byte-identical to its
 no-shaper Section 1. This was ROADMAP R-16. The property is declared

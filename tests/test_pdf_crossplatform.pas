@@ -21,7 +21,7 @@ uses
   {$ifndef OSWINDOWS}
   mormot.lib.freetype,  // FreeType face validation
   {$endif OSWINDOWS}
-  mormot.ui.pdf;        // registers the backend and FontShaper itself
+  mormot.pdf;        // registers the backend and FontShaper itself
 
 type
   /// Cross-platform PDF test cases
@@ -449,7 +449,7 @@ var
   doc: TPdfDocument;
 begin
   // ROADMAP R-16: UseUniscribe used to be declared inside {$ifdef
-  // USE_UNISCRIBE}. That symbol is defined in mormot.ui.pdf and does not reach
+  // USE_UNISCRIBE}. That symbol is defined in mormot.pdf and does not reach
   // the units that use it, so callers wrote {$ifdef USE_UNISCRIBE} around the
   // assignment, it compiled to nothing, and the shaper silently never ran -
   // rtl_demo produced unshaped Arabic on Windows for exactly that reason.

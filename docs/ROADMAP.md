@@ -181,6 +181,29 @@ v0.10.0 (2026-09-30).
   and `pdfcheck compare` (as the golden-file tests) names up to ten changed,
   added or removed objects, paired by number and also inside object streams,
   and counts the rest - instead of only the first differing byte
+- **Changed API: images from a `TBitmap`/`TGraphic`** (R-28 Phase 2, so that
+  the engine needs no VCL/LCL): `Doc.CreateOrGetImage(Bitmap, ..)` becomes
+  `CreateOrGetBitmapImage(Doc, Bitmap, ..)`, `TPdfImage.Create(Doc, Graphic,
+  ..)` becomes `CreateGraphicImage(Doc, Graphic, ..)` - same output. New,
+  without VCL/LCL: `TPdfImagePixels` with `Doc.CreateOrGetImage(Pixels, ..)`
+  (RGB, BGR, BGRx, indexed with palette; stride, color key) and
+  `TPdfImage.CreateJpeg`, `Doc.RegisterImage`, `Doc.DrawImage`
+- **`mormot.ui.pdf` is now `mormot.pdf`, without VCL/LCL** (R-28 Phase 2):
+  change the `uses` (no compatibility unit - the trunk has a different
+  `mormot.ui.pdf`); the file is `src/pdf/mormot.pdf.pas`, with
+  `mormot.pdf.types` beside it, so add `src/pdf` to the search path. The
+  engine unit builds in a console program with no GUI framework, on every
+  compiler; the VCL/LCL
+  parts are in `mormot.pdf.canvas` (`TBitmap`/`TGraphic` images,
+  `TPdfDocumentGdi`, `RenderMetaFile`, the `GdiComment*` procedures and
+  `CurrentPrinterPaperSize`/`CurrentPrinterRes` - add it to the `uses` of a
+  program that calls them). One consequence on Linux and macOS (FPC): a
+  system color (`clBtnFace` ...) given to the engine directly is resolved
+  from fixed Windows defaults, no longer from the LCL theme - as Delphi on
+  Linux did already; `TPdfVclCanvas` resolves its colors with `ColorToRGB`
+  first, as before. An empty `TBitmap` gives no image (`''`) and
+  `CreateGraphicImage` raises `EPdfInvalidValue` for an empty graphic, where
+  a 0 x 0 image was written before
 - **Coming with R-20** (announce when done): the preview and the GUI demos
   on Delphi
 
@@ -472,11 +495,11 @@ comment shrinks to the rule it protects.
 
 **The state.** The older code carries the investigations themselves —
 measurements, validator runs, spec clauses argued out, roadmap IDs — above all
-`mormot.ui.pdf.pas` (`PrepareForSaving`, `PrepareFontSubsets`, the text
+`mormot.pdf.pas` (`PrepareForSaving`, `PrepareFontSubsets`, the text
 rendering chains), also `mormot.ui.report.pas`, the backends and the test
 units. Part of it repeats the skills, part of it is found nowhere else.
 
-**Work.** Unit by unit, one commit each; `mormot.ui.pdf.pas` by section. For
+**Work.** Unit by unit, one commit each; `mormot.pdf.pas` by section. For
 every long comment: is the knowledge in a skill? If not, move it there first,
 then cut the comment. Comments only — `test_runner` gives the same assertion
 count, and the demo PDFs are byte-identical apart from date and `/ID`.
@@ -785,7 +808,7 @@ mORMot2 fork and as a PR to Synopse; then drop the `{$ifdef OSPOSIX}` in
 
 ### `/ToUnicode` Codespace Bounds — unprioritised
 
-**Files:** `src/core/mormot.ui.pdf.pas` (`PrepareForSaving`)
+**Files:** `src/pdf/mormot.pdf.pas` (`PrepareForSaving`)
 
 The codespace range of a Type0 font's `/ToUnicode` CMap is written as the
 glyphs of the first and last entry in key order, not the smallest and largest
@@ -840,7 +863,7 @@ peer goes anyway with the CFF series of R-28 (Phase 2's bug-fix PR,
 
 ### R-15b — Symbolic Fonts Are Not Subset on POSIX — unprioritised
 
-**Effort:** 0.5 day | **Files:** `src/core/mormot.ui.pdf.pas`,
+**Effort:** 0.5 day | **Files:** `src/pdf/mormot.pdf.pas`,
 `mormot.lib.freetype` (mORMot2)
 
 The one remaining difference between the platforms that is **not** a property of

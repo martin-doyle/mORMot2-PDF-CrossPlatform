@@ -28,7 +28,7 @@ uses
   mormot.core.text,     // FormatUtf8, FormatString
   mormot.core.unicode,  // StringToUtf8
   mormot.pdf.types,     // TPdfStructRole, GetPdfFonts
-  mormot.ui.pdf,
+  mormot.pdf,
   pdf_inspect,          // NormalizePdf, ComparePdfText
   test_pdf_subset;      // DrawUtf8Text
 
@@ -333,6 +333,16 @@ begin
   Check(not Compare(MiniPdf([1, 1], ['(x)', '(y)']),
                     MiniPdf([1, 1], ['(x)', '(z)'])), 'redefined');
   Check(diff <> '', 'the second definition named');
+  // JPEG data is kept as it is - in an image, nowhere else
+  NormalizePdf(MiniPdf([1], ['<</Subtype/Image/Filter/DCTDecode/Length 3>>' +
+    #10'stream'#10'abc'#10'endstream']), err);
+  CheckEqual(err, '', 'a JPEG image');
+  NormalizePdf(MiniPdf([1], ['<</Type/XRef/Filter/DCTDecode/Length 3>>' +
+    #10'stream'#10'abc'#10'endstream']), err);
+  Check(err <> '', 'no JPEG xref stream');
+  NormalizePdf(MiniPdf([1], ['<</Type/XRef/Subtype/Image/Filter/DCTDecode' +
+    '/Length 3>>'#10'stream'#10'abc'#10'endstream']), err);
+  Check(err <> '', 'no JPEG xref stream that claims to be an image');
   // empty on either side
   Check(not ComparePdfText('', 'x', nil, nil, diff), 'empty a');
   Check(not ComparePdfText('x', '', nil, nil, diff), 'empty b');

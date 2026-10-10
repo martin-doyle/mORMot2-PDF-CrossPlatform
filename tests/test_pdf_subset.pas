@@ -26,7 +26,7 @@ uses
   {$else}
   mormot.lib.harfbuzz,
   {$endif OSWINDOWS}
-  mormot.ui.pdf;
+  mormot.pdf;
 
 type
   /// IFontSubsetter test cases

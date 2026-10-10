@@ -2,8 +2,8 @@
 
 Demo 1 of the [learning path](../../docs/DEMOS.md#demo-1--pdf_demo_crossplat).
 
-**Layer 2.** `uses mormot.ui.pdfcanvas, mormot.ui.pdf`, plus `mormot.pdf.types`
-for the structure roles (`psrH1`, `psrP`, …) and `GetPdfFonts`.
+**Layer 2.** `uses mormot.ui.pdfcanvas, mormot.pdf` - the structure roles
+(`psrH1`, `psrP`, …) and `GetPdfFonts` come with `mormot.pdf`.
 
 Produces a 3-page tagged PDF from plain `TCanvas` calls with `TPdfDocumentVcl`
 — no report engine, no GUI: fonts and text, vector graphics, and a table built

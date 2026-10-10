@@ -23,7 +23,7 @@ uses
   mormot.core.unicode,  // StringToUtf8
   mormot.lib.core,      // FontShaper
   mormot.pdf.types,     // TPdfStructRole, GetPdfFonts
-  mormot.ui.pdf,        // TPdfDocument, TPdfCanvas
+  mormot.pdf,        // TPdfDocument, TPdfCanvas
   test_pdf_subset;      // DrawUtf8Text
 
 type

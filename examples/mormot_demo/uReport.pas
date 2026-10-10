@@ -339,7 +339,7 @@ begin
   ReadInvoiceData(Items);
   Report := BuildReport(Options, Items);
   try
-    // ExportPDF uses mormot.ui.pdf (cross-platform)
+    // ExportPDF uses mormot.pdf (cross-platform)
     Report.ExportPDF(FileName,
       False,  // no password protection
       False,  // no encryption

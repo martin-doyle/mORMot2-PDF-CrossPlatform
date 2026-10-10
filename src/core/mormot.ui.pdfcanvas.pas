@@ -46,22 +46,23 @@ uses
   mormot.core.base,
   mormot.core.unicode,
   mormot.pdf.types,  // TPdfStructRole (Tagged PDF)
-  mormot.ui.pdf;     // TPdfDocument, TPdfCanvas, TPdfPage
+  mormot.pdf,     // TPdfDocument, TPdfCanvas, TPdfPage
+  mormot.pdf.canvas; // CreateOrGetBitmapImage
 
 type
-  /// Re-export TPdfALevel from mormot.ui.pdf to allow importing only mormot.pdf.vclcanvas
-  TPdfALevel = mormot.ui.pdf.TPdfALevel;
+  /// Re-export TPdfALevel from mormot.pdf to allow importing only mormot.pdf.vclcanvas
+  TPdfALevel = mormot.pdf.TPdfALevel;
 
   /// Re-export TPdfAFRelationship for TGDIPages.AddExportPdfAttachment
-  TPdfAFRelationship = mormot.ui.pdf.TPdfAFRelationship;
+  TPdfAFRelationship = mormot.pdf.TPdfAFRelationship;
 
   /// Re-export TPdfPageMode for TGDIPages.ExportPdfPageMode
-  TPdfPageMode = mormot.ui.pdf.TPdfPageMode;
+  TPdfPageMode = mormot.pdf.TPdfPageMode;
 
   /// Re-export TPdfFontMeasurer so TGDIPages can lay out its pages with the
-  // metrics of the PDF font engine without pulling all of mormot.ui.pdf - that
+  // metrics of the PDF font engine without pulling all of mormot.pdf - that
   // unit re-exports Windows-style TRect/TPoint which clash with the LCL ones
-  TPdfFontMeasurer = mormot.ui.pdf.TPdfFontMeasurer;
+  TPdfFontMeasurer = mormot.pdf.TPdfFontMeasurer;
 
   /// coordinate scaling state used by TPdfVclCanvas
   TPdfVclScale = record
@@ -238,30 +239,30 @@ type
   end;
 
 const
-  /// Re-export PDF/A level constants from mormot.ui.pdf
-  pdfaNone = mormot.ui.pdf.pdfaNone;
-  pdfa1A = mormot.ui.pdf.pdfa1A;
-  pdfa1B = mormot.ui.pdf.pdfa1B;
-  pdfa2A = mormot.ui.pdf.pdfa2A;
-  pdfa2B = mormot.ui.pdf.pdfa2B;
-  pdfa3A = mormot.ui.pdf.pdfa3A;
-  pdfa3B = mormot.ui.pdf.pdfa3B;
-  pdfa3U = mormot.ui.pdf.pdfa3U;
-  /// Re-export the /AFRelationship values from mormot.ui.pdf
-  afrUnspecified = mormot.ui.pdf.afrUnspecified;
-  afrSource = mormot.ui.pdf.afrSource;
-  afrData = mormot.ui.pdf.afrData;
-  afrAlternative = mormot.ui.pdf.afrAlternative;
-  afrSupplement = mormot.ui.pdf.afrSupplement;
-  /// Re-export the page modes from mormot.ui.pdf
-  pmUseNone = mormot.ui.pdf.pmUseNone;
-  pmUseOutlines = mormot.ui.pdf.pmUseOutlines;
-  pmUseThumbs = mormot.ui.pdf.pmUseThumbs;
-  pmFullScreen = mormot.ui.pdf.pmFullScreen;
-  pmUseAttachments = mormot.ui.pdf.pmUseAttachments;
+  /// Re-export PDF/A level constants from mormot.pdf
+  pdfaNone = mormot.pdf.pdfaNone;
+  pdfa1A = mormot.pdf.pdfa1A;
+  pdfa1B = mormot.pdf.pdfa1B;
+  pdfa2A = mormot.pdf.pdfa2A;
+  pdfa2B = mormot.pdf.pdfa2B;
+  pdfa3A = mormot.pdf.pdfa3A;
+  pdfa3B = mormot.pdf.pdfa3B;
+  pdfa3U = mormot.pdf.pdfa3U;
+  /// Re-export the /AFRelationship values from mormot.pdf
+  afrUnspecified = mormot.pdf.afrUnspecified;
+  afrSource = mormot.pdf.afrSource;
+  afrData = mormot.pdf.afrData;
+  afrAlternative = mormot.pdf.afrAlternative;
+  afrSupplement = mormot.pdf.afrSupplement;
+  /// Re-export the page modes from mormot.pdf
+  pmUseNone = mormot.pdf.pmUseNone;
+  pmUseOutlines = mormot.pdf.pmUseOutlines;
+  pmUseThumbs = mormot.pdf.pmUseThumbs;
+  pmFullScreen = mormot.pdf.pmFullScreen;
+  pmUseAttachments = mormot.pdf.pmUseAttachments;
 
-/// Re-export mormot.ui.pdf.PdfMetadataFacturX for mormot.ui.report, which
-// does not use mormot.ui.pdf: its psA4 and TRect would hide the report's
+/// Re-export mormot.pdf.PdfMetadataFacturX for mormot.ui.report, which
+// does not use mormot.pdf: its psA4 and TRect would hide the report's
 function PdfMetadataFacturX(const ConformanceLevel: RawUtf8;
   const DocumentFileName: RawUtf8 = 'factur-x.xml';
   const Version: RawUtf8 = '1.0'; const DocumentType: RawUtf8 = 'INVOICE'): RawUtf8;
@@ -271,7 +272,7 @@ implementation
 function PdfMetadataFacturX(const ConformanceLevel, DocumentFileName,
   Version, DocumentType: RawUtf8): RawUtf8;
 begin
-  result := mormot.ui.pdf.PdfMetadataFacturX(ConformanceLevel,
+  result := mormot.pdf.PdfMetadataFacturX(ConformanceLevel,
     DocumentFileName, Version, DocumentType);
 end;
 
@@ -664,7 +665,7 @@ begin
   else
     bmp := TBitmap(AGraphic);
   try
-    xObj := fPdfDoc.CreateOrGetImage(bmp);
+    xObj := CreateOrGetBitmapImage(fPdfDoc, bmp);
     if xObj = '' then
       exit;
     fPdfCanvas.DrawXObject(
@@ -698,7 +699,7 @@ begin
   else
     bmp := TBitmap(AGraphic);
   try
-    xObj := fPdfDoc.CreateOrGetImage(bmp);
+    xObj := CreateOrGetBitmapImage(fPdfDoc, bmp);
     if xObj = '' then
       exit;
     fPdfCanvas.DrawXObject(

@@ -15,7 +15,7 @@ uses
   mormot.core.test,
   mormot.pdf.types,     // TPdfStructRole
   mormot.core.unicode,  // StringToUtf8
-  mormot.ui.pdf,
+  mormot.pdf,
   test_pdf_subset;      // CountOf, DrawUtf8Text
 
 type

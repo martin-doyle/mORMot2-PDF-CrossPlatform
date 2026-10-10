@@ -60,11 +60,8 @@ Application
   TPdfCanvas.Rectangle / MoveTo / LineTo / Fill / Stroke …
   │  TPdfWrite: low-level byte emitter to page content stream
   │
-  TPdfDocument.CreateOrGetImage(Bitmap)
-  │  {Windows} reads bitmap pixels via GDI → JPEG/raw bytes
-  │  {Unix}    CreatePdfBitmapAdapter → TPdfFPImageAdapter.LoadFromStream
-  │            GetJpegBytes / GetRawRGB → raw image bytes
-  │  creates TPdfXObject; deduplicates via MD5 hash
+  CreateOrGetBitmapImage(Doc, Bitmap) → Path 5
+  │  creates a TPdfImage; reuses one of the same pixels (CRC32C lanes)
   │
   TPdfDocument.SaveToFile / SaveToStream
      TPdfWrite: serialise xref table, objects, content streams
@@ -109,7 +106,7 @@ Application
   │
   TPdfVclCanvas.Draw(X, Y, Graphic)
   TPdfVclCanvas.StretchDraw(Rect, Graphic)
-  │  → TPdfDocument.CreateOrGetImage(Bitmap)
+  │  → CreateOrGetBitmapImage(fPdfDoc, Bitmap) (see Path 5)
   │     → TPdfCanvas.DrawXObject (see Path 1)
   │
   TPdfDocumentVcl.SaveToFile / SaveToStream
@@ -545,26 +542,27 @@ Tag mapping: see `fonts.md §12a`.
 ## Path 5 — Image Embedding
 
 ```
-TPdfDocument.CreateOrGetImage(Bitmap)
-│  hash := MD5(bitmap pixels)
-│  if already embedded: return existing XObject name
-│
-│  {MSWINDOWS}
-│    GDI: GetDIBits / CreateDIBSection → raw RGB bytes
-│    optionally JPEG-encode via TJpegImage
-│
-│  {else}  (Unix/macOS, FPC only)
-│    Adapter := CreatePdfBitmapAdapter  ← TPdfFPImageAdapter
-│    Adapter.LoadFromStream(BitmapStream)
-│    if JPEG preferred: Raw := Adapter.GetJpegBytes(Quality)
-│    else:              Raw := Adapter.GetRawRGB
-│
-│  creates TPdfXObject in Doc with /Image /Width /Height /ColorSpace
-│  stores hash → XObject mapping for deduplication
-└─ returns XObject resource name (e.g. 'IMG1')
+CreateOrGetBitmapImage(Doc, Bitmap, DrawAt, ClipRc)   (VCL/LCL, Phase 2: adapter)
+│  hash := BitmapHash(Bitmap)  4 CRC32C lanes over the padded ScanLine[] rows,
+│                              after the TPaletteEntry array
+│  Doc.GetXObjectImageName(hash, W, H) - existing image: reuse its name
+│  else  ForceJPEGCompression = 0:
+│          CreateGraphicImage(Doc, Bitmap, true)
+│            ScanLine[] → TPdfImagePixels (ipfBgr24 / ipfBgrx32 / ipfIndexed8
+│            with its palette; pf1/pf4 drawn to pf8; color key of tmFixed)
+│            → TPdfImage.CreatePixels
+│        else: TJpegImage.Assign(Bitmap) → CreateGraphicImage(Doc, jpg, false)
+│            SaveToStream at the quality → TPdfImage.CreateJpeg (in the xref)
+│        img.Hash := hash; Doc.RegisterImage(img) → 'SynImg<n>'
+│          (AddXObject, or RegisterXObject if already in the xref)
+└─ Doc.DrawImage(name, DrawAt, ClipRc) → Canvas.DrawXObject[Ex]
 
-TPdfCanvas.DrawXObject(X, Y, W, H, 'IMG1')
-│  TPdfWrite: 'q ... cm /IMG1 Do Q'
+TPdfDocument.CreateOrGetImage(Pixels, DrawAt, ClipRc)  (no VCL/LCL)
+│  CheckPixels → PixelsHash (row bytes, palette, format, color key)
+│  → GetXObjectImageName / TPdfImage.CreatePixels / RegisterImage / DrawImage
+
+TPdfCanvas.DrawXObject(X, Y, W, H, 'SynImg0')
+│  TPdfWrite: 'q ... cm /SynImg0 Do Q'
 └─ image rendered at position
 ```
 
