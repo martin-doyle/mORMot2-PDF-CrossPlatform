@@ -21,7 +21,8 @@ integration into the mORMot2 trunk, under a feature freeze. Alongside it only
 what stays out of `src/`: R-24 (CI) and the open checks in V. The rest of
 R-26, R-20 steps 7–8, R-22, the Windows subset size, thinner table
 borders, the undrawn underline and strike-out, the richer structure of
-R-29 and the accessibility references of R-30 wait until R-28 is done.
+R-29, the accessibility references of R-30 and the Markdown input of R-31
+wait until R-28 is done.
 
 ---
 
@@ -359,6 +360,7 @@ forbids it:
 | Thinner table borders | a feature |
 | R-29 | features in `mormot.ui.report.pas`, which Phase 4 rebuilds |
 | R-30 | builds on R-29; its engine gaps are features in the tagging code |
+| R-31 | a feature; renders against the report engine Phase 4 rebuilds |
 
 ### R-26 — `zugferd_demo` on `TGDIPages`, Its Text From the XML — done; the other demos after R-28
 
@@ -1015,6 +1017,31 @@ shown in a demo only, solved by R-29, a gap, or to be checked.
    file 02 (invoice) against `invoice_demo`. CC BY 4.0: structure and texts
    may be taken over with the source named; the files stay outside the
    repository. Forms and scans stay out of scope
+
+### R-31 — Markdown as Input of the Report Engine — after R-28 Phase 4
+
+**Why.** Arnaud on the gist (2026-10-11): "some minimal markdown rendering
+… probably better than individual methods calls. Even simple tables could
+be generated." Answered as a good fit: headings, lists and tables map onto
+the structure tags. `markdown_demo` builds its document from method calls,
+not from Markdown.
+
+**Groundwork:** [MARKDOWN_EXTENSION.md](MARKDOWN_EXTENSION.md) (2026-10-13) —
+what mORMot2 has (`HtmlEscapeMarkdown`: HTML in one pass, no headings, no
+tables, no element tree), the reference documents (CommonMark 0.31.2, GFM
+tables), the extensions, the variants and the parser choice.
+
+**Work, in this order:**
+
+1. Settle the open decisions of that file: scope, variant, parser (own or
+   md4c — with Arnaud, a trunk decision), unit
+2. The engine gaps Markdown makes visible, before its output can be
+   conformant: `BlockQuote`, `Lbl`, `/ListNumbering`, nested lists (R-30
+   step 4), `Link` (R-29), drawn strike-out, a recording method for images,
+   a code block
+3. Parser with the CommonMark examples of the chosen sections as tests,
+   then the renderer against the UI-free report engine of Phase 4
+4. `markdown_demo` reads real Markdown; golden files, veraPDF `ua1` and PAC
 
 ### Charts — out of scope; an example only on explicit request
 
