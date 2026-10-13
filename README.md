@@ -20,7 +20,7 @@ veraPDF and PAC 2024 on all three platforms.
 ## Architecture (3 layers)
 
 ```
-TGDIPages           mormot.ui.report     Document layout, tables, H1-H6
+TGDIPages           mormot.pdf.report    Document layout, tables, H1-H6
 TPdfDocumentVcl     mormot.pdf.canvas    TCanvas-compatible wrapper
 TPdfDocument        mormot.pdf           Direct PDF API, no TCanvas, no VCL/LCL
 ```
@@ -32,7 +32,7 @@ layer's API takes from below, that layer re-exports:
 
 | Layer | `uses` | Re-exports |
 |---|---|---|
-| 3 — `TGDIPages` | `mormot.ui.report`; a GUI adds `mormot.ui.reportpreview` for preview and printing | what the `ExportPdf*` options take: `TPdfALevel` (`pdfaNone` … `pdfa3U`), `TPdfFileFormat` (`pdf13` … `pdf17`), `TPdfAFRelationship` (`afr*`), `PdfMetadataFacturX` |
+| 3 — `TGDIPages` | `mormot.pdf.report`; a GUI adds `mormot.pdf.report.preview` for preview and printing | what the `ExportPdf*` options take: `TPdfALevel` (`pdfaNone` … `pdfa3U`), `TPdfFileFormat` (`pdf13` … `pdf17`), `TPdfAFRelationship` (`afr*`), `PdfMetadataFacturX` |
 | 2 — `TPdfDocumentVcl` | `mormot.pdf.canvas`, `mormot.pdf` | — the document API comes from `mormot.pdf` |
 | 1 — `TPdfDocument` | `mormot.pdf` | — |
 
@@ -51,12 +51,12 @@ either way - except in a CFF face, which draws all its text as glyphs. `RightToL
 direction; without it the direction comes from the script. Set the switch
 without a conditional — see [rtl_demo](examples/rtl_demo/).
 
-**Never put `mormot.pdf` beside `mormot.ui.report`.** The two use some of
+**Never put `mormot.pdf` beside `mormot.pdf.report`.** The two use some of
 the same names for different things — `psA4` is a `TPdfPaperSize` in one and
 a `TGdiPagePaperSize` in the other, and `mormot.pdf`'s `TRect` is not the
 LCL's — so the order of the `uses` clause decides which one a name means.
 With `mormot.pdf` last, `Report.PaperSize := psA4` does not compile. What a
-report needs from below is re-exported by `mormot.ui.report`; if something is
+report needs from below is re-exported by `mormot.pdf.report`; if something is
 missing, it belongs there, not in your `uses` clause.
 
 ---
@@ -103,7 +103,7 @@ Coordinates are in pixels (96 DPI), Y = 0 at the upper-left corner. Full method 
 ### Layer 3 — Report engine
 
 ```pascal
-uses mormot.ui.report;
+uses mormot.pdf.report;
 
 Report := TGDIPages.Create(nil);
 // Tagged PDF/UA: set before drawing — it selects the fonts the layout is
@@ -123,7 +123,7 @@ Report.DrawTableRow(['Value A', 'Value B']);      // automatic page break + head
 Report.EndTable;
 Report.EndDoc;
 Report.ExportPdfStream(Stream);   // file format is raised to pdf17 automatically
-// or: ShowReportPreview(Report)   // mormot.ui.reportpreview
+// or: ShowReportPreview(Report)   // mormot.pdf.report.preview
 Report.Free;
 ```
 
@@ -247,7 +247,7 @@ Doc.CreateFileAttachmentFrom(Xml, 'factur-x.xml', 'Factur-X invoice data',
   'text/xml', Now, Now, nil, afrAlternative);
 Doc.PdfAMetadaExtension := PdfMetadataFacturX('EN 16931');
 
-// Report engine (layer 3) - mormot.ui.report alone
+// Report engine (layer 3) - mormot.pdf.report alone
 Report.ExportPdfLevel := pdfa3U;
 Report.ExportPdfTagged := True;
 // ... draw the invoice ...
@@ -336,9 +336,10 @@ Android starts no console program: `build.cmd` packages the APK,
 as exit code. The app needs an NDK build of `libfreetype.so`, see
 [BUILD-FREETYPE.md](tests/delphi13/android/BUILD-FREETYPE.md).
 
-Do not put `mORMot2\src\ui` on a Delphi search path: it holds the original
-`mormot.ui.pdf`, `mormot.ui.report` and `mormot.ui.core` - the last two have
-the names of this project's units, which the compiler would take instead.
+Do not put `mORMot2\src\ui` on a Delphi search path: its `mormot.ui.core`
+and `mormot.ui.gdiplus` have the names of this project's copies in `src\core`,
+which the compiler could take instead, depending on the search order; it
+also holds the original `mormot.ui.pdf` and `mormot.ui.report`.
 
 The two GUI demos also export without their window, which is what the
 automated checks use:

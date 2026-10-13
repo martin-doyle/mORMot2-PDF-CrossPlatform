@@ -2,8 +2,8 @@
 
 Demo 2 of the [learning path](../../docs/DEMOS.md#demo-2--report_demo).
 
-**Layer 3.** `uses mormot.ui.report` — nothing else of this library; the form
-adds `mormot.ui.reportpreview` for the preview window and printing.
+**Layer 3.** `uses mormot.pdf.report` — nothing else of this library; the form
+adds `mormot.pdf.report.preview` for the preview window and printing.
 
 A Lazarus GUI around `TGDIPages`: WYSIWYG preview, printing and tagged PDF
 export. The report is built in `uReport.pas`, without a form; `uMainForm.pas`

@@ -14,7 +14,7 @@ uses
   Graphics,
   mormot.core.base,
   mormot.core.test,
-  mormot.ui.report;
+  mormot.pdf.report;
 
 type
   /// Page coordinate system and rendering test cases

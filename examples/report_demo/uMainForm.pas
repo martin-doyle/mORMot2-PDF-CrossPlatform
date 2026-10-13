@@ -2,7 +2,7 @@ unit uMainForm;
 
 { ============================================================
   mORMot2 - TGDIPages Report Demo (Lazarus / FPC)
-  Demonstrates typical usage of mormot.ui.report.pas:
+  Demonstrates typical usage of mormot.pdf.report.pas:
     - Running page headers and footers (SetHeader/SetFooter)
     - Multi-column text
     - Tables via TTableLayout (auto page break, repeated header row)
@@ -22,8 +22,8 @@ uses
   Classes, SysUtils, Forms, Controls, Graphics, Dialogs,
   StdCtrls, ExtCtrls, ComCtrls, Menus, ActnList,
   // mORMot2 UI
-  mormot.ui.report,        // TGDIPages
-  mormot.ui.reportpreview, // ShowReportPreview, PrintReport
+  mormot.pdf.report,         // TGDIPages
+  mormot.pdf.report.preview, // ShowReportPreview, PrintReport
   uReport;
 
 type
@@ -127,7 +127,7 @@ begin
   Log('Building preview...');
   Report := BuildReport(Options);
   try
-    // ShowReportPreview opens the preview window (mormot.ui.reportpreview)
+    // ShowReportPreview opens the preview window (mormot.pdf.report.preview)
     ShowReportPreview(Report);
   finally
     Report.Free;

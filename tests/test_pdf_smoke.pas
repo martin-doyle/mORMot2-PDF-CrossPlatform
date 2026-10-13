@@ -158,19 +158,6 @@ begin
   end;
 end;
 
-function CountOf(const Sub, s: RawByteString): integer;
-var
-  p: integer;
-begin
-  result := 0;
-  p := Pos(Sub, s);
-  while p > 0 do
-  begin
-    inc(result);
-    p := PosEx(Sub, s, p + 1);
-  end;
-end;
-
 function CountMoveTo(const s: RawByteString): integer;
 var
   p: integer;
@@ -256,10 +243,10 @@ begin
     s := StreamToRaw(Stream);
     {$ifdef FPC}
     Check(PosEx('(Through TCanvas) Tj', s) > 0, 'the text');
-    CheckEqual(CountOf(' re'#10, s), 1, 'the rectangle');
+    CheckEqual(CountOccurrences(' re'#10, s), 1, 'the rectangle');
     {$else}
     Check(PosEx('Through TCanvas', s) = 0, 'no text: the measuring DC got it');
-    CheckEqual(CountOf(' re'#10, s), 0, 'no rectangle');
+    CheckEqual(CountOccurrences(' re'#10, s), 0, 'no rectangle');
     {$endif FPC}
   finally
     Stream.Free;
@@ -418,9 +405,9 @@ begin
       PDF.Free;
     end;
     s := StreamToRaw(Stream);
-    CheckEqual(CountOf('/MarkInfo', s), 1, 'one MarkInfo in the catalog');
-    CheckEqual(CountOf('/Type/StructTreeRoot', s) +
-      CountOf('/Type /StructTreeRoot', s), 1, 'one StructTreeRoot');
+    CheckEqual(CountOccurrences('/MarkInfo', s), 1, 'one MarkInfo in the catalog');
+    CheckEqual(CountOccurrences('/Type/StructTreeRoot', s) +
+      CountOccurrences('/Type /StructTreeRoot', s), 1, 'one StructTreeRoot');
     Check(Pos(RawByteString('/Lang'), s) > 0,
       'catalog carries the document language (PDF/UA-1 7.2)');
     Check(Pos(RawByteString('/DisplayDocTitle true'), s) > 0,
@@ -1255,9 +1242,9 @@ begin
     end;
     s := StreamToRaw(Stream);
     FileFromString(s, WorkDir + UnicodePdfName);
-    CheckEqual(CountOf('/S/H1', s), 1, 'one H1');
-    CheckEqual(CountOf('/S/P', s), 3, 'three P');
-    Check(CountOf('/FontFile', s) >= 3, 'Latin, CJK and Arabic faces embedded');
+    CheckEqual(CountOccurrences('/S/H1', s), 1, 'one H1');
+    CheckEqual(CountOccurrences('/S/P', s), 3, 'three P');
+    Check(CountOccurrences('/FontFile', s) >= 3, 'Latin, CJK and Arabic faces embedded');
     Check(Pos(RawByteString('5B57'), s) > 0, 'ToUnicode maps the CJK text (U+5B57)');
     { joined Arabic letters are presentation forms (U+FExx) or, in a face
       without them, PUA slots (U+Exxx); unshaped text maps to U+06xx only
@@ -1278,7 +1265,7 @@ begin
     { a .ttc face is embedded alone, an OpenType font file with its subtype
       (fonts.md 3); the defect behind this depended on the heap, so it may
       not show }
-    CheckEqual(CountOf('stream'#10'ttcf', s), 0,
+    CheckEqual(CountOccurrences('stream'#10'ttcf', s), 0,
       'no whole .ttc collection embedded');
     CheckEqual(StreamsWithout(s, 'OTTO', '/Subtype/OpenType'), 0,
       'every OpenType font file has Subtype OpenType');
@@ -1343,7 +1330,7 @@ begin
   // Uniscribe leaves a run without a complex script in the simple font, and
   // HarfBuzz has to do the same, or every Latin line changes font
   GetPdfFonts(true, sans, serif, mono);
-  CheckEqual(CountOf('/Type0', ShapedPdf(StringToUtf8(sans), 'Hello, World', true, false)), 0,
+  CheckEqual(CountOccurrences('/Type0', ShapedPdf(StringToUtf8(sans), 'Hello, World', true, false)), 0,
     'Latin text with UseUniscribe stays in the simple font');
 end;
 
@@ -1386,7 +1373,7 @@ begin
     exit;
   end;
   Check(IsShaped(s), 'the Arabic item is shaped');
-  CheckEqual(CountOf('> Tj'#10'<', s), 0,
+  CheckEqual(CountOccurrences('> Tj'#10'<', s), 0,
     'the shaped item switches back to the main font after the fallback');
 end;
 

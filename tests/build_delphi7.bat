@@ -10,9 +10,10 @@ rem
 rem Output: bin\d7\<project>\ below the repository root. A .lpr is copied to a
 rem .dpr there, because dcc32 wants one - the .lpr stays the only source.
 rem
-rem mORMot2\src\ui is deliberately NOT on the search path: it holds the original
-rem mormot.ui.pdf, mormot.ui.report and mormot.ui.core, which the compiler would
-rem take instead of ours without a word.
+rem mORMot2\src\ui is deliberately NOT on the search path: its mormot.ui.core
+rem and mormot.ui.gdiplus have the names of our copies in src\core, and the
+rem compiler could take them instead, by the search order, without a word;
+rem it also holds the original mormot.ui.pdf and mormot.ui.report.
 setlocal
 
 if "%~1"=="" (

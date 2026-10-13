@@ -1,6 +1,6 @@
 # Report Engine — TGDIPages
 
-Source: `src/core/mormot.ui.report.pas`
+Source: `src/pdf/mormot.pdf.report.pas`
 
 `TGDIPages` is a high-level layout engine for multi-page documents. All drawing commands are recorded as a `TDrawCommand` array; actual rendering to canvas or PDF only happens when `RenderPageToCanvas()` is called.
 
@@ -56,7 +56,7 @@ try
   // 4. Export / preview
   Report.ExportPdfStream(Stream);
   // or
-  ShowReportPreview(Report);   // mormot.ui.reportpreview
+  ShowReportPreview(Report);   // mormot.pdf.report.preview
 finally
   Report.Free;
 end;
@@ -408,7 +408,7 @@ preview ignore both commands.
 ## Export & Preview
 
 `TGDIPages` is a non-visual `TComponent` (R-20): the unit needs no forms and
-no printer. Preview and printing live in `mormot.ui.reportpreview` and use
+no printer. Preview and printing live in `mormot.pdf.report.preview` and use
 only the public API (`PageCount`, `Pages[]`, margins, `Title`,
 `RenderPageToCanvas`):
 
@@ -421,8 +421,9 @@ PrintReport(Report);
 PrintReport(Report, 0, 2);
 
 // Export PDF:
-Report.ExportPdfStream(AStream): boolean;
-Report.ExportPDF(FileName, UsePassword, Encrypt, Title, Author);
+Report.ExportPdfStream(AStream): boolean;   // false on error (or no page)
+Report.ExportPdfStream(AStream, true);      // raises instead, also for no page
+Report.ExportPDF(FileName, false, false, Title, Company); // raises on error
 
 // PDF export configuration:
 Report.ExportPdfEmbeddedTTF    := True;      // embed TrueType fonts
@@ -444,6 +445,23 @@ Report.ExportPdfPageMode := pmUseAttachments; // opens the attachments panel;
                                      // pmUseNone (default) writes no /PageMode
 ```
 
+**Errors** (Phase 4's bug-fix PR): `ExportPdfStream` catches every exception
+and returns false, unless `aRaiseException` is true (the trunk's parameter);
+either way it resets `fActivePdfDoc`, which otherwise kept pointing at the
+freed document for the next `RenderPageToCanvas`. `ExportPDF` raises on
+every error: `ESynException` when there is no page and when `Protect` or
+`Encrypt` is true - neither is implemented, and a protection asked for must
+not silently give an open file (the trunk's `ExportPdfEncryption*`
+properties come after R-28; `TPdfDocumentVcl.Create` already takes a
+`TPdfEncryption`, PDF/A refuses one, PDF/UA needs `epContentExtraction`);
+otherwise the export's own exception or that of writing the file
+(`EPdfInvalidOperation`, `EFCreateError`, ...). The PDF is built in a
+`TMemoryStream` and written with `fmCreate` only after a successful export,
+so a failed export leaves the old file. Not a temporary file renamed over
+the target: that needed a free name, a non-overwriting `RenameFile` on
+Windows, the read-only check `fmCreate` does, and lost the file's
+permissions on POSIX (Codex review)
+
 `ExportPdfStream` owns its `TPdfDocumentVcl`, so these are the only way to
 reach `CreateFileAttachmentFrom` and `PdfAMetadaExtension`. The extension is
 assigned **before** `SaveToStreamDirectBegin` — PDF/A writes its XMP packet
@@ -451,7 +469,7 @@ there; the attachments are created after the outlines, before
 `SaveToStreamDirectEnd`, which works in the direct streaming mode
 (`TestExportPdfAttachment`).
 
-**A report program uses `mormot.ui.report` only.** It re-exports what the
+**A report program uses `mormot.pdf.report` only.** It re-exports what the
 `ExportPdf*` options take — `TPdfALevel`/`pdfa*`, `TPdfFileFormat`/`pdf1x`,
 `TPdfAFRelationship`/`afr*`, `TPdfPageMode`/`pm*`, `PdfMetadataFacturX` — from
 `mormot.pdf`, the first unit of its `uses`, so that the units after it win

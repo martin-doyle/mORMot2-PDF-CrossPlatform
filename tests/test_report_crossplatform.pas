@@ -16,10 +16,12 @@ uses
   SysUtils,
   Graphics,
   mormot.core.base,
+  mormot.core.os,      // StringFromFile, FileFromString, FileSetHidden, FileIsWritable
   mormot.core.text,
+  mormot.core.unicode, // CountOccurrences
   mormot.core.test,
   pdf_inspect,       // InflatePdf
-  mormot.ui.report;  // re-exports what the ExportPdf* options take
+  mormot.pdf.report; // re-exports what the ExportPdf* options take
 
 type
   /// TGDIPages report engine test cases
@@ -55,6 +57,7 @@ type
     procedure TestPaperCoordinates;
     procedure TestDrawBitmap;
     procedure TestDrawLink;
+    procedure TestExportPdfFile;
   end;
 
 implementation
@@ -792,20 +795,6 @@ begin
   end;
 end;
 
-// how often Sub occurs in s
-function CountOf(const s, Sub: RawUtf8): Integer;
-var
-  p: PtrInt;
-begin
-  result := 0;
-  p := PosEx(Sub, s);
-  while p > 0 do
-  begin
-    inc(result);
-    p := PosEx(Sub, s, p + length(Sub));
-  end;
-end;
-
 procedure TReportTests.TestTableFooterRowHeader;
 
   // the inflated tagged PDF of a table with two footer rows
@@ -859,12 +848,12 @@ begin
   { opt-in: the first cell of each footer row heads its row (PDF/UA-1 7.5) }
   s := MakePdf(true, Marked);
   CheckEqual(2, Marked, 'the first cell of both footer rows is recorded as a row header');
-  CheckEqual(2, CountOf(s, '/Scope/Row'), 'two TH with /Scope /Row');
-  CheckEqual(2, CountOf(s, '/Scope/Column'), 'the header row keeps /Scope /Column');
+  CheckEqual(2, CountOccurrences('/Scope/Row', s), 'two TH with /Scope /Row');
+  CheckEqual(2, CountOccurrences('/Scope/Column', s), 'the header row keeps /Scope /Column');
   { off by default: footer cells stay TD }
   s := MakePdf(false, Marked);
   CheckEqual(0, Marked, 'no row header without the option');
-  CheckEqual(0, CountOf(s, '/Scope/Row'), 'no /Scope /Row without the option');
+  CheckEqual(0, CountOccurrences('/Scope/Row', s), 'no /Scope /Row without the option');
 end;
 
 procedure TReportTests.TestExportPdfPageMode;
@@ -1135,14 +1124,14 @@ begin
     Check(Report.ExportPdfStream(MS), 'export');
     FastSetString(s, MS.Memory, MS.Size);
     s := InflatePdf(s);
-    CheckEqual(1, CountOf(s, '(FIRSTHEAD)'), 'page 1 has its own header');
-    CheckEqual(0, CountOf(s, '(NEXTHEAD 1/2)'), 'not the one of the other pages');
-    CheckEqual(1, CountOf(s, '(NEXTHEAD 2/2)'), 'page 2 has the common header');
-    CheckEqual(0, CountOf(s, '(OLDHEAD)'), 'the columns replace SetHeader');
-    CheckEqual(2, CountOf(s, '(FOOTA1)'), 'the footer on both pages');
-    CheckEqual(2, CountOf(s, '(FOOTA2)'), 'second line of a column');
-    CheckEqual(2, CountOf(s, '(FOOTB)'), 'second column');
-    CheckEqual(1, CountOf(s, '(PAGE 2)'), 'placeholders in a column');
+    CheckEqual(1, CountOccurrences('(FIRSTHEAD)', s), 'page 1 has its own header');
+    CheckEqual(0, CountOccurrences('(NEXTHEAD 1/2)', s), 'not the one of the other pages');
+    CheckEqual(1, CountOccurrences('(NEXTHEAD 2/2)', s), 'page 2 has the common header');
+    CheckEqual(0, CountOccurrences('(OLDHEAD)', s), 'the columns replace SetHeader');
+    CheckEqual(2, CountOccurrences('(FOOTA1)', s), 'the footer on both pages');
+    CheckEqual(2, CountOccurrences('(FOOTA2)', s), 'second line of a column');
+    CheckEqual(2, CountOccurrences('(FOOTB)', s), 'second column');
+    CheckEqual(1, CountOccurrences('(PAGE 2)', s), 'placeholders in a column');
   finally
     MS.Free;
     Report.Free;
@@ -1322,14 +1311,144 @@ begin
   CheckEqual(PdfStructRoles(s), 'Document 1'#10'Link 2'#10'P 3'#10,
     'a link with a URL is a Link, inline and standalone');
   s := InflatePdf(s);
-  CheckEqual(2, CountOf(s, '/Type/OBJR'), 'each Link owns its annotation');
+  CheckEqual(2, CountOccurrences('/Type/OBJR', s), 'each Link owns its annotation');
   Check(PosEx('/URI(mailto:info@example.com)', s) > 0, 'the mailto target');
   Check(PosEx('/URI(https://example.com)', s) > 0, 'the http target');
-  CheckEqual(2, CountOf(s, '/Subtype/Link'), 'no annotation without a target');
+  CheckEqual(2, CountOccurrences('/Subtype/Link', s), 'no annotation without a target');
   { untagged: still clickable }
   s := InflatePdf(MakePdf(false));
-  CheckEqual(2, CountOf(s, '/Subtype/Link'), 'untagged export keeps the links');
-  CheckEqual(0, CountOf(s, '/OBJR'), 'without a structure tree');
+  CheckEqual(2, CountOccurrences('/Subtype/Link', s), 'untagged export keeps the links');
+  CheckEqual(0, CountOccurrences('/OBJR', s), 'without a structure tree');
+end;
+
+procedure TReportTests.TestExportPdfFile;
+var
+  fn, dir, ro: TFileName;
+
+  function NewReport(Level: TPdfALevel): TGDIPages;
+  begin
+    result := TGDIPages.Create(nil);
+    result.ExportPdfLevel := Level;
+    result.NewPage;
+    result.DrawHeading(1, 'Invoice');
+    result.EndDoc;
+  end;
+
+  // a file beside Target named Target.*: ExportPDF writes no temporary one
+  // - compared by name: on Windows the mask 'Target.*' matches Target itself
+  function LeftOver(const Target: TFileName): boolean;
+  var
+    sr: TSearchRec;
+    prefix: TFileName;
+  begin
+    result := false;
+    prefix := ExtractFileName(Target) + '.';
+    if FindFirst(ExtractFilePath(Target) + '*', faAnyFile, sr) = 0 then
+    try
+      repeat
+        if Copy(sr.Name, 1, Length(prefix)) = prefix then
+          result := true;
+      until result or (FindNext(sr) <> 0);
+    finally
+      FindClose(sr);
+    end;
+  end;
+
+  function Raised(Report: TGDIPages; const Target: TFileName;
+    Protect, Encrypt: boolean): boolean;
+  begin
+    result := false;
+    try
+      Report.ExportPDF(Target, Protect, Encrypt, 'Title', 'Company');
+    except
+      result := true;
+    end;
+  end;
+
+  // ExportPDF raised, and fn holds what it held before
+  procedure CheckRefused(Report: TGDIPages; Protect, Encrypt: boolean;
+    const Msg: string);
+  begin
+    Check(Raised(Report, fn, Protect, Encrypt), Msg);
+    CheckEqual(StringFromFile(fn), 'old', 'the old file is kept');
+    Check(not LeftOver(fn), 'no temporary file is left');
+  end;
+
+var
+  Report: TGDIPages;
+  MS: TMemoryStream;
+  thrown: boolean;
+begin
+  fn := WorkDir + 'report_exportpdf.pdf';
+  dir := WorkDir + 'report_exportpdf_dir.pdf';
+  ro := WorkDir + 'report_exportpdf_ro.pdf';
+  try
+    FileFromString('old', fn);
+    Report := NewReport(pdfaNone);
+    try
+      // a protection that would not be applied is refused, not ignored
+      CheckRefused(Report, true, false, 'Protect refused');
+      CheckRefused(Report, false, true, 'Encrypt refused');
+      CheckRefused(Report, true, true, 'both refused');
+      Report.ExportPDF(fn, false, false, 'Title', 'Company');
+      Check(PosEx('%PDF-', StringFromFile(fn)) = 1, 'the old file is replaced');
+      Check(not LeftOver(fn), 'nothing left beside it after success');
+      // a target the PDF cannot take the place of
+      ForceDirectories(dir);
+      Check(Raised(Report, dir, false, false), 'a folder as target raises');
+      Check(DirectoryExists(dir), 'the folder is kept');
+      Check(not LeftOver(dir), 'no temporary file beside the folder');
+    finally
+      Report.Free;
+    end;
+    // an export the engine refuses: PDF/A-1 cannot hold /PageMode /UseAttachments
+    FileFromString('old', fn);
+    Report := NewReport(pdfa1B);
+    MS := TMemoryStream.Create;
+    try
+      Report.ExportPdfPageMode := pmUseAttachments;
+      CheckRefused(Report, false, false, 'a failed export raises');
+      Check(not Report.ExportPdfStream(MS), 'the stream export still returns false');
+      thrown := false;
+      try
+        Report.ExportPdfStream(MS, {aRaiseException=}true);
+      except
+        thrown := true;
+      end;
+      Check(thrown, 'or raises when asked to');
+    finally
+      MS.Free;
+      Report.Free;
+    end;
+    // no page: nothing to write
+    Report := TGDIPages.Create(nil);
+    try
+      CheckRefused(Report, false, false, 'no page raises');
+    finally
+      Report.Free;
+    end;
+    // a read-only file is refused, as fmCreate refused it - last, since on
+    // Windows FileSetHidden leaves the file hidden, which fmCreate refuses too
+    FileFromString('old', ro);
+    FileSetHidden(ro, {ReadOnly=}true);
+    if FileIsWritable(ro) then
+      Check(true, 'SKIP: read-only file still writable (root on POSIX)')
+    else
+    begin
+      Report := NewReport(pdfaNone);
+      try
+        Check(Raised(Report, ro, false, false), 'a read-only file raises');
+        CheckEqual(StringFromFile(ro), 'old', 'the read-only file is kept');
+      finally
+        Report.Free;
+      end;
+    end;
+  finally
+    DeleteFile(fn);
+    RemoveDir(dir);
+    FileSetHidden(ro, false); // writable again, so that it can be deleted
+    DeleteFile(ro);
+  end;
 end;
 
 end.

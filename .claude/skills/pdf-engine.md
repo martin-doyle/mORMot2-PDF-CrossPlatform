@@ -547,9 +547,9 @@ Sub-pixel (TPdfVclCanvas only, `single` instead of `integer`):
 UTF-8 (TPdfVclCanvas only, `RawUtf8` instead of `string`): `TextOutUtf8`, `TextWidthUtf8` — the same on every compiler, while the `string` methods read `string` as the compiler holds it (UTF-8 under FPC, the ANSI code page under Delphi 7, UTF-16 under Unicode Delphi) through `StringToSynUnicode`/`StringToUtf8`. Under FPC both read the same UTF-8 whatever the unit order and the Windows code page: `mormot.core.os` calls `SetMultiByteConversionCodePage(CP_UTF8)` before `mormot.core.unicode` sets `CurrentAnsiConvert` (measured 2026-09-27)
 Lines: `MoveTo`, `LineTo`, `Polyline`, `Polygon` — `MoveTo` only moves `PenPos`; each `LineTo` writes one complete path object (`RG w` → `m` from `PenPos` → `l` → `S`), so pen changes never land inside a path (B-12)
 Images: `Draw`, `StretchDraw` — `StretchDraw` is reintroduced with the
-`TRect` of `mormot.ui.pdf`, so it is reached only through a `TPdfVclCanvas`
+`TRect` of `mormot.pdf`, so it is reached only through a `TPdfVclCanvas`
 reference on every compiler; `StretchDrawBounds(X1, Y1, X2, Y2, Graphic)`
-is the same for a caller that sees the `TRect` of `Types` (`mormot.ui.report`).
+is the same for a caller that sees the `TRect` of `Types` (`mormot.pdf.report`).
 Pixels: `TPdfImage` reads a `TBitmap` through `ScanLine` with a Windows DIB
 stride on Delphi; under the LCL it reads `TLazIntfImage.Colors` instead,
 because a widgetset keeps its own layout behind `ScanLine` (Cocoa: 32-bit
@@ -712,7 +712,7 @@ Doc.EndStructContent;            // delegates to Canvas.EndStructContent
 ### TGDIPages integration
 
 ```pascal
-// In mormot.ui.report.pas — uses mormot.pdf.types (not mormot.pdf)
+// In mormot.pdf.report.pas — uses mormot.pdf.types (not mormot.pdf)
 Report.ExportPdfTagged   := True;    // default False — set BEFORE drawing:
                                      // it forces ExportPdfEmbeddedTTF / clears
                                      // ExportPdfStandardFonts, and those decide
@@ -783,7 +783,7 @@ documents. Resolve font names with `GetPdfFonts` *after* setting `Tagged`.
 
 Platform-specific TTF fonts via `GetPdfFonts(Embedded, SansFont, SerifFont, MonoFont)`
 in `mormot.pdf.types` (constants `PDF_FONT_TTF_SANS/SERIF/MONO`) — layer 1, no
-report engine needed. `GetReportFonts` and `REPORT_FONT_*` in `mormot.ui.report`
+report engine needed. `GetReportFonts` and `REPORT_FONT_*` in `mormot.pdf.report`
 are aliases of them:
 - Windows: Calibri, Cambria, Consolas
 - macOS: Trebuchet MS, Georgia, Andale Mono

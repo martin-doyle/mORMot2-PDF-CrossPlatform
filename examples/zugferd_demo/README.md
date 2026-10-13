@@ -2,7 +2,7 @@
 
 Demo 7 of the [learning path](../../docs/DEMOS.md#demo-7--zugferd_demo).
 
-**Layer 3.** `uses mormot.ui.report` — nothing else of this project; it
+**Layer 3.** `uses mormot.pdf.report` — nothing else of this project; it
 re-exports the PDF/A levels, `afr*` and `PdfMetadataFacturX`.
 
 Reads the invoice data from `factur-x.xml`, draws the invoice with `TGDIPages`

@@ -1,7 +1,7 @@
 /// Preview Window and Printing for TGDIPages
 // - this unit is a part of the Open Source Synopse mORMot framework 2,
 // licensed under a MPL/GPL/LGPL three license - see LICENSE.md
-unit mormot.ui.reportpreview;
+unit mormot.pdf.report.preview;
 
 {
   *****************************************************************************
@@ -9,7 +9,7 @@ unit mormot.ui.reportpreview;
    Preview Window and Printing for TGDIPages (LCL)
    - ShowReportPreview: the preview window
    - PrintReport: printing through the LCL printer
-   - Kept apart from mormot.ui.report, so that a console program records,
+   - Kept apart from mormot.pdf.report, so that a console program records,
      lays out and exports a report without forms or printer
 
   *****************************************************************************
@@ -34,7 +34,7 @@ uses
   Printers,
   mormot.core.base,
   mormot.core.unicode,
-  mormot.ui.report;
+  mormot.pdf.report;
 
 /// show the pages of Report in a modal preview window
 // - zoom (buttons, edit field, Ctrl+wheel, Ctrl +/-/0), page navigation

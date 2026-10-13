@@ -2,7 +2,7 @@
 
 Demo 3 of the [learning path](../../docs/DEMOS.md#demo-3--markdown_demo).
 
-**Layer 3.** `uses mormot.ui.report` — nothing else of this library.
+**Layer 3.** `uses mormot.pdf.report` — nothing else of this library.
 
 Renders a markdown-style document with `TGDIPages` as a console app: headings
 H1-H6, paragraphs, quotes, list items, captions, inline runs (`DrawStrong`,

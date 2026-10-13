@@ -1,6 +1,6 @@
 /// golden file tests of the report engine
 // - see test_pdf_golden for the baseline and how the files are compared
-// - a unit of its own: mormot.ui.report must not meet mormot.pdf in one
+// - a unit of its own: mormot.pdf.report must not meet mormot.pdf in one
 // uses clause (psA4, TRect)
 unit test_report_golden;
 
@@ -14,7 +14,7 @@ uses
   Graphics,
   mormot.core.base,
   mormot.core.text,     // FormatUtf8
-  mormot.ui.report,
+  mormot.pdf.report,
   test_pdf_golden;
 
 type

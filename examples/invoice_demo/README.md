@@ -5,7 +5,7 @@
 embedded `factur-x.xml`, laid out for a screen reader user.
 `zugferd_demo` stays the reference demo until this one is accepted.
 
-**Layer 3.** `uses mormot.ui.report`. Besides the existing API it uses what
+**Layer 3.** `uses mormot.pdf.report`. Besides the existing API it uses what
 R-29 added on this branch: frames, artifacts, paper coordinates, images,
 running texts in columns and tagged links.
 

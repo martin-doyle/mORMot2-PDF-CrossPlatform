@@ -255,7 +255,7 @@ Report.ExportPdfStream(Stream);
 embeds `Content` as an associated file (`/AF` in the catalog). The attachments
 stay for every later export until `ClearExportPdfAttachments`.
 
-All of this needs `mormot.ui.report` only: it re-exports the PDF/A levels,
+All of this needs `mormot.pdf.report` only: it re-exports the PDF/A levels,
 `TPdfFileFormat`, the `afr*` values, `TPdfPageMode` with the `pm*` values and
 `PdfMetadataFacturX`. `ExportPdfPageMode` (default `pmUseNone`, which writes
 nothing) decides how a viewer opens the file; `pmUseAttachments` needs PDF 1.6
@@ -366,7 +366,7 @@ PDF_FONT_STD_SERIF = 'Times';
 PDF_FONT_STD_MONO  = 'Courier';
 ```
 
-Platform-specific TTF constants in `mormot.ui.report.pas`:
+Platform-specific TTF constants in `mormot.pdf.report.pas`:
 
 ```pascal
 REPORT_FONT_SANS  = 'Calibri';        // Windows

@@ -1,7 +1,7 @@
 /// Cross-Platform Report Engine
 // - this unit is a part of the Open Source Synopse mORMot framework 2,
 // licensed under a MPL/GPL/LGPL three license - see LICENSE.md
-unit mormot.ui.report;
+unit mormot.pdf.report;
 
 {
   *****************************************************************************
@@ -10,7 +10,7 @@ unit mormot.ui.report;
    - TGDIPages: records drawing commands, lays out pages, exports PDF
    - Rendered on any TCanvas, and into PDF through TPdfDocumentVcl
    - No forms and no printer: preview and printing are in
-     mormot.ui.reportpreview
+     mormot.pdf.report.preview
 
   *****************************************************************************
 }
@@ -690,7 +690,7 @@ type
     // - SourceDPI: optional DPI for coordinate conversion (0 = the screen DPI)
     //   set to PDF.ScreenLogPixels (96) for PDF export to ensure consistency
     // - renders header/footer with {#} and {total} placeholder substitution
-    // - preview and printing call this from mormot.ui.reportpreview
+    // - preview and printing call this from mormot.pdf.report.preview
     procedure RenderPageToCanvas(ACanvas: TCanvas;
                                  PageIndex, DestWidth, DestHeight: Integer;
                                  SourceDPI: Integer = 0);
@@ -700,8 +700,16 @@ type
     // - uses ExportPdfLevel, ExportPdfEmbeddedTTF, ExportPdfAuthor/Subject
     // - IMPORTANT: uses PDF.ScreenLogPixels for MMToPixels (not the screen DPI)
     //   so TPdfVclCanvas coordinates match the PDF coordinate system exactly
-    function  ExportPdfStream(aDest: TStream): boolean;
+    // - aRaiseException = true re-raises the error instead of returning false
+    function  ExportPdfStream(aDest: TStream;
+                              aRaiseException: boolean = false): boolean;
     /// export all pages as PDF to a file; calls ExportPdfStream internally
+    // - raises on any error: ESynException when there is no page, otherwise
+    //   the error of the export or of writing the file
+    // - the PDF is built in memory first: FileName is written only once the
+    //   export has succeeded, and a failed export leaves it as it was
+    // - Protect and Encrypt are not implemented yet: true raises rather than
+    //   writing an unprotected file
     procedure ExportPDF(const FileName: TFileName;
                         Protect, Encrypt: Boolean;
                         const ATitle, ACompany: RawUtf8);
@@ -3044,7 +3052,7 @@ begin
             fActivePdfDoc.BeginStructContent(psrFigure, Cmd.Text);
           R := Rect(ScaleX(Cmd.X), ScaleY(Cmd.Y), ScaleX(Cmd.X2), ScaleY(Cmd.Y2));
           { the bridge's StretchDraw is reintroduced with the TRect of
-            mormot.ui.pdf: a call through ACanvas would never reach the PDF }
+            mormot.pdf: a call through ACanvas would never reach the PDF }
           if Bridge <> nil then
             Bridge.StretchDrawBounds(R.Left, R.Top, R.Right, R.Bottom,
               TBitmap(fBitmaps[Cmd.BitmapIndex]))
@@ -3245,7 +3253,8 @@ begin
   fExportPdfAttachments := nil;
 end;
 
-function TGDIPages.ExportPdfStream(aDest: TStream): boolean;
+function TGDIPages.ExportPdfStream(aDest: TStream;
+  aRaiseException: boolean): boolean;
 var
   PDF:          TPdfDocumentVcl;
   i:            Integer;
@@ -3254,7 +3263,12 @@ var
   PdfSubject:   RawUtf8;
 begin
   Result := False;
-  if fPageCount = 0 then Exit;
+  if fPageCount = 0 then
+  begin
+    if aRaiseException then
+      ESynException.RaiseUtf8('%.ExportPdfStream: no page to export', [self]);
+    Exit;
+  end;
   try
     PDF := TPdfDocumentVcl.Create(fUseOutlines, 0, fExportPdfLevel);
     try
@@ -3338,24 +3352,47 @@ begin
     end;
     Result := True;
   except
-    // swallow exception - caller checks Result
+    // RenderPageToCanvas must not reach the freed document afterwards
+    fActivePdfDoc := nil;
+    if aRaiseException then
+      raise;
   end;
 end;
 
 procedure TGDIPages.ExportPDF(const FileName: TFileName;
   Protect, Encrypt: Boolean; const ATitle, ACompany: RawUtf8);
 var
+  MS: TMemoryStream;
   FS: TFileStream;
 begin
+  // a requested protection that is not applied must not pass unnoticed
+  if Protect or Encrypt then
+    ESynException.RaiseUtf8('%.ExportPDF: Protect and Encrypt are not ' +
+      'implemented', [self]);
+  if fPageCount = 0 then
+    ESynException.RaiseUtf8('%.ExportPDF: no page to export', [self]);
   // Transfer per-call title/company into the export properties so
   // ExportPdfStream picks them up through the unified code path.
   fTitle             := ATitle;
   fExportPdfSubject  := ACompany;
-  FS := TFileStream.Create(FileName, fmCreate);
+  // in memory first: the file is touched only by a complete PDF; fmCreate
+  // keeps its permissions and links, and refuses a read-only file, as before
+  MS := TMemoryStream.Create;
   try
-    ExportPdfStream(FS);
+    ExportPdfStream(MS, {aRaiseException=}true);
+    FS := TFileStream.Create(FileName, fmCreate);
+    try
+      try
+        FS.WriteBuffer(MS.Memory^, MS.Size);
+      finally
+        FS.Free;
+      end;
+    except
+      DeleteFile(FileName); // a partial file is no PDF
+      raise;
+    end;
   finally
-    FS.Free;
+    MS.Free;
   end;
 end;
 

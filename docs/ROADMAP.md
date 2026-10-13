@@ -20,8 +20,8 @@ the invoice XML) also veraPDF `3u` and Mustang. **Next:** R-28, the
 integration into the mORMot2 trunk, under a feature freeze. Alongside it only
 what stays out of `src/`: R-24 (CI) and the open checks in V. The rest of
 R-26, R-20 steps 7–8, R-22, the Windows subset size, thinner table
-borders, the undrawn underline and strike-out and the richer structure of
-R-29 wait until R-28 is done.
+borders, the undrawn underline and strike-out, the richer structure of
+R-29 and the accessibility references of R-30 wait until R-28 is done.
 
 ---
 
@@ -46,6 +46,12 @@ v0.10.0 (2026-09-30).
   `mormot.lib.uniscribe` is gone - the `mormot2` package ships the unit and
   hid the copy; `mormot.ui.core` and `mormot.ui.gdiplus` are the trunk
   units again (R-28, refactoring Phase 0 step 5)
+- **`mormot_demo` with sample data of its own:** a fresh clone printed one
+  page with "No orders available" - the database is not versioned, and
+  `TDemoServer` declared a constructor `TRestClientDB` never calls, so not even
+  the tables were created. The server now overrides the virtual constructor
+  and fills an empty database with 10 invented customers and 200 orders of
+  Q1/2026, computed, not random; a downloaded `Project10.db` is kept as it is
 - **`zugferd_demo` with new invoice data:** the KoSIT test case (Apache-2.0,
   which does not fit the GPL option of mORMot's licence) is replaced by the
   sample `Gesamtbeispiel` of XRechnung for Delphi, contributed by Landrix
@@ -264,7 +270,22 @@ v0.10.0 (2026-09-30).
   3): `TPdfDocumentVcl` and `TPdfVclCanvas` are unchanged, change the `uses`
   (no compatibility unit). The PDF/A levels, page modes, `/AFRelationship`
   values and `PdfMetadataFacturX` come from `mormot.pdf` (layer 2) or
-  `mormot.ui.report` (layer 3), no longer from the canvas unit
+  `mormot.pdf.report` (layer 3), no longer from the canvas unit
+- **`mormot.ui.report` is now `mormot.pdf.report`, `mormot.ui.reportpreview`
+  is `mormot.pdf.report.preview`** (R-28 Phase 4): `TGDIPages`,
+  `ShowReportPreview` and `PrintReport` are unchanged, change the `uses` (no
+  compatibility unit). The trunk's own `mormot.ui.report` (the Windows-only
+  `TGdiPages` with its built-in preview) goes when this work is merged after
+  mORMot 2.5; it has a different API, not a predecessor of this one
+- **Changed: `TGDIPages.ExportPDF` raises** (R-28 Phase 4 bug fixes) when
+  the export fails, and `ESynException` when there is no page and when
+  `Protect` or `Encrypt` is true - both were ignored, the file came out
+  unprotected; encryption comes after R-28 with the trunk's
+  `ExportPdfEncryption*` properties. It builds the PDF in memory and writes
+  the file only then, so a failed export no longer leaves an empty or
+  partial PDF in place of the old one. `ExportPdfStream` still returns
+  false on error; its new `aRaiseException` parameter (as in the trunk)
+  raises instead
 - **Changed: `TPdfDocument.ScreenLogPixels` is 96** on every platform
   (R-28 Phase 3); `TPdfDocumentVcl` and `TPdfDocumentGdi` set the screen's
   resolution on Windows, as the engine did for every document before. Only a
@@ -365,10 +386,11 @@ forbids it:
 |---|---|
 | R-26, the other demos | overlaps the ASCII-only sources of the formatting pass |
 | R-22 | overlaps the roadmap references taken out of the comments; every unit |
-| R-20 steps 7–8 | a feature; Phase 4 rebuilds report and preview |
+| R-20 steps 7–8 | a feature (Phase 4 moved report and preview as they are) |
 | Windows font subsets | `CreateFontPackage` moves behind the subsetter interface in `mormot.lib.uniscribe` in Phase 1 |
 | Thinner table borders | a feature |
-| R-29 | features in `mormot.ui.report.pas`, which Phase 4 rebuilds |
+| R-29 | features of the report, under the feature freeze |
+| R-30 | builds on R-29; its engine gaps are features in the tagging code |
 
 ### R-26 — `zugferd_demo` on `TGDIPages`, Its Text From the XML — done; the other demos after R-28
 
@@ -501,7 +523,7 @@ from Delphi 2010: see V. Not checked since step 3: the FPC GUI itself
 (preview, print, export dialog) after the split.
 
 **Remaining, in this order:**
-7. **`mormot.ui.reportpreview` on the VCL.**
+7. **`mormot.pdf.report.preview` on the VCL.**
 8. **The GUI demos with their forms on Delphi** — built in code or a `.dfm`
    beside the `.lfm`, to be decided.
 
@@ -565,7 +587,7 @@ comment shrinks to the rule it protects.
 **The state.** The older code carries the investigations themselves —
 measurements, validator runs, spec clauses argued out, roadmap IDs — above all
 `mormot.pdf.pas` (`PrepareForSaving`, `PrepareFontSubsets`, the text
-rendering chains), also `mormot.ui.report.pas`, the backends and the test
+rendering chains), also `mormot.pdf.report.pas`, the backends and the test
 units. Part of it repeats the skills, part of it is found nowhere else.
 
 **Work.** Unit by unit, one commit each; `mormot.pdf.pas` by section. For
@@ -961,21 +983,22 @@ The CFF series of R-28 tests the CFF programs, the PDF/A-1 refusal of a
 name-keyed face and the routing with a synthetic face (`test_pdf_cff`, not
 tagged); veraPDF and PAC on real CFF output (macOS) are still to run.
 
-### `TGDIPages.ExportPDF` Ignores `Protect` and `Encrypt` — R-28 Phase 4
+### `TGDIPages.ExportPDF`: `Protect` and `Encrypt` — refused since Phase 4's bug-fix PR, the feature after R-28
 
-`ExportPDF(FileName, Protect, Encrypt, ..)` takes both flags and passes
-neither on; `ExportPdfStream` creates its `TPdfDocumentVcl` without a
-`TPdfEncryption` (`src/core/mormot.ui.report.pas`, found by Codex while
-deciding the bug fixes of Phase 2). The trunk's `TGdiPages` has
-`ExportPdfEncryptionLevel`, `ExportPdfEncryptionUserPassword`,
-`ExportPdfEncryptionOwnerPassword` and `ExportPdfEncryptionPermissions` and passes
-`TPdfEncryption.New(..)`. Needs a password and permission policy; until
-then a requested protection should be refused rather than ignored. The
-bridge's own encryption parameter is scheduled for Phase 2's bug-fix PR.
+`ExportPDF(FileName, Protect, Encrypt, ..)` took both flags and passed
+neither on (found by Codex while deciding the bug fixes of Phase 2); since
+Phase 4's bug-fix PR it raises when either is true. Open, after R-28: the
+trunk's `TGdiPages` properties `ExportPdfEncryptionLevel`,
+`ExportPdfEncryptionUserPassword`, `ExportPdfEncryptionOwnerPassword` and
+`ExportPdfEncryptionPermissions`, passed as `TPdfEncryption.New(..)` to the
+`TPdfDocumentVcl` that `ExportPdfStream` creates (the bridge takes one
+since Phase 2's bug-fix PR). Needs a password and permission policy; PDF/A
+refuses encryption (the engine raises), PDF/UA needs `epContentExtraction`,
+and `elAES_256` gives no encryption (`TPdfEncryption.New` returns nil).
 
 ### R-10 — Table Row Pagination — unprioritised
 
-**Effort:** 2–3 days | **File:** `src/core/mormot.ui.report.pas`
+**Effort:** 2–3 days | **File:** `src/pdf/mormot.pdf.report.pas`
 
 A table row taller than the remaining page space forces a page break before the
 row. Let the row split: partial cell content on the current page, the rest on
@@ -992,6 +1015,38 @@ Only face index 0 of a `.ttc` is reachable, because `TFontFileMap` carries no
 face index. Add one so the remaining faces can be selected by name. The
 FreeType backend already extracts a single face as a standalone sfnt
 (`ExtractSfntFromTtc`), so the embedding side needs no change.
+
+### R-30 — Rebuild the Published Accessibility References — after R-28 and the merge of R-29
+
+**Why.** The tagged output is checked by validators, not against examples
+others published as correct. `docs/ACCESSIBILITY_REFERENCES.md` (2026-10-10,
+branch `feature/accessibility-reference-rebuild`) maps the PDF Association's
+Techniques for Accessible PDF, its PDF/UA-1 Reference Suite (both CC BY
+4.0) and the BITV-PDF-Test onto the engine. It lists each case as tested,
+shown in a demo only, solved by R-29, a gap, or to be checked.
+
+**Work, in this order:**
+
+1. After the merge of R-29: update the R-29 rows of that file, measure the
+   rows marked "Check" (columns, multiline heading, image as heading,
+   nested lists, lists across pages, internal links in tagged output)
+2. Tests for the rows marked "Demo": one test per Technique rebuilt from its
+   PASS file, the Technique's ID and the licence in the test; veraPDF `ua1`
+   and PAC on the files. Golden files recorded before the first new test
+3. `invoice_demo`: its README gets the test steps of the BITV-PDF-Test that
+   concern a PDF engine, each marked as met by the engine, the content's part,
+   or not applicable
+4. Engine gaps, each its own fix: lists — `Lbl`, `/ListNumbering`, nested
+   lists, a list `Caption` (extends R-29 item 6); `Caption` and `BlockQuote`
+   from `DrawCaption` and `DrawQuote`, which write `P` today; `/Lang` on a
+   structure element (BITV-PDF-Test 3.1.2, reported by no validator);
+   `/Summary` on a table; `/ActualText` on a structure element; a `/RoleMap`
+   for `Title` and heading levels beyond 6 (lowest priority)
+5. A demo after the Reference Suite where a file shows a real gap in the
+   demos: file 05 (German book chapter: English parts, row headers, spans),
+   file 02 (invoice) against `invoice_demo`. CC BY 4.0: structure and texts
+   may be taken over with the source named; the files stay outside the
+   repository. Forms and scans stay out of scope
 
 ### Charts — out of scope; an example only on explicit request
 

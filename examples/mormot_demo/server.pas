@@ -8,9 +8,13 @@ uses
   SysUtils,
   mormot.core.base,
   mormot.core.os,
+  mormot.core.unicode,
+  mormot.core.text,
   mormot.core.datetime,
   mormot.core.rtti,
+  mormot.orm.base,
   mormot.orm.core,
+  mormot.db.raw.sqlite3,
   mormot.rest.sqlite3,
   mormot.db.raw.sqlite3.static,
   data;
@@ -31,9 +35,13 @@ type
   { TDemoServer }
 
   TDemoServer = class(TRestServerDB)
+  protected
+    procedure AddSampleData;
   public
-    constructor Create(aModel: TOrmModel; const aDBFileName: TFileName);
-      reintroduce;
+    // the virtual constructor: TRestClientDB creates its server through it
+    constructor Create(aModel: TOrmModel; aDB: TSqlDataBase;
+      aHandleUserAuthentication: boolean = false;
+      aOwnDB: boolean = false); overload; override;
     function GetInvoiceData(out Items: TDtoInvoiceRowDynArray): integer;
   end;
 
@@ -47,12 +55,67 @@ function ReadInvoiceData(out Items: TDtoInvoiceRowDynArray): integer;
 
 implementation
 
+const
+  // invented for this demo, so the data stays under the project's licence
+  SAMPLE_CUSTOMERS: array[0..9] of RawUtf8 = (
+    'Blue Lagoon Divers', 'Coral Reef Supplies', 'Deep Sea Outfitters',
+    'Harbor Light Marine', 'Kelp Forest Trading', 'Manta Bay Sports',
+    'North Shore Aquatics', 'Pearl Island Gear', 'Sandbar Expeditions',
+    'Tidewater Equipment');
+  // enough rows for a table across several pages
+  SAMPLE_ORDERS = 200;
+
 { TDemoServer }
 
-constructor TDemoServer.Create(aModel: TOrmModel; const aDBFileName: TFileName);
+constructor TDemoServer.Create(aModel: TOrmModel; aDB: TSqlDataBase;
+  aHandleUserAuthentication: boolean; aOwnDB: boolean);
 begin
-  inherited Create(aModel, aDBFileName);
+  inherited Create(aModel, aDB, aHandleUserAuthentication, aOwnDB);
   CreateMissingTables;
+  // a fresh database gets the sample data; a downloaded one is kept as it is
+  if (not Orm.TableHasRows(TOrmCustomer)) and
+     (not Orm.TableHasRows(TOrmCustomerOrder)) then
+    AddSampleData;
+end;
+
+// computed, not random: the demo PDF has to be the same on every run
+procedure TDemoServer.AddSampleData;
+var
+  batch: TRestBatch;
+  customer: TOrmCustomer;
+  order: TOrmCustomerOrder;
+  i, cents: integer;
+  day: TDateTime;
+begin
+  batch := TRestBatch.Create(Orm, nil);
+  customer := TOrmCustomer.Create;
+  order := TOrmCustomerOrder.Create;
+  try
+    for i := 0 to high(SAMPLE_CUSTOMERS) do
+    begin
+      customer.IDValue := i + 1;
+      customer.CustomerNo := 'C' + UInt3DigitsToUtf8(i + 1);
+      customer.Company := SAMPLE_CUSTOMERS[i];
+      batch.Add(customer, {SendData=}true, {ForceID=}true);
+    end;
+    for i := 0 to SAMPLE_ORDERS - 1 do
+    begin
+      day := EncodeDate(2026, 1, 1) + (i * 90) div SAMPLE_ORDERS; // Q1/2026
+      order.OrderNo := 'ORD-2026-' + UInt4DigitsToUtf8(i + 1);
+      order.SaleDate := TimeLogFromDateTime(day);
+      order.ShipDate := TimeLogFromDateTime(day + 3);
+      order.Customer := TOrmCustomer(PtrInt((i * 7 + i div 10) mod 10 + 1));
+      cents := 5000 + (i * 7919) mod 495000;
+      order.ItemsTotal := cents * 0.01;
+      batch.Add(order, {SendData=}true);
+    end;
+    if Orm.BatchSend(batch) <> HTTP_SUCCESS then
+      EOrmException.RaiseUtf8('%: the sample data was not stored', [self]);
+  finally
+    order.Free;
+    customer.Free;
+    batch.Free;
+  end;
 end;
 
 function TDemoServer.GetInvoiceData(out Items: TDtoInvoiceRowDynArray): integer;
@@ -66,7 +129,7 @@ begin
   SQL := 'SELECT o.ID, o.OrderNo, c.Company, o.SaleDate, o.ItemsTotal ' +
          'FROM CustomerOrder o ' +
          'INNER JOIN Customer c ON o.Customer = c.ID ' +
-         'ORDER BY o.SaleDate ASC';
+         'ORDER BY o.SaleDate ASC, o.ID ASC';
   Table := Self.Orm.ExecuteList([TOrmCustomerOrder, TOrmCustomer], SQL);
   if Table <> nil then
   try
@@ -98,7 +161,7 @@ begin
     dir := 'data';
   // SQLite does not create the folder: without it the demo fails on open
   result := EnsureDirectoryExists(dir, EOSException) +
-    Executable.ProgramName + '.db';
+    Utf8ToString(Executable.ProgramName) + '.db';
 end;
 
 function ReadInvoiceData(out Items: TDtoInvoiceRowDynArray): integer;

@@ -61,6 +61,7 @@ through `layer1_demo.lpi` and Delphi opens directly. In the Delphi IDE, set
 the project's search path to this repository's `src\pdf` and `src\core`, plus mORMot2's
 `src\core`, `src\lib` (which holds the font backends) and `src\crypt`, and
 add mORMot2's `src` for `mormot.defines.inc`. Leave
-mORMot2's `src\ui` out: it holds the original `mormot.ui.pdf`,
-`mormot.ui.report` and `mormot.ui.core` - the last two have the names of this
-project's units, which Delphi would take instead without a word.
+mORMot2's `src\ui` out: its `mormot.ui.core` and `mormot.ui.gdiplus` have the
+names of this project's copies in `src\core`, which Delphi could take
+instead, depending on the search order, without a word; it also holds the
+original `mormot.ui.pdf` and `mormot.ui.report`.

@@ -185,7 +185,7 @@ Application
 ### 3b — Preview Path
 
 ```
-ShowReportPreview(Report)                       (mormot.ui.reportpreview)
+ShowReportPreview(Report)                       (mormot.pdf.report.preview)
   │  TReportPreview.Show: modal LCL form, scroll box, paint box
   │
   TReportPreview.DoPaint (on each repaint)
@@ -220,7 +220,7 @@ ShowReportPreview(Report)                       (mormot.ui.reportpreview)
 ### 3c — PDF Export Path
 
 ```
-TGDIPages.ExportPdfStream(aDest: TStream)
+TGDIPages.ExportPdfStream(aDest: TStream; aRaiseException = false)
   │
   │  Doc := TPdfDocumentVcl.Create(UseOutlines, 0, ExportPdfLevel)
   │  Doc.FileFormat            := ExportPdfFileFormat   (default pdf13; set pdf17 for ISO 32000-1)
@@ -274,7 +274,7 @@ TGDIPages.ExportPdfStream(aDest: TStream)
 ### 3d — Print Path
 
 ```
-PrintReport(Report, From = 0, To_ = all)        (mormot.ui.reportpreview)
+PrintReport(Report, From = 0, To_ = all)        (mormot.pdf.report.preview)
   │  no dialog: prints on the default printer
   │  Printer.BeginDoc
   │  for PageIndex := From to To_ do

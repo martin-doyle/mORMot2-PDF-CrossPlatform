@@ -91,19 +91,6 @@ type
   // reads the text states GSave keeps
   TPdfCanvasPeek = class(TPdfCanvas);
 
-function CountOf(const Sub, Text: RawUtf8): integer;
-var
-  i: PtrInt;
-begin
-  result := 0;
-  i := PosEx(Sub, Text);
-  while i > 0 do
-  begin
-    inc(result);
-    i := PosEx(Sub, Text, i + length(Sub));
-  end;
-end;
-
 function Box(L, B, W, H: single): TPdfBox;
 begin
   result.Left := L;
@@ -266,14 +253,14 @@ begin
   CheckEqual(err, '');
   // the bottom-up rows are the rows of the padded BGR image: reused
   CheckEqual(names[4], names[1], 'the same rows in another layout: one image');
-  CheckEqual(CountOf('/Subtype/Image', txt), 5, 'five images');
+  CheckEqual(CountOccurrences('/Subtype/Image', txt), 5, 'five images');
   rgb := ImageData(txt, names[0]);
   CheckEqual(length(rgb), RAW_W * RAW_H * 3, 'RGB rows');
   CheckEqual(ImageData(txt, names[1]), rgb, 'BGR padded = RGB');
   CheckEqual(ImageData(txt, names[2]), rgb, 'BGRx = RGB, x skipped');
   CheckEqual(length(ImageData(txt, names[3])), RAW_W * RAW_H, 'one index per pixel');
-  CheckEqual(CountOf('<00070E 151C23 ', txt), 1, 'the palette');
-  CheckEqual(CountOf('/Mask[10 10 20 20 200 200]', txt), 1, 'the color key');
+  CheckEqual(CountOccurrences('<00070E 151C23 ', txt), 1, 'the palette');
+  CheckEqual(CountOccurrences('/Mask[10 10 20 20 200 200]', txt), 1, 'the color key');
   CheckGolden('images_raw', pdf);
 end;
 
@@ -317,7 +304,7 @@ begin
     doc.Free;
   end;
   txt := NormalizePdf(pdf, err);
-  CheckEqual(CountOf('/Mask[10 10 20 20 200 200]', txt), 2, 'the key of BGRx, R G B');
+  CheckEqual(CountOccurrences('/Mask[10 10 20 20 200 200]', txt), 2, 'the key of BGRx, R G B');
   Check(n1 <> '', 'named');
   CheckEqual(n2, n1, 'the same pixels in another buffer: one image');
   Check(n3 <> n1, 'another palette: another image');
@@ -418,8 +405,8 @@ begin
       raised := true;
   end;
   Check(raised, 'no JPEG data raises');
-  CheckEqual(CountOf('/ColorSpace/DeviceRGB', txt), 2, 'RGB');
-  CheckEqual(CountOf(jpg, txt), 2, 'the data as it is');
+  CheckEqual(CountOccurrences('/ColorSpace/DeviceRGB', txt), 2, 'RGB');
+  CheckEqual(CountOccurrences(jpg, txt), 2, 'the data as it is');
   CheckGolden('images_jpegdata', pdf);
 end;
 
@@ -472,7 +459,7 @@ begin
   txt := NormalizePdf(pdf, err);
   CheckEqual(err, '');
   // the first page, the form, and the second page once it drew the form
-  CheckEqual(CountOf('/Font<</' + key + ' ', txt), 3, 'listed by both pages');
+  CheckEqual(CountOccurrences('/Font<</' + key + ' ', txt), 3, 'listed by both pages');
 end;
 
 // TPdfFormWithCanvas: an image and a transparency drawn on its canvas need the
@@ -505,8 +492,8 @@ begin
   txt := NormalizePdf(pdf, err);
   CheckEqual(err, '');
   Check(PosEx('/' + img + ' Do', txt) > 0, 'the image drawn in the form');
-  CheckEqual(CountOf('<</' + img + ' ', txt), 1, 'listed by the form');
-  CheckEqual(CountOf('/Fca50<<', txt), 1, 'the alpha of the form');
+  CheckEqual(CountOccurrences('<</' + img + ' ', txt), 1, 'listed by the form');
+  CheckEqual(CountOccurrences('/Fca50<<', txt), 1, 'the alpha of the form');
 end;
 
 {$ifdef PDF_HASVCLCANVAS}
@@ -721,14 +708,14 @@ begin
   CheckEqual(err, '');
   // the LCL: gray bitmaps, indexed with a gray ramp; the VCL: their palette
   CheckEqual(raised, 0, 'every format embedded');
-  CheckEqual(CountOf('/Subtype/Image', txt), 6, 'six images');
-  CheckEqual(CountOf('/Indexed', txt), 3, 'the 1, 4 and 8 bit formats indexed');
-  CheckEqual(CountOf('/Mask', txt), 1, 'the color key');
+  CheckEqual(CountOccurrences('/Subtype/Image', txt), 6, 'six images');
+  CheckEqual(CountOccurrences('/Indexed', txt), 3, 'the 1, 4 and 8 bit formats indexed');
+  CheckEqual(CountOccurrences('/Mask', txt), 1, 'the color key');
   Check(ImageData(txt, names[0]) = rgb24, 'pf24bit: the rows, RGB');
   Check(ImageData(txt, names[1]) = rgb32, 'pf32bit: the rows, RGB, x skipped');
   Check(ImageData(txt, names[2]) = idx8, 'pf8bit: the index bytes');
   {$ifdef FPC}
-  CheckEqual(CountOf('<000000 010101 020202 ', txt), 3, 'a gray ramp each');
+  CheckEqual(CountOccurrences('<000000 010101 020202 ', txt), 3, 'a gray ramp each');
   Check(OnlyBytes(ImageData(txt, names[4]), 0, 255), 'pf1bit: black or white');
   {$else}
   Check(true, 'SKIP: the VCL writes the palette of the bitmap');
@@ -976,8 +963,8 @@ begin
   end;
   txt := NormalizePdf(pdf, err);
   CheckEqual(err, '');
-  CheckEqual(CountOf('/Subtype/Image', txt), 2, 'the bitmap once, the JPEG once');
-  CheckEqual(CountOf(' Do', txt), 4, 'four drawn');
+  CheckEqual(CountOccurrences('/Subtype/Image', txt), 2, 'the bitmap once, the JPEG once');
+  CheckEqual(CountOccurrences(' Do', txt), 4, 'four drawn');
   // 3/4 pt per pixel, Y from the top of the 842 pt page
   Check(HasMatrix(txt, 24, 3, 30, 809), 'Draw: 32 x 4 px at 40, 40');
   Check(HasMatrix(txt, 24, 3, 150, 809), 'Draw: at 200, 40');
@@ -1041,7 +1028,7 @@ begin
   end;
   txt := NormalizePdf(pdf, err);
   CheckEqual(err, '');
-  CheckEqual(CountOf('/DCTDecode', txt), 3, 'three JPEG images');
+  CheckEqual(CountOccurrences('/DCTDecode', txt), 3, 'three JPEG images');
   Check(ImageData(txt, 'JpgDirect') = encoded, 'CreateJpegDirect: the bytes');
   {$ifdef OSWINDOWS}
   // GDI+: SaveInternalToStream writes the bytes it was loaded from
@@ -1113,10 +1100,10 @@ begin
   end;
   txt := NormalizePdf(pdf, err);
   CheckEqual(err, '');
-  CheckEqual(CountOf('/Type/Page/', txt) + CountOf('/Type/Page>>', txt), 2,
+  CheckEqual(CountOccurrences('/Type/Page/', txt) + CountOccurrences('/Type/Page>>', txt), 2,
     'two pages');
   Check(PosEx('/Outlines', txt) > 0, 'the outline comment');
-  CheckEqual(CountOf('/Subtype/Image', txt), 1, 'the same bitmap on both pages');
+  CheckEqual(CountOccurrences('/Subtype/Image', txt), 1, 'the same bitmap on both pages');
   CheckGolden('emf_canvas', pdf);
 end;
 
@@ -1154,9 +1141,9 @@ begin
   end;
   txt := NormalizePdf(pdf, err);
   CheckEqual(err, '');
-  CheckEqual(CountOf('/Type/Page/', txt) + CountOf('/Type/Page>>', txt), 2,
+  CheckEqual(CountOccurrences('/Type/Page/', txt) + CountOccurrences('/Type/Page>>', txt), 2,
     'two pages');
-  CheckEqual(CountOf('/Subtype/Image', txt), 1, 'the bitmap, reused');
+  CheckEqual(CountOccurrences('/Subtype/Image', txt), 1, 'the bitmap, reused');
   CheckGolden('emf_render', pdf);
 end;
 
@@ -1217,13 +1204,13 @@ begin
   end;
   txt := NormalizePdf(pdf, err);
   CheckEqual(err, '');
-  CheckEqual(CountOf('/Type/Page/', txt) + CountOf('/Type/Page>>', txt), 2,
+  CheckEqual(CountOccurrences('/Type/Page/', txt) + CountOccurrences('/Type/Page>>', txt), 2,
     'two pages');
-  CheckEqual(CountOf('/Subtype/Form', txt), 2, 'two forms');
+  CheckEqual(CountOccurrences('/Subtype/Form', txt), 2, 'two forms');
   // the size TMetaFile reports, in pixels of the reference DC (its DPI)
-  CheckEqual(CountOf(FormatUtf8('/BBox[0 0 % %]', [w, h]), txt), 1,
+  CheckEqual(CountOccurrences(FormatUtf8('/BBox[0 0 % %]', [w, h]), txt), 1,
     'the size of the metafile');
-  CheckEqual(CountOf('/Subtype/Image', txt), 1, 'the bitmap, in the form');
+  CheckEqual(CountOccurrences('/Subtype/Image', txt), 1, 'the bitmap, in the form');
   Check(PosEx('(After the form)', txt) > 0, 'the page goes on after the form');
   Check(PosEx('inform', txt) = 0, 'no bookmark from a form');
   CheckGolden('emf_form', pdf);
@@ -1243,7 +1230,7 @@ begin
     if j = 0 then
       exit;
     s := copy(Txt, i + 7, j - i - 7);
-    if CountOf(' BMC', s) + CountOf(' BDC', s) <> CountOf('EMC', s) then
+    if CountOccurrences(' BMC', s) + CountOccurrences(' BDC', s) <> CountOccurrences('EMC', s) then
       exit;
     i := PosEx('stream'#10, Txt, j + 10);
   end;

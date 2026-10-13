@@ -1285,7 +1285,7 @@ begin
         (j > i), 'one text object');
   s := copy(s, i, j - i);
   Check(PosEx(#10'<0064> Tj', s) > 0, 'the fallback string opened');
-  CheckEqual(CountOf('<', s), CountOf('> Tj', s), 'every string opened and shown');
+  CheckEqual(CountOccurrences('<', s), CountOccurrences('> Tj', s), 'every string opened and shown');
 end;
 
 var
@@ -1449,10 +1449,10 @@ begin
   // the WinAnsi font of a CFF face is internal: the Type0 font and its
   // descendant are written, with the descriptor they share
   s := FakeFacePdf(FakeRoutingFace, 'Wi Wi');
-  CheckEqual(CountOf('/Type/Font/', s), 2, 'Type0 and CIDFont only');
+  CheckEqual(CountOccurrences('/Type/Font/', s), 2, 'Type0 and CIDFont only');
   Check(PosEx('/Subtype/Type0', s) > 0, 'the Type0 font');
   Check(PosEx('WinAnsiEncoding', s) = 0, 'no simple font');
-  CheckEqual(CountOf('/Type/FontDescriptor', s), 1, 'the shared descriptor');
+  CheckEqual(CountOccurrences('/Type/FontDescriptor', s), 1, 'the shared descriptor');
   // a glyf face keeps its WinAnsi font
   s := FakeFacePdf(FakeFace([$20, $57, $69, $100], [1, 5, 6, 7], ''), 'Wi Wi');
   Check(PosEx('WinAnsiEncoding', s) > 0, 'the simple font of a glyf face');

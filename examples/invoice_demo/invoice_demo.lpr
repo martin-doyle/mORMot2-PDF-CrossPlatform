@@ -36,7 +36,7 @@ uses
   mormot.core.base,
   mormot.core.os,
   mormot.core.unicode,
-  mormot.ui.report;
+  mormot.pdf.report;
 
 const
   XML_NAME = 'factur-x.xml';

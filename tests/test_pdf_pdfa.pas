@@ -16,7 +16,7 @@ uses
   mormot.pdf.types,     // TPdfStructRole
   mormot.core.unicode,  // StringToUtf8
   mormot.pdf,
-  test_pdf_subset;      // CountOf, DrawUtf8Text
+  test_pdf_subset;      // DrawUtf8Text
 
 type
   /// PDF/A test cases
@@ -102,8 +102,8 @@ begin
   Check(Pos(RawByteString('/OutputIntents'), s) > 0, 'sRGB output intent');
   { an untagged document claims no structure: the /MarkInfo and the empty
     StructTreeRoot PDF/A used to add were removed with the R-17 fix }
-  CheckEqual(CountOf('/MarkInfo', s), 0, 'no MarkInfo without Tagged');
-  CheckEqual(CountOf('/StructTreeRoot', s), 0, 'no StructTreeRoot without Tagged');
+  CheckEqual(CountOccurrences('/MarkInfo', s), 0, 'no MarkInfo without Tagged');
+  CheckEqual(CountOccurrences('/StructTreeRoot', s), 0, 'no StructTreeRoot without Tagged');
 end;
 
 procedure TPdfATests.TestPdfA3AssociatedFile;
@@ -114,7 +114,7 @@ var
 begin
   s := BuildPdf(pdfa3U, false, 'Hello', XML);
   // '/AF' also starts '/AFRelationship': the difference is the catalog entry
-  CheckEqual(CountOf('/AF', s) - CountOf('/AFRelationship', s), 1,
+  CheckEqual(CountOccurrences('/AF', s) - CountOccurrences('/AFRelationship', s), 1,
     'catalog carries one /AF array (ISO 19005-3 6.8)');
   Check(Pos(RawByteString('/AFRelationship/Data'), s) > 0,
     'the relationship given is written');
@@ -171,21 +171,21 @@ begin
   { pdfuaid is no schema PDF/A predefines (ISO 19005-3 6.6.2.3.1), so tagged
     PDF/A has to describe it - veraPDF failed every tagged PDF/A without it }
   s := BuildPdf(pdfa3U, true, 'Hello');
-  CheckEqual(CountOf('<pdfaExtension:schemas>', s), 1, 'one list of schemas');
-  CheckEqual(CountOf('<pdfaSchema:prefix>pdfuaid</pdfaSchema:prefix>', s), 1,
+  CheckEqual(CountOccurrences('<pdfaExtension:schemas>', s), 1, 'one list of schemas');
+  CheckEqual(CountOccurrences('<pdfaSchema:prefix>pdfuaid</pdfaSchema:prefix>', s), 1,
     'pdfuaid is described');
   // a caller's list is extended rather than doubled: two pdfaExtension:schemas
   // on the same resource would not be valid XMP
   s := BuildPdf(pdfa3U, true, 'Hello', '', PdfMetadataFacturX('EN 16931'));
-  CheckEqual(CountOf('<pdfaExtension:schemas>', s), 1,
+  CheckEqual(CountOccurrences('<pdfaExtension:schemas>', s), 1,
     'still one list, with the fx: schema of the caller');
-  CheckEqual(CountOf('<pdfaSchema:prefix>pdfuaid</pdfaSchema:prefix>', s), 1,
+  CheckEqual(CountOccurrences('<pdfaSchema:prefix>pdfuaid</pdfaSchema:prefix>', s), 1,
     'pdfuaid added to it');
-  CheckEqual(CountOf('<pdfaSchema:prefix>fx</pdfaSchema:prefix>', s), 1,
+  CheckEqual(CountOccurrences('<pdfaSchema:prefix>fx</pdfaSchema:prefix>', s), 1,
     'fx kept in it');
   // without Tagged there is no pdfuaid property, so nothing to describe
   s := BuildPdf(pdfa3U, false, 'Hello');
-  CheckEqual(CountOf('pdfuaid', s), 0, 'untagged: no pdfuaid at all');
+  CheckEqual(CountOccurrences('pdfuaid', s), 0, 'untagged: no pdfuaid at all');
 end;
 
 procedure TPdfATests.TestFacturXMetadata;
@@ -200,7 +200,7 @@ begin
   Check(PosEx('<fx:Version>1.0</fx:Version>', x) > 0, 'default version');
   Check(PosEx('<fx:DocumentType>INVOICE</fx:DocumentType>', x) > 0,
     'default document type');
-  CheckEqual(CountOf('<pdfaProperty:name>', x), 4,
+  CheckEqual(CountOccurrences('<pdfaProperty:name>', x), 4,
     'all four properties described');
   x := PdfMetadataFacturX('A&B', 'x<y>.xml');
   Check(PosEx('<fx:ConformanceLevel>A&amp;B</fx:ConformanceLevel>', x) > 0,
@@ -221,9 +221,9 @@ begin
   s := BuildPdf(pdfa3U, true, 'Hello ' + {$ifdef HASCODEPAGE}
     #$00C4#$00D6#$00DC' '#$20AC' '#$2014 {$else}
     #$C3#$84#$C3#$96#$C3#$9C' '#$E2#$82#$AC' '#$E2#$80#$94 {$endif});
-  fonts := CountOf('/Subtype/TrueType', s) + CountOf('/Subtype/Type0', s);
+  fonts := CountOccurrences('/Subtype/TrueType', s) + CountOccurrences('/Subtype/Type0', s);
   Check(fonts >= 2, 'both faces are in the file');
-  CheckEqual(CountOf('/ToUnicode', s), fonts, 'one ToUnicode per font');
+  CheckEqual(CountOccurrences('/ToUnicode', s), fonts, 'one ToUnicode per font');
 end;
 
 {$ifndef NO_USE_PDFSECURITY}

@@ -642,19 +642,6 @@ begin
   end;
 end;
 
-function CountOf(const Sub, s: RawByteString): integer;
-var
-  p: PtrInt;
-begin
-  result := 0;
-  p := PosEx(Sub, s);
-  while p > 0 do
-  begin
-    inc(result);
-    p := PosEx(Sub, s, p + length(Sub));
-  end;
-end;
-
 // a bridge document as the golden cases draw it: standard fonts, uncompressed
 function NewBridgeDoc: TPdfDocumentVcl;
 begin
@@ -772,7 +759,7 @@ begin
     doc.Free;
   end;
   Check(PosEx(' 72 72 re', pdf) > 0, 'a 144 px square is 72 pt');
-  CheckEqual(CountOf(' Tf', pdf), 2, 'the font set on each page');
+  CheckEqual(CountOccurrences(' Tf', pdf), 2, 'the font set on each page');
   CheckGolden('canvas_bridge_pages', pdf);
 end;
 

@@ -25,7 +25,7 @@ uses
   mormot.core.base,
   mormot.core.os,
   mormot.core.unicode,
-  mormot.ui.report;
+  mormot.pdf.report;
 
 {$R *.res}
 

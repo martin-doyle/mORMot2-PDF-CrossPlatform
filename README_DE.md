@@ -20,7 +20,7 @@ veraPDF und PAC 2024 auf allen drei Plattformen geprüft.
 ## Architektur (3 Ebenen)
 
 ```
-TGDIPages           mormot.ui.report     Dokument-Layout, Tabellen, H1-H6
+TGDIPages           mormot.pdf.report    Dokument-Layout, Tabellen, H1-H6
 TPdfDocumentVcl     mormot.pdf.canvas    TCanvas-kompatibler Wrapper
 TPdfDocument        mormot.pdf           Direkte PDF-API, ohne TCanvas, ohne VCL/LCL
 ```
@@ -33,7 +33,7 @@ selbst weiter:
 
 | Ebene | `uses` | Re-Exporte |
 |---|---|---|
-| 3 — `TGDIPages` | `mormot.ui.report`; eine GUI nimmt `mormot.ui.reportpreview` für Vorschau und Druck dazu | was die `ExportPdf*`-Optionen erwarten: `TPdfALevel` (`pdfaNone` … `pdfa3U`), `TPdfFileFormat` (`pdf13` … `pdf17`), `TPdfAFRelationship` (`afr*`), `PdfMetadataFacturX` |
+| 3 — `TGDIPages` | `mormot.pdf.report`; eine GUI nimmt `mormot.pdf.report.preview` für Vorschau und Druck dazu | was die `ExportPdf*`-Optionen erwarten: `TPdfALevel` (`pdfaNone` … `pdfa3U`), `TPdfFileFormat` (`pdf13` … `pdf17`), `TPdfAFRelationship` (`afr*`), `PdfMetadataFacturX` |
 | 2 — `TPdfDocumentVcl` | `mormot.pdf.canvas`, `mormot.pdf` | — die Dokument-API kommt aus `mormot.pdf` |
 | 1 — `TPdfDocument` | `mormot.pdf` | — |
 
@@ -55,13 +55,13 @@ auf dem Canvas setzt die Absatzrichtung; ohne ihn ergibt sich die Richtung aus
 der Schrift. Den Schalter ohne Bedingung setzen — siehe
 [rtl_demo](examples/rtl_demo/).
 
-**`mormot.pdf` nie neben `mormot.ui.report` einbinden.** Beide verwenden
+**`mormot.pdf` nie neben `mormot.pdf.report` einbinden.** Beide verwenden
 einige Namen für Verschiedenes — `psA4` ist in der einen ein `TPdfPaperSize`,
 in der anderen ein `TGdiPagePaperSize`, und das `TRect` von `mormot.pdf`
 ist nicht das der LCL —, also entscheidet die Reihenfolge der `uses`-Klausel,
 welches ein Name meint. Mit `mormot.pdf` zuletzt kompiliert
 `Report.PaperSize := psA4` nicht. Was ein Report von unten braucht, exportiert
-`mormot.ui.report` weiter; fehlt etwas, gehört es dorthin, nicht in die eigene
+`mormot.pdf.report` weiter; fehlt etwas, gehört es dorthin, nicht in die eigene
 `uses`-Klausel.
 
 ---
@@ -108,7 +108,7 @@ Koordinaten in Pixel (96 DPI), Y=0 oben-links. Vollständige Methoden-Referenz: 
 ### Ebene 3 — Report Engine
 
 ```pascal
-uses mormot.ui.report;
+uses mormot.pdf.report;
 
 Report := TGDIPages.Create(nil);
 // Tagged PDF/UA: vor dem Zeichnen setzen — wählt die Schriften, mit denen das
@@ -128,7 +128,7 @@ Report.DrawTableRow(['Wert A', 'Wert B']);      // automatischer Seitenumbruch +
 Report.EndTable;
 Report.EndDoc;
 Report.ExportPdfStream(Stream);   // FileFormat wird automatisch auf pdf17 angehoben
-// oder: ShowReportPreview(Report)   // mormot.ui.reportpreview
+// oder: ShowReportPreview(Report)   // mormot.pdf.report.preview
 Report.Free;
 ```
 
@@ -261,7 +261,7 @@ Doc.CreateFileAttachmentFrom(Xml, 'factur-x.xml', 'Factur-X invoice data',
   'text/xml', Now, Now, nil, afrAlternative);
 Doc.PdfAMetadaExtension := PdfMetadataFacturX('EN 16931');
 
-// Report Engine (Ebene 3) - nur mormot.ui.report
+// Report Engine (Ebene 3) - nur mormot.pdf.report
 Report.ExportPdfLevel := pdfa3U;
 Report.ExportPdfTagged := True;
 // ... Rechnung zeichnen ...

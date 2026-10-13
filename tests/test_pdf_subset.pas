@@ -107,8 +107,6 @@ const
 /// draw UTF-8 bytes held in a string, decoded as TPdfVclCanvas.TextOut does
 // - X, Y in PDF points from the bottom-left corner
 procedure DrawUtf8Text(PDF: TPdfDocument; X, Y: single; const aText: RawUtf8);
-/// number of non-overlapping occurrences of Sub in s
-function CountOf(const Sub, s: RawByteString): integer;
 /// the bytes of the first /FontFile2 stream of an uncompressed PDF
 function FirstFontFile(const Pdf: RawByteString): RawByteString;
 /// the first '/ABCDEF+' subset tag of a PDF name, as 'ABCDEF+', or ''
@@ -249,20 +247,6 @@ begin
         result := (cardinal(result) + delta) and $ffff;
     end;
     exit;
-  end;
-end;
-
-
-function CountOf(const Sub, s: RawByteString): integer;
-var
-  p: PtrInt;
-begin
-  result := 0;
-  p := PosEx(Sub, s, 1);
-  while p > 0 do
-  begin
-    inc(result);
-    p := PosEx(Sub, s, p + length(Sub));
   end;
 end;
 
@@ -804,12 +788,12 @@ begin
   // Latin runs through the WinAnsi instance, Omega through the Type0 one
   pdf := BuildPdf(SansFont,
     'Hello ' + {$ifdef HASCODEPAGE} #$03A9 {$else} #$CE#$A9 {$endif}, false, false, false);
-  CheckEqual(CountOf('/Length1 ', pdf), 1, 'one font file for both instances');
-  CheckEqual(CountOf('/FontFile2 ', pdf), 1, 'one shared /FontDescriptor');
+  CheckEqual(CountOccurrences('/Length1 ', pdf), 1, 'one font file for both instances');
+  CheckEqual(CountOccurrences('/FontFile2 ', pdf), 1, 'one shared /FontDescriptor');
   // TrueType + Type0 /BaseFont, CIDFontType2 /BaseFont, /FontName
   tag := FirstSubsetTag(pdf);
   Check(tag <> '', 'subset tag present');
-  CheckEqual(CountOf('/' + tag, pdf), 4,
+  CheckEqual(CountOccurrences('/' + tag, pdf), 4,
     'the same tag on all fonts and the descriptor');
   ttf := FirstFontFile(pdf);
   Check(SfntGlyphLength(ttf, SfntCmapLookup(ttf, ord('H'))) > 0, 'H kept');
@@ -836,7 +820,7 @@ begin
     Check(true, 'SKIP: Droid Sans Fallback not installed');
     exit;
   end;
-  CheckEqual(CountOf('/Length1 ', pdf), 1, 'Regular and Bold share one file');
+  CheckEqual(CountOccurrences('/Length1 ', pdf), 1, 'Regular and Bold share one file');
   ttf := FirstFontFile(pdf);
   Check(SfntGlyphLength(ttf, SfntCmapLookup(ttf, $4E2D)) > 0, 'CJK glyph kept');
   Check(SfntGlyphLength(ttf, SfntCmapLookup(ttf, ord('!'))) > 0,

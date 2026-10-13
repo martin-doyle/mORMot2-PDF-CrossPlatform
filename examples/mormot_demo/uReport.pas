@@ -15,7 +15,7 @@ uses
   SysUtils,
   Graphics,
   mormot.core.base,
-  mormot.ui.report,   // TGDIPages (includes PDF export via ExportPdfStream)
+  mormot.pdf.report,  // TGDIPages (includes PDF export via ExportPdfStream)
   server;             // TDtoInvoiceRowDynArray
 
 const

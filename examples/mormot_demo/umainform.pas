@@ -10,8 +10,8 @@ uses
   Classes, SysUtils, Forms, Controls, Graphics, Dialogs,
   StdCtrls, ExtCtrls, ComCtrls, Menus, ActnList,
   // mORMot2 UI
-  mormot.ui.report,        // TGDIPages
-  mormot.ui.reportpreview, // ShowReportPreview, PrintReport
+  mormot.pdf.report,         // TGDIPages
+  mormot.pdf.report.preview, // ShowReportPreview, PrintReport
   server,
   uReport;
 
@@ -130,7 +130,7 @@ begin
   Log('Building preview...');
   Report := BuildReportFromDatabase;
   try
-    // ShowReportPreview opens the preview window (mormot.ui.reportpreview)
+    // ShowReportPreview opens the preview window (mormot.pdf.report.preview)
     ShowReportPreview(Report);
   finally
     Report.Free;
