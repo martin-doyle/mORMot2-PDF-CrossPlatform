@@ -67,6 +67,26 @@ place to hook a PDF renderer in. What can be reused is its approach (one
 pass over `PUtf8Char`, no allocations) and its tests; its scope is below the
 engine's present API (headings, tables).
 
+**Mustache as the template side — Check.** `TSynMustache` could produce the
+Markdown from data, so that Markdown is the input of the report and Mustache
+fills it in: ORM or JSON data in, a template with
+`{{#rows}}| {{Name}} | {{Total}} |{{/rows}}` out, then the renderer — the
+report itself a text file instead of code. Read so far only from the
+declarations at `681bbe2a1`; to check:
+
+- **Escaping:** `{{value}}` escapes HTML, `{{{value}}}` nothing;
+  `EscapeInvert` swaps the two. There is no Markdown escaping, so a `*`, `|`,
+  `#` or `_` in the data turns into markup (a `|` breaks a table row). Is
+  a helper (e.g. `{{MdEscape Name}}`) needed, or a third escaping mode?
+- **Helpers:** the standard list (`DateFmt`, `Upper`, `#if` …) and
+  `HelperAdd` for own ones — enough for number and date formats in a
+  report, or does the report need its own?
+- **Partials:** `TSynMustachePartials` for a shared header, footer or
+  address block
+- **Where it sits:** an example or a helper in `mormot.core.mustache` (a
+  `MarkdownToPdf` beside `MarkdownToHtml` makes no sense — a helper returns
+  text), or a convenience in the report unit taking template and data
+
 **Elsewhere for Pascal** — none fits as it is:
 
 | Library | Licence | Fit |
@@ -172,6 +192,8 @@ MarkdownProcessor by their HTML-only output and an open licence question
   `/ListNumbering`, nested lists (R-30), `Link` (R-29), drawn strike-out
   (ROADMAP bug), an image recording method — Markdown makes them visible,
   so they come first or the Markdown output is not conformant PDF/UA
+- **Mustache:** whether templates are part of the first step, and how values
+  are escaped for Markdown (see "Mustache as the template side")
 - **Tests:** the CommonMark examples against the event stream (no PDF),
   then golden files and veraPDF/PAC for the rendered document;
   `markdown_demo` would then read real Markdown, which its name promises
