@@ -133,7 +133,7 @@ Predefined permission sets:
 
 ## Tagged PDF (ISO 32000-1 §14 — Accessibility)
 
-Structure roles defined in `mormot.pdf.types.pas`:
+Structure roles defined in `mormot.pdf.pas`:
 
 ```pascal
 TPdfStructRole = (
@@ -341,7 +341,7 @@ procedure TGDIPages.GetExportFonts(out SansFont, SerifFont, MonoFont: RawUtf8);
 
 Reads `ExportPdfEmbeddedTTF` internally and delegates to `GetReportFonts`. No parameter needed.
 
-### GetPdfFonts (`mormot.pdf.types`)
+### GetPdfFonts (`mormot.pdf`)
 
 The same names as `string`, for code that draws through `TPdfDocumentVcl` or
 `TPdfDocument` and does not use `TGDIPages`:
@@ -355,7 +355,7 @@ procedure GetPdfFonts(Embedded: boolean;
 
 ## Standard Font Constants
 
-Defined in `mormot.pdf.types.pas`:
+Defined in `mormot.pdf.pas`:
 
 ```pascal
 PDF_FONT_STD_SANS  = 'Helvetica';

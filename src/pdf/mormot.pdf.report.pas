@@ -42,7 +42,6 @@ uses
   mormot.core.os,       // Executable.ProgramName
   mormot.core.text,     // ESynException
   mormot.core.unicode,
-  mormot.pdf.types,     // PDF_FONT_STD_* + TPdfStructRole (Tagged PDF)
   mormot.pdf.canvas;    // TPdfDocumentVcl, TPdfVclCanvas
 
 
@@ -53,7 +52,7 @@ uses
   order of the uses clause }
 type
   TPdfALevel = mormot.pdf.TPdfALevel;
-  TPdfFileFormat = mormot.pdf.types.TPdfFileFormat;
+  TPdfFileFormat = mormot.pdf.TPdfFileFormat;
   TPdfAFRelationship = mormot.pdf.TPdfAFRelationship;
   TPdfPageMode = mormot.pdf.TPdfPageMode;
 
@@ -69,11 +68,11 @@ const
   pdfa3A = mormot.pdf.pdfa3A;
   pdfa3B = mormot.pdf.pdfa3B;
   pdfa3U = mormot.pdf.pdfa3U;
-  pdf13 = mormot.pdf.types.pdf13;
-  pdf14 = mormot.pdf.types.pdf14;
-  pdf15 = mormot.pdf.types.pdf15;
-  pdf16 = mormot.pdf.types.pdf16;
-  pdf17 = mormot.pdf.types.pdf17;
+  pdf13 = mormot.pdf.pdf13;
+  pdf14 = mormot.pdf.pdf14;
+  pdf15 = mormot.pdf.pdf15;
+  pdf16 = mormot.pdf.pdf16;
+  pdf17 = mormot.pdf.pdf17;
   afrUnspecified = mormot.pdf.afrUnspecified;
   afrSource = mormot.pdf.afrSource;
   afrData = mormot.pdf.afrData;
@@ -92,7 +91,7 @@ const
   PAGENUMBER = '<<pagenumber>>';
 
   { Font fallback: platform-appropriate font names for TrueType embedding
-    - the names live in mormot.pdf.types (PDF_FONT_TTF_*), because they are
+    - the names live in mormot.pdf (PDF_FONT_TTF_*), because they are
       a platform question, not a report one; kept here for existing callers
     - for standard PDF Type1 fonts (no embedding): PDF_FONT_STD_SANS/SERIF/MONO }
 
