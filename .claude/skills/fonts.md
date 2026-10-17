@@ -1,6 +1,6 @@
 # Font Handling — Deep Reference
 
-Sources: `src/pdf/mormot.pdf.pas`, `src/pdf/mormot.pdf.types.pas`,
+Sources: `src/pdf/mormot.pdf.pas`,
 mORMot2 `src/lib/mormot.lib.uniscribe.pas` (GDI), `src/lib/mormot.lib.freetype.pas`
 
 **Skill boundaries:**
@@ -27,7 +27,7 @@ Doc.EmbeddedTTF := True;
 C.SetFont('Calibri', 12, []);
 ```
 
-Standard font name constants (`mormot.pdf.types.pas`):
+Standard font name constants (`mormot.pdf.pas`):
 - `PDF_FONT_STD_SANS` = `'Helvetica'`
 - `PDF_FONT_STD_SERIF` = `'Times'`
 - `PDF_FONT_STD_MONO` = `'Courier'`
@@ -381,10 +381,13 @@ selected):
      Glyf's U+3001, glyph 4203, was 23 and is 1000), for the others where the
      last advance differs from `.notdef`'s. Times and Tahoma: their one tail
      glyph is not in the cmap. No golden case draws such a glyph. `ShortHmtxWidths`
-     cuts Test Format12's `hmtx` after glyph 66. `glyph * 2 < length(fhmtx)`
-     admits the zero word `GetTtfData` adds past the table, as in
-     `GlyphHmtxWidth`: a face whose `hmtx` is shorter than `hhea` says gets
-     width 0 there - left for a fix of both.
+     cuts Test Format12's `hmtx` after glyph 66. `GetTtfData` adds a zero
+     word past the table: both readers stop before it (`length(fhmtx) - 1`,
+     Martin on #64), so a glyph past the end of a `hmtx` shorter than `hhea`
+     says gets `W`, the width of `.notdef`, here (was 0) and 0 from
+     `GlyphHmtxWidth`, whose callers fall back on it; `ShortHmtxWidths`
+     checks the `W` case of the loop (`GlyphHmtxWidth`'s bound has no test:
+     it is reached through a shaper only).
 
 ### Subtable selection (cmap)
 
@@ -523,9 +526,11 @@ keeps its own for callers passing `TScriptVisAttr`s. Details per outcome:
 
 Registers a Unicode code point in the WinAnsi font's tracking arrays.
 Called from the WinAnsi text rendering path for every non-Latin character,
-through `FindOrAddUsedWideChar(aWideChar)`, its inline wrapper for a UTF-16
+through `FindOrAddUsedWideChar(aWideChar)`, its public wrapper for a UTF-16
 unit. The keys are code points since R-32 step 1 (2026-10-17); the text
 paths still pass one UTF-16 unit at a time (surrogates paired in step 2).
+`FindOrAddUsedCodePoint` is protected until then (Martin on #65): `/ToUnicode`
+writes a code point through `AddHex4`, correct up to U+FFFF only.
 
 ```
 fUsedWideChar.Add(aCode)            — sorted insertion into WinAnsi tracking array

@@ -19,7 +19,6 @@ uses
   mormot.core.unicode,
   mormot.core.test,
   mormot.lib.core,
-  mormot.pdf.types,
   test_pdf_crossplatform, // the test fonts
   {$ifdef OSWINDOWS}
   Windows,

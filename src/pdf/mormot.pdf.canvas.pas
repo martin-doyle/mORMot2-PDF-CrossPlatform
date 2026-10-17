@@ -71,7 +71,6 @@ uses
   mormot.core.unicode,
   mormot.core.text,
   mormot.core.buffers,
-  mormot.pdf.types,
   mormot.pdf;
 
 

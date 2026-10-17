@@ -373,7 +373,7 @@ begin
   Check(REPORT_FONT_SANS  <> '', 'REPORT_FONT_SANS not empty');
   Check(REPORT_FONT_SERIF <> '', 'REPORT_FONT_SERIF not empty');
   Check(REPORT_FONT_MONO  <> '', 'REPORT_FONT_MONO not empty');
-  { the three branches must match PDF_FONT_TTF_* in mormot.pdf.types one for
+  { the three branches must match PDF_FONT_TTF_* in mormot.pdf one for
     one (REPORT_FONT_* only aliases them) -
     this test expected Arial/Times New Roman/Courier New long after the
     constants moved to the ClearType families, and had no OSDARWIN branch at

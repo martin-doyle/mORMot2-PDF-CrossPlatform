@@ -13,7 +13,6 @@ uses
   mormot.core.base,
   mormot.core.os,
   mormot.core.test,
-  mormot.pdf.types,     // TPdfStructRole
   mormot.core.unicode,  // StringToUtf8
   mormot.pdf,
   test_pdf_subset;      // DrawUtf8Text

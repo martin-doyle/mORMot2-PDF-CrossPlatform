@@ -17,7 +17,6 @@ uses
   mormot.core.text,
   mormot.core.test,
   mormot.lib.core,
-  mormot.pdf.types,
   {$ifndef OSWINDOWS}
   mormot.lib.freetype,  // FreeType face validation
   {$endif OSWINDOWS}
