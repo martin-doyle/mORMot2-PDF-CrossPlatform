@@ -463,7 +463,7 @@ function MMToPixels(Value100: Integer; DPI: Integer): Integer;
 function PixelsToMM(Pixels: Integer; DPI: Integer): Integer;
 
 // Get platform-default font names - an alias of GetPdfFonts() in
-// mormot.pdf.types, which layer 1 code uses without the report engine:
+// mormot.pdf, which layer 1 code uses without the report engine:
 procedure GetReportFonts(Embedded: boolean;
   out SansFont, SerifFont, MonoFont: RawUtf8);
 ```

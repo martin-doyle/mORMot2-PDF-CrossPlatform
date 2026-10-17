@@ -781,6 +781,26 @@ requested protection cannot be applied
 
 Gist §20. Transitional names and aliases removed, unit splits reviewed.
 
+**Decided 2026-10-17** (Sven, after an inventory by Codex and Fable; each
+step its own PR, output byte-equal):
+
+1. **`mormot.pdf.types` merged into `mormot.pdf`** - done: its PDF types
+   (`TPdfFileFormat`, `TPdfStructRole`, `PDF_FONT_*`, `GetPdfFonts`, same
+   ordinals) are declared in `mormot.pdf`, which re-exported them; the nine
+   former font type names (no user in this repository, its tests, demos or
+   XRechnung for Delphi) and the unused `TPdfFontEnumCallback` are gone
+   with the unit
+2. **The copies `src/core/mormot.ui.core` and `mormot.ui.gdiplus` removed**:
+   the projects take the fork's `src/ui`, since no unit of ours is named
+   `mormot.ui.pdf` any more
+3. **`mormot.pdf.fpimage` removed**: no caller; announced
+4. **The review recorded here**: what stays and why, `reference/`, the
+   migration note for users of the trunk's `mormot.ui.pdf`/`mormot.ui.report`
+
+**At the move, not now:** `x:xmptk="mormot.ui.pdf"` becomes `mormot.pdf`
+(the only change of output, one new baseline on every machine), the
+defines include by relative path, the formatting of tests and demos.
+
 ---
 
 ## Outside the Phases

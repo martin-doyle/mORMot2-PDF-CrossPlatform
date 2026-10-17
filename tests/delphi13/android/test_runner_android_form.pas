@@ -58,7 +58,6 @@ uses
   Androidapi.JNI.JavaTypes,
   {$endif OSANDROID}
   mormot.core.log,
-  mormot.pdf.types,
   mormot.lib.core,
   mormot.lib.freetype,
   mormot.core.os,

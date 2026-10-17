@@ -38,7 +38,7 @@ selbst weiter:
 | 1 — `TPdfDocument` | `mormot.pdf` | — |
 
 Die Strukturrollen (`psrH1`, `psrP`, …) und `GetPdfFonts` kommen mit
-`mormot.pdf` (deklariert in `mormot.pdf.types`, re-exportiert).
+`mormot.pdf`.
 
 **Die Plattform-Units brauchen kein eigenes `uses`.** `mormot.pdf` bindet
 unter Windows GDI und Uniscribe ein, unter Linux und macOS FreeType2, den

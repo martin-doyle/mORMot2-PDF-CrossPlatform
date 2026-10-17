@@ -47,7 +47,6 @@ All files under `src/` require justification and user approval before reading.
 | `src/pdf/mormot.pdf.report.pas` | Report engine (`TGDIPages`) - R-28 Phase 4 | Production |
 | `src/pdf/mormot.pdf.report.preview.pas` | Preview window and printing for `TGDIPages` (LCL) | Production |
 | `src/pdf/mormot.pdf.canvas.pas` | VCL/LCL adapter: the TCanvas bridge (`TPdfDocumentVcl`, `TPdfVclCanvas`), `TBitmap`/`TGraphic` images; `TPdfDocumentGdi`, `RenderMetaFile`, printer helpers (Windows) - R-28 Phase 2 | Production |
-| `src/pdf/mormot.pdf.types.pas` | PDF types; former font type names as aliases of mormot.lib.core | Production |
 | mORMot2 `src/lib/mormot.lib.uniscribe.pas` | GDI backend (Windows), Uniscribe shaper and FontSub subsetter, beside their bindings | Production |
 | mORMot2 `src/lib/mormot.lib.freetype.pas` | FreeType2 backend (POSIX) | Production |
 | mORMot2 `src/lib/mormot.lib.harfbuzz.pas` | HarfBuzz shaper (RTL/complex scripts) and hb-subset subsetter (R-12) | Production |
@@ -61,7 +60,6 @@ src/
     mormot.pdf.pas              PDF objects, TPdfDocument, TPdfCanvas - no VCL/LCL
     mormot.pdf.canvas.pas       TCanvas bridge (TPdfDocumentVcl), TBitmap/TGraphic images, TPdfDocumentGdi and EMF (Windows)
     mormot.pdf.defines.inc      the USE_* switches of mormot.pdf and mormot.pdf.canvas
-    mormot.pdf.types.pas        PDF types, aliases of the mormot.lib.core font types
     mormot.pdf.fpimage.pas      Bitmap embedding (FPImage)
     mormot.pdf.report.pas       TGDIPages — layout engine, no forms or printer
     mormot.pdf.report.preview.pas ShowReportPreview, PrintReport (LCL)

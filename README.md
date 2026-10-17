@@ -37,7 +37,7 @@ layer's API takes from below, that layer re-exports:
 | 1 — `TPdfDocument` | `mormot.pdf` | — |
 
 The structure roles (`psrH1`, `psrP`, …) and `GetPdfFonts` come with
-`mormot.pdf` (declared in `mormot.pdf.types`, re-exported).
+`mormot.pdf`.
 
 **The platform units need no `uses` of yours.** `mormot.pdf` pulls in GDI
 and Uniscribe on Windows, and FreeType2, the HarfBuzz shaper and the hb-subset

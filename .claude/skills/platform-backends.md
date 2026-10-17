@@ -2,7 +2,8 @@
 
 Contracts: `src/lib/mormot.lib.core.pas` of mORMot2 (during the refactoring
 the branch `pdf-font-layer` of `landrix/mORMot2`, see `docs/REFACTORING.md`)
-Former names, as aliases: `src/pdf/mormot.pdf.types.pas`
+Former names: none any more (`mormot.pdf.types` kept them as aliases until
+R-28 Phase 5)
 Windows backend: mORMot2 `src/lib/mormot.lib.uniscribe.pas` (the GDI services)
 Unix/macOS backends: mORMot2 `src/lib/mormot.lib.freetype.pas` and
 `mormot.lib.harfbuzz.pas` (shaper and subsetter), in the same branch
@@ -253,11 +254,12 @@ initialization
 `RegisterFontPlatform` of `mormot.lib.core` sets the globals `FontProvider`
 and `FontEnumerator` (the `FontDC` global and the DC parameter went with
 Phase 1b); `mormot.lib.uniscribe` and `mormot.lib.harfbuzz`
-assign `FontShaper` and `FontSubsetter` themselves. The core calls them directly. `mormot.pdf.types`
-keeps the former type names as aliases (`TPdfLogFont`, `IPdfPlatformFont`...)
-for code outside this repository; the globals, `IPdfTextShaper` and
-`IPdfFontSubsetter` have none (renamed 2026-10-04, R-28 Phase 1), and
-`TPdfPlatformDC`/`IPdfPlatformDC` are gone with the device context.
+assign `FontShaper` and `FontSubsetter` themselves. The core calls them directly. The
+former names of v0.10.0 (`TPdfLogFont`, `IPdfPlatformFont`...) have no alias:
+`mormot.pdf.types` kept them from the renaming (2026-10-04, R-28 Phase 1)
+until Phase 5 removed the unit (2026-10-17); the globals, `IPdfTextShaper`
+and `IPdfFontSubsetter` never had one, and `TPdfPlatformDC`/`IPdfPlatformDC`
+are gone with the device context.
 
 ```pascal
 // Check whether a platform backend has been registered:

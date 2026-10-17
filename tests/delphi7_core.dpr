@@ -8,7 +8,6 @@ program delphi7_core;
 uses
   SysUtils,
   mormot.core.base,
-  mormot.pdf.types,
   mormot.lib.uniscribe,
   mormot.pdf;
 
