@@ -2,7 +2,8 @@
 
 Contracts: `src/lib/mormot.lib.core.pas` of mORMot2 (during the refactoring
 the branch `pdf-font-layer` of `landrix/mORMot2`, see `docs/REFACTORING.md`)
-Former names, as aliases: `src/pdf/mormot.pdf.types.pas`
+Former names: none any more (`mormot.pdf.types` kept them as aliases until
+R-28 Phase 5)
 Windows backend: mORMot2 `src/lib/mormot.lib.uniscribe.pas` (the GDI services)
 Unix/macOS backends: mORMot2 `src/lib/mormot.lib.freetype.pas` and
 `mormot.lib.harfbuzz.pas` (shaper and subsetter), in the same branch
@@ -253,11 +254,12 @@ initialization
 `RegisterFontPlatform` of `mormot.lib.core` sets the globals `FontProvider`
 and `FontEnumerator` (the `FontDC` global and the DC parameter went with
 Phase 1b); `mormot.lib.uniscribe` and `mormot.lib.harfbuzz`
-assign `FontShaper` and `FontSubsetter` themselves. The core calls them directly. `mormot.pdf.types`
-keeps the former type names as aliases (`TPdfLogFont`, `IPdfPlatformFont`...)
-for code outside this repository; the globals, `IPdfTextShaper` and
-`IPdfFontSubsetter` have none (renamed 2026-10-04, R-28 Phase 1), and
-`TPdfPlatformDC`/`IPdfPlatformDC` are gone with the device context.
+assign `FontShaper` and `FontSubsetter` themselves. The core calls them directly. The
+former names of v0.10.0 (`TPdfLogFont`, `IPdfPlatformFont`...) have no alias:
+`mormot.pdf.types` kept them from the renaming (2026-10-04, R-28 Phase 1)
+until Phase 5 removed the unit (2026-10-17); the globals, `IPdfTextShaper`
+and `IPdfFontSubsetter` never had one, and `TPdfPlatformDC`/`IPdfPlatformDC`
+are gone with the device context.
 
 ```pascal
 // Check whether a platform backend has been registered:
@@ -636,7 +638,7 @@ end;
 Every unit starts with `{$I mormot.defines.inc}` after `interface` (by name, no relative path).
 
 - **Enum size does not reach the C libraries.** `mormot.defines.inc` sets `{$MINENUMSIZE 1}` and `{$PACKSET 1}`, but the bindings in `mormot.lib.freetype` and `mormot.lib.harfbuzz` declare every C enum as `integer` and hold no set. Keep it that way in new bindings.
-- **The `{$ifdef FPC}` branches that remain are real differences.** Those of `mormot.pdf` and `mormot.pdf.canvas` (six in one unit before R-28 Phase 2) all come from the original (`reference/`): LCL against VCL units, the compatibility types, and three Windows API calls FPC declares differently — `EnumPrinters` (pointers), `GdiComment` (`var`), `EnumEnhMetaFile` (`RECT`); the fourth, `CreateFontIndirectW` on a `const` parameter in the `TPdfFontTrueType` constructor, went with W3: the `TLogFontW` constructor passes a local copy, a `var` that fits both declarations. No mORMot2 function wraps them. The GDI services in `mormot.lib.uniscribe` need no branch: a local `var` fits both. The branches in `mormot.ui.core` and `mormot.ui.gdiplus` come with the mORMot2 originals. The one around all of `mormot.pdf.report` is gone since R-20.
+- **The `{$ifdef FPC}` branches that remain are real differences.** Those of `mormot.pdf` and `mormot.pdf.canvas` (six in one unit before R-28 Phase 2) all come from the original (the trunk's `mormot.ui.pdf`): LCL against VCL units, the compatibility types, and three Windows API calls FPC declares differently — `EnumPrinters` (pointers), `GdiComment` (`var`), `EnumEnhMetaFile` (`RECT`); the fourth, `CreateFontIndirectW` on a `const` parameter in the `TPdfFontTrueType` constructor, went with W3: the `TLogFontW` constructor passes a local copy, a `var` that fits both declarations. No mORMot2 function wraps them. The GDI services in `mormot.lib.uniscribe` need no branch: a local `var` fits both. The branches in `mormot.ui.core` and `mormot.ui.gdiplus` come with the mORMot2 originals. The one around all of `mormot.pdf.report` is gone since R-20.
 - **LCL against VCL units** (R-20): `mormot.pdf.canvas` and `mormot.pdf.report` take `LCLIntf`/`LCLType` under FPC and `Windows` under Delphi — `Windows` *before* `Graphics`, or its record `TBitmap` hides the class (dozens of errors on every `TBitmap.Create`).
 - **`PDF_CANVASVIRTUAL`** (`mormot.pdf.canvas`, defined under FPC): the LCL's `TCanvas` drawing methods are virtual, Delphi 7's are static. The bridge declares `TextOut`, `TextExtent`, `TextWidth`, `TextHeight`, `Rectangle`, `Ellipse`, `RoundRect`, `Draw` with `override` or `reintroduce` by this switch, and has `DoMoveTo`/`DoLineTo` (LCL) or reintroduced `MoveTo`/`LineTo` (Delphi). `DoLineTo` checks `psClear` itself: `TFPCustomCanvas.LineTo` skips it then, our Delphi `LineTo` does not.
 - **Delphi on Linux/Android** (R-27): the POSIX backends load their libraries through `TSynLibrary` of `mormot.core.os` (before Phase 1: `LibraryOpen`/`LibraryResolve`) — FPC's `dynlibs` does not exist there, and `TLibHandle` comes from `System` under FPC, from `mormot.core.os` under Delphi. There is no VCL there: `mormot.pdf.canvas` (the `TBitmap`/`TGraphic` image functions, EMF) is not for these targets, and `mormot.pdf` - which needs no VCL/LCL since R-28 Phase 2 - takes `GetSysColor` and `MM_TEXT` from its fallback block on every POSIX target, FPC included. Android: `/system/fonts` is scanned, Roboto is the last fallback face; the app has to ship an NDK-built `libfreetype.so` (a glibc build does not load), and a program without a configured `TSynLog` family crashed in `TSynLog.FillInfo` on the first raised exception — configure it as `TSynTests.RunAsConsole` does.

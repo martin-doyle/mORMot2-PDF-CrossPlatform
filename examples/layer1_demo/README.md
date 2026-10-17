@@ -38,8 +38,8 @@ text and a figure, page 2 a table.
 - PAC 2024 passes both Windows files and keeps one hint, "possibly
   inappropriate use of figure". It comes with every Figure, path or image,
   and is accepted (roadmap W-1)
-- no image: `mormot.pdf.fpimage` is FPC-only, and the demo keeps to what both
-  compilers share
+- no image: out of this demo's scope - `TPdfImagePixels` and
+  `CreateOrGetImage` draw one on every compiler (`tests/test_pdf_images.pas`)
 
 **Build and run**
 
@@ -58,10 +58,7 @@ bin\d7\layer1_demo\layer1_demo.exe       &rem -> bin\d7\layer1_demo\layer1_demo_
 
 **One source for both IDEs.** `layer1_demo.dpr` is the program Lazarus opens
 through `layer1_demo.lpi` and Delphi opens directly. In the Delphi IDE, set
-the project's search path to this repository's `src\pdf` and `src\core`, plus mORMot2's
+the project's search path to this repository's `src\pdf`, plus mORMot2's
 `src\core`, `src\lib` (which holds the font backends) and `src\crypt`, and
-add mORMot2's `src` for `mormot.defines.inc`. Leave
-mORMot2's `src\ui` out: its `mormot.ui.core` and `mormot.ui.gdiplus` have the
-names of this project's copies in `src\core`, which Delphi could take
-instead, depending on the search order, without a word; it also holds the
-original `mormot.ui.pdf` and `mormot.ui.report`.
+add mORMot2's `src` for `mormot.defines.inc`. Layer 1 needs nothing of
+mORMot2's `src\ui`.

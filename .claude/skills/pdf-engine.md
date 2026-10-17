@@ -1,7 +1,6 @@
 # PDF Engine — TPdfDocument / TPdfDocumentVcl
 
 Source: `src/pdf/mormot.pdf.pas`, canvas bridge: `src/pdf/mormot.pdf.canvas.pas`
-FPImage adapter: `src/pdf/mormot.pdf.fpimage.pas`
 
 ## Two Entry Points
 
@@ -45,7 +44,7 @@ shows up.
 // pdfa3U is appended last, so the older members keep their ordinal values
 TPdfALevel = (pdfaNone, pdfa1A, pdfa1B, pdfa2A, pdfa2B, pdfa3A, pdfa3B, pdfa3U);
 
-// PDF file format version (defined in mormot.pdf.types — available to all units)
+// PDF file format version (mormot.pdf; mormot.pdf.report re-exports it)
 TPdfFileFormat = (pdf13, pdf14, pdf15, pdf16, pdf17);
 
 // How the document appears when opened in a viewer
@@ -563,9 +562,9 @@ writes `/S /TH` with `/Scope /Row` (PDF/UA-1 7.5); `psrTH` heads its column.
 
 ### Enum
 
-`TPdfStructRole` is defined in `mormot.pdf.types` and re-exported by `mormot.pdf`
-(the type, every `psr*` value, `TPdfFileFormat` with `pdf13`..`pdf17`, the
-`PDF_FONT_*` constants and `GetPdfFonts`), so `uses mormot.pdf` is enough:
+`TPdfStructRole` is declared in `mormot.pdf` (with `TPdfFileFormat`, the
+`PDF_FONT_*` constants and `GetPdfFonts`; `mormot.pdf.types`, which declared
+them until R-28 Phase 5, is gone), so `uses mormot.pdf` is enough:
 
 ```pascal
 TPdfStructRole = (psrDocument, psrH1, psrH2, psrH3, psrH4, psrH5, psrH6,
@@ -684,7 +683,7 @@ Doc.EndStructContent;            // delegates to Canvas.EndStructContent
 ### TGDIPages integration
 
 ```pascal
-// In mormot.pdf.report.pas — uses mormot.pdf.types (not mormot.pdf)
+// In mormot.pdf.report.pas — a report program uses this unit only
 Report.ExportPdfTagged   := True;    // default False — set BEFORE drawing:
                                      // it forces ExportPdfEmbeddedTTF / clears
                                      // ExportPdfStandardFonts, and those decide
@@ -754,14 +753,14 @@ WinAnsi `/ToUnicode` CMap — previously written for PDF/A only — to tagged
 documents. Resolve font names with `GetPdfFonts` *after* setting `Tagged`.
 
 Platform-specific TTF fonts via `GetPdfFonts(Embedded, SansFont, SerifFont, MonoFont)`
-in `mormot.pdf.types` (constants `PDF_FONT_TTF_SANS/SERIF/MONO`) — layer 1, no
+in `mormot.pdf` (constants `PDF_FONT_TTF_SANS/SERIF/MONO`) — layer 1, no
 report engine needed. `GetReportFonts` and `REPORT_FONT_*` in `mormot.pdf.report`
 are aliases of them:
 - Windows: Calibri, Cambria, Consolas
 - macOS: Trebuchet MS, Georgia, Andale Mono
 - Linux: Liberation Sans, Liberation Serif, Liberation Mono
 
-Standard constants in `mormot.pdf.types.pas`: `PDF_FONT_STD_SANS` = 'Helvetica', `PDF_FONT_STD_SERIF` = 'Times', `PDF_FONT_STD_MONO` = 'Courier'.
+Standard constants in `mormot.pdf.pas`: `PDF_FONT_STD_SANS` = 'Helvetica', `PDF_FONT_STD_SERIF` = 'Times', `PDF_FONT_STD_MONO` = 'Courier'.
 
 **Calling `TPdfCanvas.SetFont` directly with a non-Latin face:** pass
 `DEFAULT_CHARSET` (1) as `ACharSet`, as `TPdfVclCanvas` does. Without it,
@@ -782,32 +781,6 @@ reader is public: `PdfCffParse(Data, Len, Info)` / `PdfFaceCffInfo(Face,
 Info)` give `TPdfCffInfo` (`Kind` pcNone/pcNameKeyed/pcCidKeyed/pcInvalid,
 `GlyphCount`, `FontName`, `Registry`/`Ordering`/`Supplement`, `Cid[]`).
 Details: `fonts.md` "CFF Faces: Type0 Only"
-
----
-
-## FPImage Bitmap Adapter (mormot.pdf.fpimage)
-
-Loads PNG/JPEG files with FPC's FPImage (non-Windows guard, FPC-only units).
-**Nothing calls it** - neither the engine nor the bridge: it is a standalone
-helper. Phase 2 keeps it as an optional FPC adapter whose `GetRawRGB` feeds a
-`TPdfImagePixels` (`ipfRgb24`, top-down); `GetJpegBytes` re-encodes, it does
-not pass a JPEG through.
-
-```pascal
-uses mormot.pdf.fpimage;
-
-var Adapter: IPdfBitmapAdapter;
-Adapter := CreatePdfBitmapAdapter;
-Adapter.LoadFromFile('photo.png');
-// width, height, raw pixels:
-W := Adapter.GetWidth;
-H := Adapter.GetHeight;
-Raw := Adapter.GetRawRGB;              // RGB24 bytes
-Jpg := Adapter.GetJpegBytes(85);      // JPEG-encoded at quality 85
-```
-
-`CreatePdfBitmapAdapter` is a plain factory: it returns a new
-`TPdfFPImageAdapter`; nothing is registered.
 
 ---
 

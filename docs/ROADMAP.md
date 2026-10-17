@@ -32,6 +32,11 @@ here until the post is written, then the list is emptied. It is the only such
 list: the CHANGELOG entry of the next release is written from it. Emptied for
 v0.10.0 (2026-09-30).
 
+- **New: `docs/MIGRATION.md`** for programs on the trunk's `mormot.ui.pdf`
+  and `mormot.ui.report`, which go at the 2.5 merge: which unit each name
+  is in now, the calls that change (`CreateOrGetBitmapImage`,
+  `CreateGraphicImage`), the behaviour and output that differ, and the
+  port of a `TGdiPages` report to this `TGDIPages`
 - **New, opt-in (`TGDIPages`):** `TTableLayout.FooterRowHeader` makes the
   first cell of a footer row a row header (`TH` with `/Scope /Row`), so a
   screen reader announces "Gesamtbetrag: 226,00"; `ExportPdfPageMode`
@@ -69,12 +74,38 @@ v0.10.0 (2026-09-30).
   (issue #4, Ubuntu 24.04). The README now says which distributions ship a
   HarfBuzz older than 2.9 and do not subset at all: Debian 11, Ubuntu 22.04,
   RHEL 8/9
+- **`mormot.pdf.fpimage` is gone (R-28, refactoring Phase 5):** the FPImage
+  adapter (`IPdfBitmapAdapter`, `TPdfFPImageAdapter`, `CreatePdfBitmapAdapter`,
+  `TPdfPixelFormat`; POSIX, FPC only) had no caller - the engine never used
+  it. A program with the LCL loads the picture into a `TBitmap` (`TPicture`
+  reads PNG and JPEG) and passes it to `CreateOrGetBitmapImage` of
+  `mormot.pdf.canvas`. Without the LCL: load it with FPImage, pack
+  `Colors[x, y]` (16 bits per channel) into 8-bit RGB rows, as the
+  adapter's `GetRawRGB` did, and hand them to `Doc.CreateOrGetImage` as a
+  `TPdfImagePixels` (`ipfRgb24`, stride, no re-encoding); a JPEG file goes
+  in unchanged through `TPdfImage.CreateJpegDirect`, then `RegisterImage`
+  and `DrawImage`. Alpha is dropped either way, as before
+- **`src/core` is gone (R-28, refactoring Phase 5):** `mormot.ui.core` and
+  `mormot.ui.gdiplus`, which `mormot.pdf.canvas` needs on Windows, come
+  from mORMot2's `src/ui` now - the copies here differed only by the path
+  of the defines include. A project of your own puts mORMot2's `src/ui` on
+  its search path instead of this repository's `src/core`; the projects of
+  this repository do (`$PkgDir(mormot2)/../../src/ui` in the `.lpi`). The
+  PDF output is unchanged
+- **`mormot.pdf.types` is gone (R-28, refactoring Phase 5):** its PDF
+  types - `TPdfFileFormat`, `TPdfStructRole`, `PDF_FONT_STD_*`,
+  `PDF_FONT_TTF_*`, `GetPdfFonts` - are declared in `mormot.pdf`, which
+  re-exported them already: drop `mormot.pdf.types` from the `uses`. Gone
+  with it: the former names of the font types (`TPdfTextMetrics`,
+  `TPdfLogFont`, `IPdfPlatformFont`... - use `TFontMetrics`, `TFontRequest`,
+  `IFontProvider`... of `mormot.lib.core`) and the unused
+  `TPdfFontEnumCallback`. The PDF output is unchanged
 - **Font interfaces renamed (R-28, refactoring Phase 1):** the platform
   interfaces and their records moved from `mormot.pdf.types` to
   `mormot.lib.core` of mORMot2 and lost the `Pdf` prefix -
   `IFontProvider`, `IFontEnumerator`, `IFontDC`, `TFontRequest`,
-  `TFontMetrics`... `mormot.pdf.types` keeps the former record and
-  interface names as aliases. Removed without an alias, so code that
+  `TFontMetrics`... The former names have no alias (`mormot.pdf.types`
+  kept them for a while and is gone, see above). Removed as well, so code that
   registers or calls a backend of its own no longer compiles:
   `PdfPlatformFont`, `PdfSystemFonts`, `PdfPlatformDCProvider`,
   `PdfTextShaper`, `PdfFontSubsetter`, `RegisterPdfPlatform`,
@@ -199,8 +230,8 @@ v0.10.0 (2026-09-30).
   `TPdfImage.CreateJpeg`, `Doc.RegisterImage`, `Doc.DrawImage`
 - **`mormot.ui.pdf` is now `mormot.pdf`, without VCL/LCL** (R-28 Phase 2):
   change the `uses` (no compatibility unit - the trunk has a different
-  `mormot.ui.pdf`); the file is `src/pdf/mormot.pdf.pas`, with
-  `mormot.pdf.types` beside it, so add `src/pdf` to the search path. The
+  `mormot.ui.pdf`); the file is `src/pdf/mormot.pdf.pas`, so add
+  `src/pdf` to the search path. The
   engine unit builds in a console program with no GUI framework, on every
   compiler; the VCL/LCL
   parts are in `mormot.pdf.canvas` (`TBitmap`/`TGraphic` images,
@@ -300,7 +331,8 @@ v0.10.0 (2026-09-30).
   others the width of `.notdef`, where OpenType gives the last advance.
   It shows only for such a glyph the cmap maps: the first one in many faces
   with a short `hmtx`, the others where the last advance differs from that
-  of `.notdef`
+  of `.notdef`. A face whose `hmtx` is shorter than its `hhea` states gets
+  the width of `.notdef` past its end, instead of 0
 - **Fixed: faces whose only cmap is format 12** were read as having no
   characters, so all their text came from the fallback font: on macOS
   Hiragino Sans (Hiragino Kaku Gothic, every weight), STHeiti, Geneva, Big
@@ -621,7 +653,7 @@ mORMot2 2.4-stable) and macOS 317/317, the demo PDFs unchanged.
   machines: after a change, the Delphi 13 runs and the demos with Delphi 13
   (none built yet) have to come from contributors
 - the TCanvas bridge and `TGDIPages` on Delphi for Linux/Android: no VCL
-  there — an FMX or bitmap adapter would be the way (cf. `mormot.pdf.fpimage`)
+  there — an FMX adapter would be the way, feeding `TPdfImagePixels`
 - HarfBuzz and hb-subset on Android: not packaged, their tests skip;
   an NDK build as for FreeType would add shaping and subsetting
 - Delphi for macOS (OSX64/OSXARM64) untried
@@ -706,11 +738,11 @@ objects).
 
 **Why.** The original never drew it in `TPdfCanvas` either: only the EMF
 path did, `TPdfEnum.TextOut` drawing a line after the text for
-`lfUnderline`/`lfStrikeOut` (`reference/mormot.ui.pdf.pas`, around line
-12464). The Windows report went through a metafile then; the cross-platform
+`lfUnderline`/`lfStrikeOut` (the trunk's `mormot.ui.pdf.pas` at
+[63d06371a, line 12462](https://github.com/synopse/mORMot2/blob/63d06371ad6a75948398ebc1d90cb64af39ca474/src/ui/mormot.ui.pdf.pas#L12462)). The Windows report went through a metafile then; the cross-platform
 engine draws through `TPdfVclCanvas` straight onto `TPdfCanvas`, and the
 line was lost on the way. The second font object: in the original the font
-lookup by name (`GetRegisteredTrueTypeFont`, around line 7578) compares the
+lookup by name (`GetRegisteredTrueTypeFont`, [line 7577](https://github.com/synopse/mORMot2/blob/63d06371ad6a75948398ebc1d90cb64af39ca474/src/ui/mormot.ui.pdf.pas#L7577)) compares the
 whole `TPdfFontStyles`, `pfsUnderline` included — where the lookup by
 `TLogFontW` (`CompareLogFontW`) ignores underline and strike-out on purpose,
 "internal to PDF graphics state". The measurements fit that; `src/` was not
@@ -1089,6 +1121,8 @@ decided with Sven, Codex and Fable - REFACTORING "Outside the Phases"):
 which indexes its hex table unmasked with a value above $FFFF; FontSub
 (`mormot.lib.uniscribe`) skips supplementary code points in the request,
 keeping their glyphs only by the glyph keep list; hb-subset takes them.
+`FindOrAddUsedCodePoint` is protected until then (Martin on #65); step 2
+may make it public again.
 PDFBox and iText read format 12 and encode by code point the same way.
 
 ### R-11 — TTC Face Index — unprioritised

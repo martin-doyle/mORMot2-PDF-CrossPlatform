@@ -14,10 +14,10 @@ rem
 rem Warnings stay on, unlike build_delphi7.bat: the implicit string casts
 rem (W1057/W1058) are what R-25 looks for.
 rem
-rem mORMot2\src\ui is deliberately NOT on the search path: its mormot.ui.core
-rem and mormot.ui.gdiplus have the names of our copies in src\core, and the
-rem compiler could take them instead, by the search order, without a word;
-rem it also holds the original mormot.ui.pdf and mormot.ui.report.
+rem mORMot2\src\ui is on the search path for mormot.ui.core and
+rem mormot.ui.gdiplus (our copies in src\core are gone, R-28 Phase 5); it also
+rem holds the trunk's mormot.ui.pdf and mormot.ui.report, which no unit of ours
+rem names any more.
 setlocal
 
 if "%~1"=="" (
@@ -48,7 +48,7 @@ if not exist "%OUT%\dcu" mkdir "%OUT%\dcu"
 copy /y "%~f1" "%OUT%\%PRJ%.dpr" >nul
 
 set "M=%MORMOT2%\src"
-set "UNITS=%PRJDIR%;%ROOT%\src\core;%ROOT%\src\pdf"
+set "UNITS=%PRJDIR%;%ROOT%\src\pdf;%M%\ui"
 set "UNITS=%UNITS%;%M%\core;%M%\lib;%M%\crypt;%M%\net;%M%\db;%M%\orm;%M%\rest;%M%\soa;%M%\misc"
 set "UNITS=%UNITS%;%DELPHI2010%\lib"
 rem %M% for mormot.defines.inc, which every unit of ours includes by name (R-21)

@@ -80,10 +80,12 @@ session (Windows: per compiler) does exactly this:
    step removed or moved a unit, its compiled leftovers go first (`.ppu`,
    `.o` in the projects' `lib/<cpu-os>/`, `.dcu` in `bin/d7|d2010/*/dcu/`):
    `-B` keeps them, and a stale one can be linked instead of the new unit.
-   `lazbuild` warns `Duplicate unit ... orphaned ppu` then. Never compile
-   the `mormot2ui` package while `src/core` holds copies of `mormot.ui.*`: no
-   project needs it, and it writes `mormot.ui.pdf`, `.core` and `.gdiplus`
-   into the output folder it shares with `mormot2`
+   `lazbuild` warns `Duplicate unit ... orphaned ppu` then. No project
+   needs the `mormot2ui` package: the projects find `mormot.ui.core` and
+   `.gdiplus` in mORMot2's `src/ui` by path (`$PkgDir(mormot2)/../../src/ui`
+   in the `.lpi`, `%MORMOT2%\src\ui` for Delphi), and the package would write
+   the trunk's `mormot.ui.pdf` into the output folder it shares with
+   `mormot2`
 3. `test_runner`: the expected count, no failure. At a baseline also
    `test_runner --golden-record`; at a step, the plain run compares
 4. `pdfcheck run <compiler> <folder>` into the state's folder. It sets
@@ -496,7 +498,7 @@ cairo):
   Output unchanged: the palette stays indexed, a 24-bit color key stays
   `/Mask`, 32-bit input still drops alpha (`/SMask` would be a new feature),
   the objects keep their order. `mormot.pdf.fpimage` (no caller today) stays
-  an optional FPC adapter feeding the same input
+  an optional FPC adapter feeding the same input (removed in Phase 5)
 - **EMF moves now:** `TPdfDocumentGdi`, `RenderMetaFile`, the EMF form and the
   printer helpers (with `winspool`) go to a new unit `mormot.pdf.canvas`,
   with the bitmap conversion; Phase 3 adds the rest of the `TCanvas` bridge.
@@ -763,7 +765,8 @@ of Linux and the four report demos of Delphi 7 unchanged. Open: Delphi 2010, PAC
 the end of the phase. `src/core` now holds only the copies of the trunk's
 `mormot.ui.core` and `mormot.ui.gdiplus`; since no other unit of ours
 shares a name with the trunk's `src/ui` any more, whether `src/ui` on the
-search path can replace the copies is a Phase 5 question
+search path can replace the copies is a Phase 5 question (it can: Phase 5
+step 2 removed them)
 
 **Bug fixes** (Phase 4's bug-fix PR, branch `pr/phase4-fixes`, decided
 with Sven after Codex and Fable, three alternatives each):
@@ -780,6 +783,77 @@ requested protection cannot be applied
 ### Phase 5 — Cleanup
 
 Gist §20. Transitional names and aliases removed, unit splits reviewed.
+
+**Decided 2026-10-17** (Sven, after an inventory by Codex and Fable; each
+step its own PR, output byte-equal):
+
+1. **`mormot.pdf.types` merged into `mormot.pdf`** - done: its PDF types
+   (`TPdfFileFormat`, `TPdfStructRole`, `PDF_FONT_*`, `GetPdfFonts`, same
+   ordinals) are declared in `mormot.pdf`, which re-exported them; the nine
+   former font type names (no user in this repository, its tests, demos or
+   XRechnung for Delphi) and the unused `TPdfFontEnumCallback` are gone
+   with the unit
+2. **The copies `src/core/mormot.ui.core` and `mormot.ui.gdiplus` removed**
+   - done: they differed from the fork's `src/ui` only by the defines
+   include; the `.lpi` take `$PkgDir(mormot2)/../../src/ui` (checked with
+   `lazbuild` on Linux by a project that compiles `mormot.ui.core` through
+   it - our projects compile the two units on Windows only; `lazbuild` on
+   Windows not run, the local one reads a stale configuration), the Delphi
+   scripts `%MORMOT2%\src\ui` and `test_runner.dproj` `$(MORMOT2)\src\ui`;
+   no unit of ours is named `mormot.ui.pdf` any more, so the trunk's
+   originals there are never taken; `layer1_demo` needs neither
+3. **`mormot.pdf.fpimage` removed** - done: no caller in this repository,
+   its tests and demos, the fork or XRechnung for Delphi; shipped in v0.10.0
+   (as `src/core/mormot.pdf.fpimage.pas`), so "To Announce" says what
+   replaces it: FPImage in the program, `TPdfImagePixels` for the pixels
+4. **The review recorded here** - done: what stays and why (below);
+   `reference/` deleted - its `mormot.ui.pdf.pas` was the trunk's at
+   63d06371a (2026-03-08) with two local edits (`MilliSecsPerDay`, a
+   commented-out `EMR_ALPHABLEND` branch) and trailing blanks, its
+   `mormot.ui.report.pas` the trunk's from a931cdbdc until 7f330f690
+   changed it; the skills and ROADMAP cite the trunk commit instead; the
+   migration note for users of the trunk's units is `docs/MIGRATION.md`
+
+**What stays, and why** (the inventory of Codex and Fable, 2026-10-17):
+
+- **The unit split:** `mormot.pdf` (no VCL/LCL), `mormot.pdf.canvas` (the
+  `TCanvas` bridge, bitmaps, EMF), `mormot.pdf.report` (no `Forms`, no
+  `Printers`) and `mormot.pdf.report.preview` (both) - each cut is a GUI
+  dependency, the gist's boundary (§12, §23). EMF stays in
+  `mormot.pdf.canvas`; the EMF state the engine still holds (`fEmfDC`, the
+  mapping and world transform, `EmfDC`) and the core/font split of
+  `mormot.pdf` are reconsidered together after the merge, once that
+  coupling is gone - code changes, not a cleanup
+- **The switches:** `mormot.pdf.defines.inc` (constructor signatures,
+  security, Uniscribe, GDI+, metafiles); `PDF_CANVASVIRTUAL` (`override`
+  against `reintroduce`, a compiler fact) and `PDF_HASVCLCANVAS` (the
+  tests: is there a VCL/LCL). None is a migration flag. The include's
+  redundant POSIX `undef` block goes with the relative include at the move
+- **Names that are real classes, not aliases:** `TPdfDocumentGdi` (the EMF
+  path, with tests), `TGDIPages`
+- **Caller contracts, cheap to keep:** `UseUniscribe` (the one shaping
+  switch, HarfBuzz too), `GeneratePdf15File` (wraps `FileFormat`),
+  `PdfAMetadaExtension` (the trunk's spelling), the `TLogFontW` constructor
+  that keeps `lfWidth` and the other native fields (dropping them changes
+  behaviour), `FindOrAddUsedWideChar` (until R-32 step 2)
+- **The re-exports of `mormot.pdf.report`:** PDF/A levels,
+  `TPdfFileFormat`, `afr*`, page modes, `PdfMetadataFacturX` - one unit
+  per layer (CLAUDE.md)
+- **The report's older API:** the positioned overloads, the table API
+  beside `TTableLayout`, `REPORT_FONT_*`/`GetReportFonts`, `DrawTextAt` -
+  callers use them; "older" alone is no reason
+- **`mormot.lib.*`:** the agreed final names; the Windows-shaped `tm*`,
+  `otm*` and `abc*` fields of its records stay - renaming them costs every
+  backend and gains nothing now
+- **Left for the formatting PRs** (source, no output): a stale
+  `UseSetTextJustification` in a comment of `mormot.pdf.canvas` (in the
+  trunk's original too), the unused POSIX `LOGPIXELSY` of `mormot.pdf`,
+  and `IFontProvider.GetFaceFile` in a comment of `mormot.lib.core`, which
+  is `IFontFace` now
+
+**At the move, not now:** `x:xmptk="mormot.ui.pdf"` becomes `mormot.pdf`
+(the only change of output, one new baseline on every machine), the
+defines include by relative path, the formatting of tests and demos.
 
 ---
 
@@ -822,7 +896,7 @@ Process, agreed in the forum:
     These PRs also bring the existing code to the source form of
     `CLAUDE.md` (binding since 2026-10-14), measured that day: banners
     missing in `mormot.pdf.fpimage`, `.report`, `.report.preview`,
-    `.types`, and written `{****` without the space in `mormot.pdf` (8) and
+    `.types` (`.fpimage` and `.types` gone in Phase 5), and written `{****` without the space in `mormot.pdf` (8) and
     `mormot.pdf.canvas` (4); `///` missing on 2 of 16 unit-level routines
     of `mormot.pdf`; `raise Exception.Create` 10 times in
     `mormot.pdf.report`, once in `mormot.pdf` (the PDF/A font fallback,
@@ -849,7 +923,9 @@ Process, agreed in the forum:
     `mormot.pdf` and `mormot.pdf.canvas`); `with` and the field renames
     are code, not form: a PR of their own after this one, and the
     exceptions another; the tests and the demos when they move to
-    `mormot2tests` and `ex/` (asked of Martin, open).
+    `mormot2tests` and `ex/` (Martin, 2026-10-17: the source must be
+    formatted, the tests should, the demos could; at the move is fine,
+    priority 2).
 
     **Done** (branch `pr/format`, from main after #53): four commits
     generated by a formatter kept outside the repository, so that a change

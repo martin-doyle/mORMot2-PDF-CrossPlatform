@@ -34,12 +34,11 @@
         <Base>true</Base>
     </PropertyGroup>
     <!-- $(MORMOT2)\src for mormot.defines.inc: the IDE derives -I from the
-         search path. mORMot2\src\ui is deliberately NOT on it: its mormot.ui.core
-         and mormot.ui.gdiplus have the names of our copies in src\core -->
+         search path. -->
     <PropertyGroup Condition="'$(Base)'!=''">
         <SanitizedProjectName>test_runner_android</SanitizedProjectName>
         <DCC_Namespace>System;Xml;Data;Datasnap;Web;Soap;$(DCC_Namespace)</DCC_Namespace>
-        <DCC_UnitSearchPath>..\..;..\..\..\src\core;..\..\..\src\pdf;$(MORMOT2)\src;$(MORMOT2)\src\core;$(MORMOT2)\src\lib;$(MORMOT2)\src\crypt;$(MORMOT2)\src\net;$(MORMOT2)\src\db;$(MORMOT2)\src\orm;$(MORMOT2)\src\rest;$(MORMOT2)\src\soa;$(MORMOT2)\src\misc;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
+        <DCC_UnitSearchPath>..\..;..\..\..\src\pdf;$(MORMOT2)\src;$(MORMOT2)\src\core;$(MORMOT2)\src\lib;$(MORMOT2)\src\crypt;$(MORMOT2)\src\net;$(MORMOT2)\src\db;$(MORMOT2)\src\orm;$(MORMOT2)\src\rest;$(MORMOT2)\src\soa;$(MORMOT2)\src\misc;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
         <DCC_ExeOutput>..\..\..\bin\d13\test_runner_android\$(Platform)\$(Config)</DCC_ExeOutput>
         <DCC_DcuOutput>..\..\..\bin\d13\test_runner_android\$(Platform)\$(Config)\dcu</DCC_DcuOutput>
     </PropertyGroup>

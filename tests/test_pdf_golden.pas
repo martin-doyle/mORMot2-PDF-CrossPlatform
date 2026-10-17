@@ -28,7 +28,6 @@ uses
   mormot.core.test,
   mormot.core.text,     // FormatUtf8, FormatString
   mormot.core.unicode,  // StringToUtf8
-  mormot.pdf.types,     // TPdfStructRole, GetPdfFonts
   mormot.pdf,
   pdf_inspect,          // NormalizePdf, ComparePdfText
   test_pdf_crossplatform, // EnsureTestFonts, TEST_CJK, TEST_ARABIC

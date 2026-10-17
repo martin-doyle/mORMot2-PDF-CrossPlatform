@@ -59,7 +59,8 @@ type
     // selection, the clipping at U+FFFF and the rejections
     procedure Format12CmapTables;
     /// the widths of the glyphs past the last (advance, bearing) pair of
-    // hmtx: the advance of that pair (OpenType hmtx), in /W and TextWidth
+    // hmtx: the advance of that pair (OpenType hmtx), in /W and TextWidth;
+    // past the end of a hmtx shorter than hhea says: the width of .notdef
     procedure ShortHmtxWidths;
   end;
 
@@ -1673,7 +1674,9 @@ begin
 end;
 
 // Test Format12 with hmtx cut after glyph 66: glyph 67 ('b') is the first
-// past the last pair, 68 ('c') the next - both have the advance of 66
+// past the last pair, 68 ('c') the next - both have the advance of 66; and
+// a hmtx shorter than its hhea says: 'b' and 'c' past its end get the
+// width of .notdef, not the zero word GetTtfData() adds after the table
 procedure TPdfCffTests.ShortHmtxWidths;
 const
   TAGS: array[0..9] of RawUtf8 = (
@@ -1681,12 +1684,53 @@ const
     'name');
   PAIRS = 67;
 var
-  font, table, hmtx: RawByteString;
+  font, hmtx: RawByteString;
   off, len: cardinal;
-  fake: TFakeFace;
-  face: IFontFace;
-  i, glyphs: PtrInt;
-  s, w: RawUtf8;
+  glyphs: PtrInt;
+
+  // /W of 'bc' with hhea stating Metrics pairs and hmtx as Table
+  function WidthsOf(Metrics: integer; const Table: RawByteString;
+    out Width: double): RawUtf8;
+  var
+    fake: TFakeFace;
+    face: IFontFace;
+    i: PtrInt;
+    t: RawByteString;
+    s: RawUtf8;
+  begin
+    fake := TFakeFace.Create;
+    face := fake; // the reference owns it
+    for i := 0 to high(TAGS) do
+      if Check(SfntFindTable(font, TAGS[i], off, len), Utf8ToString(TAGS[i])) then
+      begin
+        t := copy(font, off + 1, len);
+        if TAGS[i] = 'hhea' then
+          t := copy(t, 1, 34) + Card16(Metrics)
+        else if TAGS[i] = 'hmtx' then
+          t := Table;
+        fake.AddTable(TAGS[i], t);
+      end;
+    fake.Seal(#0#1#0#0);
+    RoutedText := 'bc';
+    RoutedNextLine := false;
+    RoutedWordSpace := 0;
+    RoutedWidth := 0;
+    FakeEmbedded := true;
+    try
+      s := FakeFacePdf(face, '', nil, DrawRouted);
+    finally
+      FakeEmbedded := false;
+    end;
+    Width := RoutedWidth;
+    i := PosEx('/W [', s);
+    result := copy(s, i, PosEx(']]', s, i) + 2 - i);
+  end;
+
+var
+  table: RawByteString;
+  i: PtrInt;
+  w: RawUtf8;
+  width: double;
   last: integer;
 begin
   font := StringFromFile(TestFontFile('mORMotTestFormat12-Regular.ttf'));
@@ -1697,39 +1741,20 @@ begin
   glyphs := len div 4; // the font has one pair per glyph
   last := ord(hmtx[(PAIRS - 1) * 4 + 1]) shl 8 + ord(hmtx[(PAIRS - 1) * 4 + 2]);
   CheckEqual(last, 561, 'the advance of glyph 66');
+  CheckEqual(ord(hmtx[1]) shl 8 + ord(hmtx[2]), 600, 'the advance of .notdef');
   // the pairs up to 66, then the bearings of the others
   table := copy(hmtx, 1, PAIRS * 4);
   for i := PAIRS to glyphs - 1 do
     table := table + copy(hmtx, i * 4 + 3, 2);
-  hmtx := table;
-  fake := TFakeFace.Create;
-  face := fake; // the reference owns it
-  for i := 0 to high(TAGS) do
-    if Check(SfntFindTable(font, TAGS[i], off, len), Utf8ToString(TAGS[i])) then
-    begin
-      table := copy(font, off + 1, len);
-      if TAGS[i] = 'hhea' then
-        table := copy(table, 1, 34) + Card16(PAIRS)
-      else if TAGS[i] = 'hmtx' then
-        table := hmtx;
-      fake.AddTable(TAGS[i], table);
-    end;
-  fake.Seal(#0#1#0#0);
-  RoutedText := 'bc';
-  RoutedNextLine := false;
-  RoutedWordSpace := 0;
-  RoutedWidth := 0;
-  FakeEmbedded := true;
-  try
-    s := FakeFacePdf(face, '', nil, DrawRouted);
-  finally
-    FakeEmbedded := false;
-  end;
-  i := PosEx('/W [', s);
-  w := copy(s, i, PosEx(']]', s, i) + 2 - i);
+  w := WidthsOf(PAIRS, table, width);
   Check(PosEx('67[561 561]', w) > 0,
     'b and c with the advance of 66 in /W: ' + Utf8ToString(w));
-  CheckSame(RoutedWidth, 2 * 561 * 12 / 1000, 1E-4, 'TextWidth with that advance');
+  CheckSame(width, 2 * 561 * 12 / 1000, 1E-4, 'TextWidth with that advance');
+  // hhea says every glyph has a pair, hmtx ends after glyph 66
+  w := WidthsOf(glyphs, copy(hmtx, 1, PAIRS * 4), width);
+  Check(PosEx('67[600 600]', w) > 0,
+    'b and c past the end of hmtx with the width of .notdef: ' + Utf8ToString(w));
+  CheckSame(width, 2 * 600 * 12 / 1000, 1E-4, 'TextWidth with that width');
 end;
 
 procedure TPdfCffTests.Type0Routing;
