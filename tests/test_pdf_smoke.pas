@@ -26,7 +26,6 @@ uses
   mormot.core.test,
   mormot.core.unicode,  // StringToUtf8
   mormot.lib.core,      // FontShaper
-  mormot.pdf.types,     // TPdfStructRole, GetPdfFonts
   mormot.pdf,        // TPdfDocument, TPdfCanvas
   test_pdf_cff,         // SwapInFakeFace
   test_pdf_crossplatform, // the test fonts

@@ -1,6 +1,6 @@
 # Font Handling — Deep Reference
 
-Sources: `src/pdf/mormot.pdf.pas`, `src/pdf/mormot.pdf.types.pas`,
+Sources: `src/pdf/mormot.pdf.pas`,
 mORMot2 `src/lib/mormot.lib.uniscribe.pas` (GDI), `src/lib/mormot.lib.freetype.pas`
 
 **Skill boundaries:**
@@ -27,7 +27,7 @@ Doc.EmbeddedTTF := True;
 C.SetFont('Calibri', 12, []);
 ```
 
-Standard font name constants (`mormot.pdf.types.pas`):
+Standard font name constants (`mormot.pdf.pas`):
 - `PDF_FONT_STD_SANS` = `'Helvetica'`
 - `PDF_FONT_STD_SERIF` = `'Times'`
 - `PDF_FONT_STD_MONO` = `'Courier'`

@@ -69,12 +69,27 @@ v0.10.0 (2026-09-30).
   (issue #4, Ubuntu 24.04). The README now says which distributions ship a
   HarfBuzz older than 2.9 and do not subset at all: Debian 11, Ubuntu 22.04,
   RHEL 8/9
+- **`src/core` is gone (R-28, refactoring Phase 5):** `mormot.ui.core` and
+  `mormot.ui.gdiplus`, which `mormot.pdf.canvas` needs on Windows, come
+  from mORMot2's `src/ui` now - the copies here differed only by the path
+  of the defines include. A project of your own puts mORMot2's `src/ui` on
+  its search path instead of this repository's `src/core`; the projects of
+  this repository do (`$PkgDir(mormot2)/../../src/ui` in the `.lpi`). The
+  PDF output is unchanged
+- **`mormot.pdf.types` is gone (R-28, refactoring Phase 5):** its PDF
+  types - `TPdfFileFormat`, `TPdfStructRole`, `PDF_FONT_STD_*`,
+  `PDF_FONT_TTF_*`, `GetPdfFonts` - are declared in `mormot.pdf`, which
+  re-exported them already: drop `mormot.pdf.types` from the `uses`. Gone
+  with it: the former names of the font types (`TPdfTextMetrics`,
+  `TPdfLogFont`, `IPdfPlatformFont`... - use `TFontMetrics`, `TFontRequest`,
+  `IFontProvider`... of `mormot.lib.core`) and the unused
+  `TPdfFontEnumCallback`. The PDF output is unchanged
 - **Font interfaces renamed (R-28, refactoring Phase 1):** the platform
   interfaces and their records moved from `mormot.pdf.types` to
   `mormot.lib.core` of mORMot2 and lost the `Pdf` prefix -
   `IFontProvider`, `IFontEnumerator`, `IFontDC`, `TFontRequest`,
-  `TFontMetrics`... `mormot.pdf.types` keeps the former record and
-  interface names as aliases. Removed without an alias, so code that
+  `TFontMetrics`... The former names have no alias (`mormot.pdf.types`
+  kept them for a while and is gone, see above). Removed as well, so code that
   registers or calls a backend of its own no longer compiles:
   `PdfPlatformFont`, `PdfSystemFonts`, `PdfPlatformDCProvider`,
   `PdfTextShaper`, `PdfFontSubsetter`, `RegisterPdfPlatform`,
@@ -199,8 +214,8 @@ v0.10.0 (2026-09-30).
   `TPdfImage.CreateJpeg`, `Doc.RegisterImage`, `Doc.DrawImage`
 - **`mormot.ui.pdf` is now `mormot.pdf`, without VCL/LCL** (R-28 Phase 2):
   change the `uses` (no compatibility unit - the trunk has a different
-  `mormot.ui.pdf`); the file is `src/pdf/mormot.pdf.pas`, with
-  `mormot.pdf.types` beside it, so add `src/pdf` to the search path. The
+  `mormot.ui.pdf`); the file is `src/pdf/mormot.pdf.pas`, so add
+  `src/pdf` to the search path. The
   engine unit builds in a console program with no GUI framework, on every
   compiler; the VCL/LCL
   parts are in `mormot.pdf.canvas` (`TBitmap`/`TGraphic` images,

@@ -47,7 +47,6 @@ All files under `src/` require justification and user approval before reading.
 | `src/pdf/mormot.pdf.report.pas` | Report engine (`TGDIPages`) - R-28 Phase 4 | Production |
 | `src/pdf/mormot.pdf.report.preview.pas` | Preview window and printing for `TGDIPages` (LCL) | Production |
 | `src/pdf/mormot.pdf.canvas.pas` | VCL/LCL adapter: the TCanvas bridge (`TPdfDocumentVcl`, `TPdfVclCanvas`), `TBitmap`/`TGraphic` images; `TPdfDocumentGdi`, `RenderMetaFile`, printer helpers (Windows) - R-28 Phase 2 | Production |
-| `src/pdf/mormot.pdf.types.pas` | PDF types; former font type names as aliases of mormot.lib.core | Production |
 | mORMot2 `src/lib/mormot.lib.uniscribe.pas` | GDI backend (Windows), Uniscribe shaper and FontSub subsetter, beside their bindings | Production |
 | mORMot2 `src/lib/mormot.lib.freetype.pas` | FreeType2 backend (POSIX) | Production |
 | mORMot2 `src/lib/mormot.lib.harfbuzz.pas` | HarfBuzz shaper (RTL/complex scripts) and hb-subset subsetter (R-12) | Production |
@@ -61,13 +60,12 @@ src/
     mormot.pdf.pas              PDF objects, TPdfDocument, TPdfCanvas - no VCL/LCL
     mormot.pdf.canvas.pas       TCanvas bridge (TPdfDocumentVcl), TBitmap/TGraphic images, TPdfDocumentGdi and EMF (Windows)
     mormot.pdf.defines.inc      the USE_* switches of mormot.pdf and mormot.pdf.canvas
-    mormot.pdf.types.pas        PDF types, aliases of the mormot.lib.core font types
     mormot.pdf.fpimage.pas      Bitmap embedding (FPImage)
     mormot.pdf.report.pas       TGDIPages — layout engine, no forms or printer
     mormot.pdf.report.preview.pas ShowReportPreview, PrintReport (LCL)
-  core/                         copies of trunk units
-    mormot.ui.core.pas          UI helper functions   } the trunk's units of mORMot2 src/ui (only the include path differs),
-    mormot.ui.gdiplus.pas       GDI+ support (Windows) } which is not on the search path
+  (mormot.ui.core and mormot.ui.gdiplus come from mORMot2's src/ui, on the
+   search path of every project with the TCanvas bridge; the copies of
+   src/core went in R-28 Phase 5)
   (the backends are mORMot2 units in src/lib: mormot.lib.uniscribe on Windows
    (GDI), mormot.lib.freetype and mormot.lib.harfbuzz - shaper and subsetter,
    each library optional - on POSIX)
@@ -436,10 +434,11 @@ itself is in each demo's `uReport.pas`; the form only passes its options.
   literal rule in Coding Conventions): `TextOut` reads Delphi 7's `string` as
   ANSI. A console program needs `{$APPTYPE CONSOLE}` after the
   `mormot.defines.inc` include: FPC's project makes a console executable,
-  dcc32 a GUI one without it, where `WriteLn` raises I/O error 105. Never put
-  `mORMot2/src/ui` on a Delphi search path: its `mormot.ui.core` and
-  `mormot.ui.gdiplus` have the names of our copies in `src/core`, and it
-  holds the original `mormot.ui.pdf`/`report`
+  dcc32 a GUI one without it, where `WriteLn` raises I/O error 105.
+  `mormot.ui.core` and `mormot.ui.gdiplus` come from `mORMot2/src/ui` (the
+  copies in `src/core` are gone, R-28 Phase 5): it is on the search path of
+  every project with the TCanvas bridge;
+  its `mormot.ui.pdf`/`report` of the trunk are named by no unit of ours
 
 Current verification status per platform, and the open items in detail:
 `docs/ROADMAP.md`

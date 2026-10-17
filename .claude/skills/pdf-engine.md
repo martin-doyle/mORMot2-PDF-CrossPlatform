@@ -45,7 +45,7 @@ shows up.
 // pdfa3U is appended last, so the older members keep their ordinal values
 TPdfALevel = (pdfaNone, pdfa1A, pdfa1B, pdfa2A, pdfa2B, pdfa3A, pdfa3B, pdfa3U);
 
-// PDF file format version (defined in mormot.pdf.types — available to all units)
+// PDF file format version (mormot.pdf; mormot.pdf.report re-exports it)
 TPdfFileFormat = (pdf13, pdf14, pdf15, pdf16, pdf17);
 
 // How the document appears when opened in a viewer
@@ -563,9 +563,9 @@ writes `/S /TH` with `/Scope /Row` (PDF/UA-1 7.5); `psrTH` heads its column.
 
 ### Enum
 
-`TPdfStructRole` is defined in `mormot.pdf.types` and re-exported by `mormot.pdf`
-(the type, every `psr*` value, `TPdfFileFormat` with `pdf13`..`pdf17`, the
-`PDF_FONT_*` constants and `GetPdfFonts`), so `uses mormot.pdf` is enough:
+`TPdfStructRole` is declared in `mormot.pdf` (with `TPdfFileFormat`, the
+`PDF_FONT_*` constants and `GetPdfFonts`; `mormot.pdf.types`, which declared
+them until R-28 Phase 5, is gone), so `uses mormot.pdf` is enough:
 
 ```pascal
 TPdfStructRole = (psrDocument, psrH1, psrH2, psrH3, psrH4, psrH5, psrH6,
@@ -684,7 +684,7 @@ Doc.EndStructContent;            // delegates to Canvas.EndStructContent
 ### TGDIPages integration
 
 ```pascal
-// In mormot.pdf.report.pas — uses mormot.pdf.types (not mormot.pdf)
+// In mormot.pdf.report.pas — a report program uses this unit only
 Report.ExportPdfTagged   := True;    // default False — set BEFORE drawing:
                                      // it forces ExportPdfEmbeddedTTF / clears
                                      // ExportPdfStandardFonts, and those decide
@@ -754,14 +754,14 @@ WinAnsi `/ToUnicode` CMap — previously written for PDF/A only — to tagged
 documents. Resolve font names with `GetPdfFonts` *after* setting `Tagged`.
 
 Platform-specific TTF fonts via `GetPdfFonts(Embedded, SansFont, SerifFont, MonoFont)`
-in `mormot.pdf.types` (constants `PDF_FONT_TTF_SANS/SERIF/MONO`) — layer 1, no
+in `mormot.pdf` (constants `PDF_FONT_TTF_SANS/SERIF/MONO`) — layer 1, no
 report engine needed. `GetReportFonts` and `REPORT_FONT_*` in `mormot.pdf.report`
 are aliases of them:
 - Windows: Calibri, Cambria, Consolas
 - macOS: Trebuchet MS, Georgia, Andale Mono
 - Linux: Liberation Sans, Liberation Serif, Liberation Mono
 
-Standard constants in `mormot.pdf.types.pas`: `PDF_FONT_STD_SANS` = 'Helvetica', `PDF_FONT_STD_SERIF` = 'Times', `PDF_FONT_STD_MONO` = 'Courier'.
+Standard constants in `mormot.pdf.pas`: `PDF_FONT_STD_SANS` = 'Helvetica', `PDF_FONT_STD_SERIF` = 'Times', `PDF_FONT_STD_MONO` = 'Courier'.
 
 **Calling `TPdfCanvas.SetFont` directly with a non-Latin face:** pass
 `DEFAULT_CHARSET` (1) as `ACharSet`, as `TPdfVclCanvas` does. Without it,

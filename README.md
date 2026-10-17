@@ -37,7 +37,7 @@ layer's API takes from below, that layer re-exports:
 | 1 — `TPdfDocument` | `mormot.pdf` | — |
 
 The structure roles (`psrH1`, `psrP`, …) and `GetPdfFonts` come with
-`mormot.pdf` (declared in `mormot.pdf.types`, re-exported).
+`mormot.pdf`.
 
 **The platform units need no `uses` of yours.** `mormot.pdf` pulls in GDI
 and Uniscribe on Windows, and FreeType2, the HarfBuzz shaper and the hb-subset
@@ -337,10 +337,11 @@ Android starts no console program: `build.cmd` packages the APK,
 as exit code. The app needs an NDK build of `libfreetype.so`, see
 [BUILD-FREETYPE.md](tests/delphi13/android/BUILD-FREETYPE.md).
 
-Do not put `mORMot2\src\ui` on a Delphi search path: its `mormot.ui.core`
-and `mormot.ui.gdiplus` have the names of this project's copies in `src\core`,
-which the compiler could take instead, depending on the search order; it
-also holds the original `mormot.ui.pdf` and `mormot.ui.report`.
+`mormot.ui.core` and `mormot.ui.gdiplus` (Windows) come from mORMot2's
+`src\ui`, which is on the search path of every project that builds the
+TCanvas bridge (not of Android's, nor of `pdfcheck`); its
+`mormot.ui.pdf` and `mormot.ui.report` are the trunk's originals, which no
+unit of this project uses.
 
 The two GUI demos also export without their window, which is what the
 automated checks use:

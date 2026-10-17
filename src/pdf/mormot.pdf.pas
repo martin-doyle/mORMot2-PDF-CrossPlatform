@@ -33,7 +33,6 @@ uses
   mormot.lib.harfbuzz,   // FontShaper / FontSubsetter when libharfbuzz(-subset) loads
   {$endif OSWINDOWS}
   mormot.lib.core,       // font interfaces, set by the backends above
-  mormot.pdf.types,      // PDF types: file format, structure roles
   sysutils,
   types,
   classes,
@@ -57,54 +56,53 @@ uses
 
 { ************ Shared types and functions }
 
-type
-  // the types of mormot.pdf.types, so that "uses mormot.pdf" is enough for a
-  // program - with the same ordinals, mormot.pdf.types stays the declaration
-  TPdfFileFormat = mormot.pdf.types.TPdfFileFormat;
-  TPdfStructRole = mormot.pdf.types.TPdfStructRole;
-  TPdfFontEnumCallback = mormot.pdf.types.TPdfFontEnumCallback;
-
 const
-  pdf13 = mormot.pdf.types.pdf13;
-  pdf14 = mormot.pdf.types.pdf14;
-  pdf15 = mormot.pdf.types.pdf15;
-  pdf16 = mormot.pdf.types.pdf16;
-  pdf17 = mormot.pdf.types.pdf17;
-  psrDocument = mormot.pdf.types.psrDocument;
-  psrH1 = mormot.pdf.types.psrH1;
-  psrH2 = mormot.pdf.types.psrH2;
-  psrH3 = mormot.pdf.types.psrH3;
-  psrH4 = mormot.pdf.types.psrH4;
-  psrH5 = mormot.pdf.types.psrH5;
-  psrH6 = mormot.pdf.types.psrH6;
-  psrP = mormot.pdf.types.psrP;
-  psrSpan = mormot.pdf.types.psrSpan;
-  psrFigure = mormot.pdf.types.psrFigure;
-  psrTable = mormot.pdf.types.psrTable;
-  psrTR = mormot.pdf.types.psrTR;
-  psrTH = mormot.pdf.types.psrTH;
-  psrTD = mormot.pdf.types.psrTD;
-  psrL = mormot.pdf.types.psrL;
-  psrLI = mormot.pdf.types.psrLI;
-  psrLbl = mormot.pdf.types.psrLbl;
-  psrLBody = mormot.pdf.types.psrLBody;
-  psrTHead = mormot.pdf.types.psrTHead;
-  psrTBody = mormot.pdf.types.psrTBody;
-  psrTFoot = mormot.pdf.types.psrTFoot;
-  psrTHRow = mormot.pdf.types.psrTHRow;
-  PDF_FONT_STD_SANS = mormot.pdf.types.PDF_FONT_STD_SANS;
-  PDF_FONT_STD_SERIF = mormot.pdf.types.PDF_FONT_STD_SERIF;
-  PDF_FONT_STD_MONO = mormot.pdf.types.PDF_FONT_STD_MONO;
-  PDF_FONT_TTF_SANS = mormot.pdf.types.PDF_FONT_TTF_SANS;
-  PDF_FONT_TTF_SERIF = mormot.pdf.types.PDF_FONT_TTF_SERIF;
-  PDF_FONT_TTF_MONO = mormot.pdf.types.PDF_FONT_TTF_MONO;
+  /// PDF standard Type 1 font names - supported by all PDF readers without embedding
+  // - use with TPdfDocument.StandardFontsReplace := true
+  PDF_FONT_STD_SANS  = 'Helvetica';
+  PDF_FONT_STD_SERIF = 'Times';
+  PDF_FONT_STD_MONO  = 'Courier';
 
-/// font names matching the embedding mode - see mormot.pdf.types
+  /// platform TrueType font names - for embedding, and for tagged output
+  // - Calibri/Cambria/Consolas on Windows, Trebuchet MS/Georgia/Andale Mono
+  // on macOS, Liberation Sans/Serif/Mono on Linux, the /system/fonts faces
+  // Roboto/Noto Serif/Droid Sans Mono on Android
+  PDF_FONT_TTF_SANS  = {$ifdef OSWINDOWS}'Calibri'{$else}{$ifdef OSDARWIN}'Trebuchet MS'{$else}{$ifdef OSANDROID}'Roboto'{$else}'Liberation Sans'{$endif}{$endif}{$endif};
+  PDF_FONT_TTF_SERIF = {$ifdef OSWINDOWS}'Cambria'{$else}{$ifdef OSDARWIN}'Georgia'{$else}{$ifdef OSANDROID}'Noto Serif'{$else}'Liberation Serif'{$endif}{$endif}{$endif};
+  PDF_FONT_TTF_MONO  = {$ifdef OSWINDOWS}'Consolas'{$else}{$ifdef OSDARWIN}'Andale Mono'{$else}{$ifdef OSANDROID}'Droid Sans Mono'{$else}'Liberation Mono'{$endif}{$endif}{$endif};
+
+/// font names matching the embedding mode
+// - Embedded=true: the platform TrueType fonts (PDF_FONT_TTF_*)
+// - Embedded=false: the PDF standard Type1 fonts (PDF_FONT_STD_*)
 procedure GetPdfFonts(Embedded: boolean;
   out SansFont, SerifFont, MonoFont: string);
-  {$ifdef HASINLINE} inline; {$endif}
 
 type
+  /// PDF file format version written to the %PDF-1.x header
+  // - pdf13 (default) through pdf17 (ISO 32000-1)
+  TPdfFileFormat = (pdf13, pdf14, pdf15, pdf16, pdf17);
+
+  /// structure role for Tagged PDF (ISO 32000-1 14) accessibility tags
+  // - psrDocument=0; psrH1..psrH6=1..6; psrP=7; psrSpan=8
+  // - psrFigure=9 for image/graphic elements
+  // - psrTable=10, psrTR=11, psrTH=12, psrTD=13 for table structure
+  // - psrL=14, psrLI=15, psrLbl=16, psrLBody=17 for list structure
+  // - psrTHead=18, psrTBody=19, psrTFoot=20 group the rows of a table
+  // (ISO 32000-1 14.8.4.3.4): a totals row in a TFoot is told apart from the
+  // data rows by assistive technology
+  // - psrTHRow=21 is a TH which heads its row (/Scope /Row), e.g. the label
+  // of a totals row; psrTH heads its column
+  // - TPdfStructRole(Level) for heading Level 1..6 gives psrH1..psrH6
+  // - new roles are appended at the end: TPdfStructRole(Level) and the
+  // dckBeginTR logic in mormot.pdf.report depend on the existing ordinals
+  TPdfStructRole = (psrDocument, psrH1, psrH2, psrH3, psrH4, psrH5, psrH6,
+                    psrP, psrSpan,
+                    psrFigure,
+                    psrTable, psrTR, psrTH, psrTD,
+                    psrL, psrLI, psrLbl, psrLBody,
+                    psrTHead, psrTBody, psrTFoot,
+                    psrTHRow);
+
   /// the PDF library uses internaly AnsiString text encoding
   // - the corresponding charset/codepage is the current system charset, or
   // the one supplied as a parameter to TPdfDocument.Create
@@ -3495,7 +3493,18 @@ implementation
 procedure GetPdfFonts(Embedded: boolean;
   out SansFont, SerifFont, MonoFont: string);
 begin
-  mormot.pdf.types.GetPdfFonts(Embedded, SansFont, SerifFont, MonoFont);
+  if Embedded then
+  begin
+    SansFont := PDF_FONT_TTF_SANS;
+    SerifFont := PDF_FONT_TTF_SERIF;
+    MonoFont := PDF_FONT_TTF_MONO;
+  end
+  else
+  begin
+    SansFont := PDF_FONT_STD_SANS;
+    SerifFont := PDF_FONT_STD_SERIF;
+    MonoFont := PDF_FONT_STD_MONO;
+  end;
 end;
 
 {$ifdef FPC}
