@@ -1508,6 +1508,11 @@ type
     fTrueTypeFonts: TRawUtf8DynArray;
     fTrueTypeFontLastName: RawUtf8;
     fTrueTypeFontLastIndex: integer;
+    // the index an unknown (raster) font name was resolved to, shared by the
+    // canvases of the document and of its forms
+    fPreviousRasterFontName: RawUtf8;
+    fPreviousRasterFontIndex: integer;
+    fPreviousRasterFontFixed: boolean;
     {$ifdef USE_METAFILE}
     fEmfDC: HDC;
     {$endif USE_METAFILE}
@@ -2133,9 +2138,6 @@ type
     fUseMetaFileTextClipping: TPdfCanvasRenderMetaFileTextClipping;
     fKerningHScaleBottom: single;
     fKerningHScaleTop: single;
-    // some cache
-    fPreviousRasterFontName: RawUtf8;
-    fPreviousRasterFontIndex: integer;
     // result := fOffsetX + (X * fFactorX);
     // write Tf again if fFontReselect, before text
     procedure ReselectFont;
@@ -8879,11 +8881,16 @@ begin
   fOutputIntents := nil;
   fOutlineRoot := nil;
   fFontFile2 := nil;
+  {$ifdef USE_PDFSECURITY}
+  fEncryptionObject := nil; // AttachDocument below fills a new one
+  {$endif USE_PDFSECURITY}
   if fCanvas <> nil then
   begin
     fCanvas.fPage := nil;
     fCanvas.fContents := nil;
     fCanvas.fPageFontList := nil;
+    fCanvas.fArtifactOpen := false;
+    fCanvas.fPathArtifact := false;
   end;
   fStructTree := nil;
   if fStructStack <> nil then
@@ -9098,9 +9105,10 @@ begin
     fallback := fTrueTypeFonts[fFontFallBackIndex];
   AddRawUtf8(fTrueTypeFonts, TtfName);
   QuickSortRawUtf8(fTrueTypeFonts, length(fTrueTypeFonts), nil, @StrIComp);
-  // the sort moves the indexes: the cached one, the fallback's, and those
+  // the sort moves the indexes: the cached ones, the fallback's, and those
   // of the fonts already created (1-based, 0 for no TrueType font)
   fTrueTypeFontLastName := '';
+  fPreviousRasterFontName := '';
   if fallback <> '' then
     fFontFallBackIndex := GetTrueTypeFontIndex(fallback);
   ins := GetTrueTypeFontIndex(TtfName);
@@ -9116,6 +9124,7 @@ procedure TPdfDocument.FreeDoc;
 var
   i: PtrInt;
 begin
+  FreeAndNil(fSaveToStreamWriter); // a SaveToStreamDirectBegin never ended
   if fXObjectList <> nil then
   begin
     FreeAndNil(fXObjectList);
@@ -10635,6 +10644,7 @@ end;
 procedure TPdfDocument.SetFontFallBackName(const Value: string);
 begin
   fFontFallBackIndex := GetTrueTypeFontIndex(StringToUtf8(Value));
+  fPreviousRasterFontName := ''; // it may have been resolved to the fallback
 end;
 
 function TPdfDocument.GetFontFallBackName: string;
@@ -11321,9 +11331,10 @@ begin
             exit; // we got a standard/embedded font
         end;
     end;
-    if (fPreviousRasterFontName <> '') and
-       (fPreviousRasterFontName = AName) then
-      ndx := fPreviousRasterFontIndex
+    if (fDoc.fPreviousRasterFontName <> '') and
+       (fDoc.fPreviousRasterFontName = AName) and
+       (fDoc.fPreviousRasterFontFixed = AIsFixedWidth) then
+      ndx := fDoc.fPreviousRasterFontIndex
     else
     begin
       // search the font in the global system-wide true type fonts list
@@ -11351,8 +11362,9 @@ begin
           if ndx < 0 then
             exit;
         end;
-        fPreviousRasterFontName := AName;
-        fPreviousRasterFontIndex := ndx;
+        fDoc.fPreviousRasterFontName := AName;
+        fDoc.fPreviousRasterFontIndex := ndx;
+        fDoc.fPreviousRasterFontFixed := AIsFixedWidth;
       end;
     end;
   end;
@@ -13248,6 +13260,7 @@ begin
       md5.Full(@dig, SizeOf(dig), dig);
   SetLength(fInternalKey, HASHSIZE[fLevel]);
   MoveFast(dig, fInternalKey[0], HASHSIZE[fLevel]);
+  fLastObjectNumber := -1; // the cached object key is of the previous one
   // calc fUserPass content
   case fLevel of
     elRC4_40:

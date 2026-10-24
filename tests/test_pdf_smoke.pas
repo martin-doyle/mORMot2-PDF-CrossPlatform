@@ -91,10 +91,26 @@ type
     procedure TestAddFontKeepsFallback;
     /// AddTrueTypeFont keeps the fonts created before it usable
     procedure TestAddFontKeepsCreatedFonts;
+    /// AddTrueTypeFont keeps the face a raster font was resolved to
+    procedure TestAddFontKeepsRasterFont;
+    /// a raster font asked for as fixed-width is resolved as such
+    procedure TestRasterFontFixedWidth;
+    /// a raster font follows a change of the fallback font
+    procedure TestRasterFontFollowsFallback;
     /// a face without an English PostScript name keeps its family name
     procedure TestPostScriptNameFallback;
     /// switching PDF/A off renews the document, its metadata stream included
     procedure TestNewDocDropsMetadata;
+    {$ifndef NO_USE_PDFSECURITY}
+    /// an encrypted document renewed by NewDoc saves with its /Encrypt
+    procedure TestNewDocKeepsEncryption;
+    /// a document renewed by NewDoc encrypts with its own RC4 object keys
+    procedure TestNewDocRenewsObjectKeys;
+    {$endif NO_USE_PDFSECURITY}
+    /// NewDoc ends a direct save left open
+    procedure TestNewDocEndsDirectSave;
+    /// NewDoc closes an artifact left open on the freed page
+    procedure TestNewDocClosesArtifact;
     /// the catalog getters read what the setters wrote
     procedure TestCatalogGetters;
     /// a JPEG's colour space follows its components; a non-JPEG is refused
@@ -2265,6 +2281,86 @@ begin
   end;
 end;
 
+procedure TPdfSmokeTests.TestAddFontKeepsRasterFont;
+const
+  UNKNOWN = 'No Such mORMot Font';
+var
+  PDF: TPdfDocument;
+  form: TPdfFormWithCanvas;
+begin
+  { the index an unknown (raster) font name was resolved to is cached: after
+    the sort of AddTrueTypeFont it named the face before it - through the
+    canvas of a form as well }
+  Check(EnsureTestFonts, 'the test fonts registered');
+  PDF := TPdfDocument.Create(false, 0, pdfaNone);
+  try
+    PDF.FontFallBackName := TEST_SANS;
+    form := TPdfFormWithCanvas.Create(PDF, 200, 100);
+    PDF.AddXObject('FormR', form); // owned by the document from here
+    form.Canvas.SetFont(UNKNOWN, 12, [], TEST_FONT_CHARSET); // resolved, cached
+    PDF.AddPage;
+    PDF.Canvas.SetFont(UNKNOWN, 12, [], TEST_FONT_CHARSET);
+    Check(PDF.AddTrueTypeFont('!sorts first'), 'a new name added');
+    // a style not created yet: made from the cached index
+    Check(PDF.Canvas.SetFont(UNKNOWN, 12, [pfsBold], TEST_FONT_CHARSET) =
+          PDF.Canvas.SetFont(TEST_SANS, 12, [pfsBold], TEST_FONT_CHARSET),
+      'the raster font is still the fallback face');
+    Check(form.Canvas.SetFont(UNKNOWN, 12, [pfsItalic], TEST_FONT_CHARSET) =
+          PDF.Canvas.SetFont(TEST_SANS, 12, [pfsItalic], TEST_FONT_CHARSET),
+      'on the canvas of a form too');
+    form.CloseCanvas;
+  finally
+    PDF.Free;
+  end;
+end;
+
+procedure TPdfSmokeTests.TestRasterFontFixedWidth;
+const
+  UNKNOWN = 'No Such mORMot Font';
+var
+  PDF: TPdfDocument;
+begin
+  { the cache of a resolved raster font name ignored AIsFixedWidth: a name
+    resolved to the proportional fallback stayed it when asked for as fixed
+    width, which takes Courier New - where Courier New is missing, both are
+    the fallback }
+  Check(EnsureTestFonts, 'the test fonts registered');
+  PDF := TPdfDocument.Create(false, 0, pdfaNone);
+  try
+    PDF.FontFallBackName := TEST_SANS;
+    PDF.AddPage;
+    PDF.Canvas.SetFont(UNKNOWN, 12, [], TEST_FONT_CHARSET); // resolved, cached
+    Check(PDF.Canvas.SetFont(UNKNOWN, 12, [], TEST_FONT_CHARSET, -1, true) =
+          PDF.Canvas.SetFont('Courier New', 12, [], TEST_FONT_CHARSET),
+      'fixed width: Courier New');
+  finally
+    PDF.Free;
+  end;
+end;
+
+procedure TPdfSmokeTests.TestRasterFontFollowsFallback;
+const
+  UNKNOWN = 'No Such mORMot Font';
+var
+  PDF: TPdfDocument;
+begin
+  { the cache of a resolved raster font name kept the fallback font it was
+    resolved to after FontFallBackName named another one }
+  Check(EnsureTestFonts, 'the test fonts registered');
+  PDF := TPdfDocument.Create(false, 0, pdfaNone);
+  try
+    PDF.FontFallBackName := TEST_SANS;
+    PDF.AddPage;
+    PDF.Canvas.SetFont(UNKNOWN, 12, [], TEST_FONT_CHARSET); // resolved, cached
+    PDF.FontFallBackName := TEST_ARABIC;
+    Check(PDF.Canvas.SetFont(UNKNOWN, 12, [], TEST_FONT_CHARSET) =
+          PDF.Canvas.SetFont(TEST_ARABIC, 12, [], TEST_FONT_CHARSET),
+      'the new fallback font');
+  finally
+    PDF.Free;
+  end;
+end;
+
 procedure TPdfSmokeTests.TestPostScriptNameFallback;
 const
   // a family name beyond ASCII, so TtfFontPostcriptName reads the name table
@@ -2330,6 +2426,121 @@ begin
     Check(PosEx('pdfaid:part', s) = 0, 'no PDF/A packet left');
   finally
     Stream.Free;
+  end;
+end;
+
+{$ifndef NO_USE_PDFSECURITY}
+
+procedure TPdfSmokeTests.TestNewDocKeepsEncryption;
+var
+  PDF: TPdfDocument;
+  Stream: TMemoryStream;
+begin
+  { NewDoc freed the /Encrypt dictionary with the old trailer but kept the
+    reference: attaching the encryption again wrote into the freed object }
+  Stream := TMemoryStream.Create;
+  try
+    PDF := TPdfDocument.Create(false, 0, pdfaNone,
+      TPdfEncryption.New(elRC4_40, '', 'owner', PDF_PERMISSION_ALL));
+    try
+      PDF.CompressionMethod := cmNone;
+      PDF.AddPage;
+      PDF.NewDoc;
+      PDF.AddPage;
+      PDF.SaveToStream(Stream);
+    finally
+      PDF.Free;
+    end;
+    Check(PosEx('/Encrypt', StreamToRaw(Stream)) > 0, 'still encrypted');
+  finally
+    Stream.Free;
+  end;
+end;
+
+procedure TPdfSmokeTests.TestNewDocRenewsObjectKeys;
+var
+  PDF: TPdfDocument;
+  Stream: TMemoryStream;
+  first, second: RawByteString;
+begin
+  { RC4 caches the key of the last object it encrypted: the Info dictionary
+    is the last of one save and the first of the next, under the same object
+    number, so the document renewed by NewDoc kept the key of the old file ID }
+  Stream := TMemoryStream.Create;
+  try
+    PDF := TPdfDocument.Create(false, 0, pdfaNone,
+      TPdfEncryption.New(elRC4_128, '', 'owner', PDF_PERMISSION_ALL));
+    try
+      PDF.CompressionMethod := cmNone;
+      PDF.Info.Data.AddItemText('Author', 'AAAAAAAA');
+      PDF.AddPage;
+      PDF.SaveToStream(Stream);
+      first := PdfStringAfter(StreamToRaw(Stream), '/Author');
+      PDF.NewDoc; // a new file ID, so a new key
+      PDF.Info.Data.AddItemText('Author', 'AAAAAAAA');
+      PDF.AddPage;
+      Stream.Clear;
+      PDF.SaveToStream(Stream);
+      second := PdfStringAfter(StreamToRaw(Stream), '/Author');
+    finally
+      PDF.Free;
+    end;
+    CheckEqual(length(second), 8, 'the author, encrypted');
+    Check(second <> first, 'encrypted with the key of the new document');
+  finally
+    Stream.Free;
+  end;
+end;
+
+{$endif NO_USE_PDFSECURITY}
+
+procedure TPdfSmokeTests.TestNewDocEndsDirectSave;
+var
+  PDF: TPdfDocument;
+  left, Stream: TMemoryStream;
+begin
+  { the writer of a SaveToStreamDirectBegin never ended stayed after NewDoc:
+    the next save raised "called twice" }
+  left := TMemoryStream.Create;
+  Stream := TMemoryStream.Create;
+  try
+    PDF := TPdfDocument.Create(false, 0, pdfaNone);
+    try
+      PDF.CompressionMethod := cmNone;
+      PDF.AddPage;
+      PDF.SaveToStreamDirectBegin(left);
+      PDF.NewDoc;
+      PDF.AddPage;
+      PDF.SaveToStream(Stream);
+    finally
+      PDF.Free;
+    end;
+    Check(PosEx('%%EOF', StreamToRaw(Stream)) > 0, 'saved after NewDoc');
+  finally
+    Stream.Free;
+    left.Free;
+  end;
+end;
+
+procedure TPdfSmokeTests.TestNewDocClosesArtifact;
+var
+  PDF: TPdfDocument;
+begin
+  { an artifact open on the page NewDoc freed made the next BeginArtifact
+    raise: the canvas still took it as open }
+  PDF := TPdfDocument.Create(false, 0, pdfaNone);
+  try
+    PDF.Tagged := true;
+    PDF.AddPage;
+    PDF.Canvas.BeginArtifact;
+    PDF.NewDoc;
+    PDF.Tagged := true;
+    PDF.AddPage;
+    PDF.Canvas.BeginArtifact;
+    PDF.Canvas.EndArtifact;
+    Check(true, 'an artifact opened and closed after NewDoc');
+  finally
+    PDF.Free;
   end;
 end;
 

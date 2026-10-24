@@ -50,12 +50,19 @@ v0.10.0 (2026-09-30).
   measured with the default width or in the fallback font; a face without
   an English PostScript name and a family name beyond ASCII got an empty
   `/BaseFont`; `AddTrueTypeFont` made the fallback font and the font name
-  cache point at another face; a tagged or PDF/A WinAnsi font of more than
+  cache point at another face, and a font name the system lacks, resolved
+  before it, drew another face; such a name also kept its face after a
+  change of `FontFallBackName`, and when asked for fixed-width (Courier
+  New) after a proportional call; a tagged or PDF/A WinAnsi font of more than
   100 characters wrote a `/ToUnicode` block over the CMap limit of 100
 - **Fixed (`TPdfDocument`):** `CreateOutline` with a position before the
   first page raised and then freed the entry twice; setting `PdfA` or
   `UseOptionalContent`, which renews the document, kept the freed metadata
-  stream, outline root and font files of the old one;
+  stream, outline root and font files of the old one, and an encrypted
+  document raised an access violation there; after `NewDoc` an RC4 document
+  encrypted its `/Info` with the key of the old one, a
+  `SaveToStreamDirectBegin` left open made the next save raise, and an
+  artifact left open the next `BeginArtifact`;
   `TPdfDictionaryWrapper.HasData` was inverted and
   `TPdfCatalog.NonFullScreenPageMode` always read `pmUseNone`
 - **Fixed (EMF, Windows):** a world transform that only scales, alike on
