@@ -108,6 +108,19 @@ v0.10.0 (2026-09-30).
   took the points i+1..i+3 instead of i..i+2, so a metafile curve drawn
   with `PolyDraw` came out distorted (trunk d76f5d793, SynPDF #84);
   `EMR_ALPHABLEND` records are rendered again under FPC (trunk b2b130b58)
+- **Fixed (EMF, Windows):** `EMR_ALPHABLEND` took its `BLENDFUNCTION` for a
+  colour key - with the usual values every pure blue pixel became
+  transparent; it is drawn opaque now (constant and per-pixel alpha are
+  still not supported). `EMR_POLYPOLYLINE`(16) closed each polyline;
+  `EMR_RESTOREDC` restored one state whatever depth it named, and more than
+  32 saved states overran the stack; a world transform that scales and
+  rotates drew 180-degree text upright (FPC) or raised (Delphi);
+  `EMR_EXTTEXTOUTA` read its bytes as UTF-16 - they are taken in the code
+  page of the font's charset now; `EMR_STRETCHDIBITS` under a flipped
+  transform wrote into the record; a printer resolution of 0 divided by 0
+  in `MM_ISOTROPIC`, and `CurrentPrinterRes` and `CurrentPrinterPaperSize`
+  passed `GetProfileString` a size in bytes, twice the buffer on Unicode
+  compilers
 - **Builds on Windows aarch64 (FPC):** the fork's copy of
   `mormot.lib.uniscribe` is gone - the `mormot2` package ships the unit and
   hid the copy; `mormot.ui.core` and `mormot.ui.gdiplus` are the trunk
@@ -674,14 +687,11 @@ test that fails before its fix. Items 1 and 2 are also in the trunk's
    subtable count, and `TPdfTtf.Create` reads `glyphIndexArray` unchecked;
    `TtfFontPostcriptName` reads the `name` records unchecked. A corrupt
    face reads past its table
-2. **EMF** (`mormot.pdf.canvas`, Windows): `EMR_ALPHABLEND` takes the
-   `BLENDFUNCTION` for a colour key; `EMR_POLYPOLYLINE`(16) closes each
-   polyline; `EMR_RESTOREDC` ignores a relative depth other than -1, and
-   the state stack is checked by asserts only; `ArcSin`/`ArcCos` of a world
-   transform that scales and rotates get arguments out of their domain;
-   `EMR_EXTTEXTOUTA` reads its ANSI text as UTF-16; `EMR_STRETCHDIBITS`
-   writes into the record it is handed; `CurrentPrinterRes` returns 0 when
-   `CreateDC` fails, which divides by 0 in the isotropic mapping
+2. **EMF clipping after `RestoreDC`** (`mormot.pdf.canvas`, Windows):
+   `EMR_RESTOREDC` restores the saved state but not the PDF clip that
+   `EMR_EXTSELECTCLIPRGN` set with `q ... W n`: what is drawn after the
+   restore stays clipped, and the `q`/`Q` pairs can come out unbalanced.
+   Found with the EMF fixes of 2026-10-24; a small fix of its own
 3. **Preview** (`mormot.pdf.report.preview`): the window takes its size
    from page 0 and the report's current margins, for every page
 4. **`Columns2` over a page break** (`mormot.pdf.report`): when the first

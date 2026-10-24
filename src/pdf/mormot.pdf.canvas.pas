@@ -1088,13 +1088,15 @@ begin
   result := psUserDefined;
   if not PrinterDriverExists then
     exit;
-  GetProfileString('windows', 'device', nil, name, SizeOf(name) - 1);
+  GetProfileString('windows', 'device', nil, name, length(name)); // chars
   PC := ParseFetchedPrinterStr(name);
   if (PC = nil) or
      (PC^ = #0) then
     exit;
   try
     h := CreateDC(nil, PC, nil, nil);
+    if h = 0 then
+      exit; // no printer DC: nothing to measure
     try
       pt.x := GetDeviceCaps(h, LOGPIXELSX);
       pt.y := GetDeviceCaps(h, LOGPIXELSY);
@@ -1133,6 +1135,7 @@ end;
 
 function CurrentPrinterRes: TPoint;
 var
+  res: TPoint;
   name: array[0..1023] of Char;
   PC: PChar;
   h: THandle;
@@ -1141,16 +1144,22 @@ begin
   result.Y := 300; // default standard printer resolution
   if not PrinterDriverExists then
     exit;
-  GetProfileString('windows', 'device', nil, name, SizeOf(name) - 1);
+  GetProfileString('windows', 'device', nil, name, length(name)); // chars
   PC := ParseFetchedPrinterStr(name);
   if (PC = nil) or
      (PC^ = #0) then
     exit;
   try
     h := CreateDC(nil, PC, nil, nil);
+    if h = 0 then
+      exit; // no printer DC: the default resolution
     try
-      result.x := GetDeviceCaps(h, LOGPIXELSX);
-      result.y := GetDeviceCaps(h, LOGPIXELSY);
+      res.x := GetDeviceCaps(h, LOGPIXELSX);
+      res.y := GetDeviceCaps(h, LOGPIXELSY);
+      if res.x > 0 then
+        result.x := res.x;
+      if res.y > 0 then
+        result.y := res.y;
     finally
       DeleteDC(h);
     end;
@@ -1953,6 +1962,8 @@ type
       Align: integer;
       BkMode, BkColor: integer;
       Spec: TFontSpec;
+      // a font of the metafile is selected, not the initial stock font
+      Selected: boolean;
       LogFont: TLogFontW; // better be the last entry in TPdfEnumState record
     end;
   end;
@@ -1989,11 +2000,13 @@ type
     end;
     // SaveDC/RestoreDC stack
     fDCIndex: integer;
-    fDC: array[0..31] of TPdfEnumState;
+    // the saved states, as deep as the metafile saves them: grown by SaveDC
+    // only, so the st pointer of EnumEMFFunc stays valid after other records
+    fDC: array of TPdfEnumState;
   public
     constructor Create(ACanvas: TPdfCanvas);
     procedure SaveDC;
-    procedure RestoreDC;
+    procedure RestoreDC(Relative: integer);
     procedure NeedPen;
     procedure NeedBrushAndPen;
     procedure FlushPenBrush;
@@ -2056,6 +2069,8 @@ var
   sdib: PEMRStretchDIBits;
   tb: PEMRTransparentBLT;
   ab: PEMRAlphaBlend;
+  bmi: PBitmapInfo;
+  bmicopy: RawByteString;
   i: PtrInt;
   cp: TPoint;
   InitTransX: XForm;
@@ -2108,7 +2123,7 @@ begin
     EMR_SAVEDC:
       E.SaveDC;
     EMR_RESTOREDC:
-      E.RestoreDC;
+      E.RestoreDC(PEMRRestoreDC(R)^.iRelative);
     EMR_SETWORLDTRANSFORM:
       E.ScaleMatrix(@PEMRSetWorldTransform(R)^.xform, MWT_SET);
     EMR_CREATEPEN:
@@ -2603,14 +2618,24 @@ begin
         if (sdib^.offBmiSrc <> 0) and
            (sdib^.offBitsSrc <> 0) then
         begin
+          bmi := pointer(PtrUInt(R) + sdib^.offBmiSrc);
           if st^.WorldTransform.eM22 < 0 then
-            PBitmapInfo(PtrUInt(R) + sdib^.offBmiSrc)^.bmiHeader.biHeight :=
-              -PBitmapInfo(PtrUInt(R) + sdib^.offBmiSrc)^.bmiHeader.biHeight;
-          E.DrawBitmap(sdib^.xSrc, sdib^.ySrc, sdib^.cxSrc, sdib^.cySrc,
-            sdib^.xDest, sdib^.yDest, sdib^.cxDest, sdib^.cyDest, sdib^.iUsageSrc,
-            pointer(PtrUInt(R) + sdib^.offBmiSrc),
-            pointer(PtrUInt(R) + sdib^.offBitsSrc), @sdib^.rclBounds, nil,
-            sdib^.dwRop);
+            // flipped in a copy: the record belongs to the metafile
+            if (sdib^.cbBmiSrc >= SizeOf(TBitmapInfoHeader)) and
+               (sdib^.offBmiSrc + sdib^.cbBmiSrc <= R^.nSize) then
+            begin
+              SetLength(bmicopy, sdib^.cbBmiSrc);
+              MoveFast(bmi^, pointer(bmicopy)^, sdib^.cbBmiSrc);
+              bmi := pointer(bmicopy);
+              bmi^.bmiHeader.biHeight := -bmi^.bmiHeader.biHeight;
+            end
+            else
+              bmi := nil;
+          if bmi <> nil then
+            E.DrawBitmap(sdib^.xSrc, sdib^.ySrc, sdib^.cxSrc, sdib^.cySrc,
+              sdib^.xDest, sdib^.yDest, sdib^.cxDest, sdib^.cyDest,
+              sdib^.iUsageSrc, bmi, pointer(PtrUInt(R) + sdib^.offBitsSrc),
+              @sdib^.rclBounds, nil, sdib^.dwRop);
         end;
       end;
     EMR_TRANSPARENTBLT:
@@ -2629,10 +2654,11 @@ begin
         ab := PEMRAlphaBlend(R); // only handle RGB bitmaps (no palette nor transparency)
         if (ab^.offBmiSrc <> 0) and
            (ab^.offBitsSrc <> 0) then
+          // drawn opaque: dwRop is a BLENDFUNCTION, no transparent colour
           E.DrawBitmap(ab^.xSrc, ab^.ySrc, ab^.cxSrc, ab^.cySrc, ab^.xDest,
             ab^.yDest, ab^.cxDest, ab^.cyDest, ab^.iUsageSrc,
             pointer(PtrUInt(R) + ab^.offBmiSrc), pointer(PtrUInt(R) + ab^.offBitsSrc),
-            @ab^.rclBounds, @ab^.xformSrc, SRCCOPY, ab^.dwRop)
+            @ab^.rclBounds, @ab^.xformSrc, SRCCOPY)
         else
           case ab^.dwRop of // we only handle PATCOPY = fillrect
             PATCOPY:
@@ -2819,8 +2845,9 @@ begin
     A.fUseMetaFileTextClipping := TextClipping;
     A.fKerningHScaleBottom := KerningHScaleBottom;
     A.fKerningHScaleTop := KerningHScaleTop;
-    if TPdfDocumentAccess(A.fDoc).fPrinterPxPerInch.X = 0 then
-      // caching for major speedup
+    if (TPdfDocumentAccess(A.fDoc).fPrinterPxPerInch.X <= 0) or
+       (TPdfDocumentAccess(A.fDoc).fPrinterPxPerInch.Y <= 0) then
+      // caching for major speedup; MM_ISOTROPIC divides by both
       TPdfDocumentAccess(A.fDoc).fPrinterPxPerInch := CurrentPrinterRes;
     A.fPrinterPxPerInch := TPdfDocumentAccess(A.fDoc).fPrinterPxPerInch;
     Int64(E.fDC[0].WinSize) := PInt64(@R.Right)^;
@@ -2847,6 +2874,7 @@ end;
 constructor TPdfEnum.Create(ACanvas: TPdfCanvas);
 begin
   fCanvas := TPdfCanvasAccess(ACanvas);
+  SetLength(fDC, 32);
   // set invalid colors or style -> force paint
   fFillColor := -1;
   fStrokeColor := -1;
@@ -3041,7 +3069,8 @@ begin
               a[o].Y);
             inc(o);
           end;
-          fCanvas.LineToI(a[f].x, a[f].Y);
+          if iType = EMR_POLYPOLYGON then // a polyline stays open
+            fCanvas.LineToI(a[f].x, a[f].Y);
           fDC[fDCIndex].Moved := false;
         end;
       end;
@@ -3064,7 +3093,8 @@ begin
               a16[o].Y);
             inc(o);
           end;
-          fCanvas.LineToI(a16[f].x, a16[f].Y);
+          if iType = EMR_POLYPOLYGON16 then
+            fCanvas.LineToI(a16[f].x, a16[f].Y);
           fDC[fDCIndex].Moved := false;
         end;
       end;
@@ -3197,6 +3227,7 @@ begin
       OBJ_FONT:
         begin
           fDC[fDCIndex].Font.spec := fObj[iObject - 1].FontSpec;
+          fDC[fDCIndex].Font.Selected := true;
           MoveFast(fObj[iObject - 1].LogFont, fDC[fDCIndex].Font.LogFont,
             SizeOf(fObj[iObject - 1].LogFont));
         end;
@@ -3321,15 +3352,20 @@ begin
   end;
 end;
 
-procedure TPdfEnum.RestoreDC;
+procedure TPdfEnum.RestoreDC(Relative: integer);
 begin
-  Assert(fDCIndex > 0);
-  dec(fDCIndex);
+  // an EMF record restores relatively (-1 = the last saved); GDI fails, so
+  // ignores, a state that was not saved
+  if (Relative >= 0) or
+     (Relative < -fDCIndex) then
+    exit;
+  inc(fDCIndex, Relative);
 end;
 
 procedure TPdfEnum.SaveDC;
 begin
-  Assert(fDCIndex < high(fDC));
+  if fDCIndex >= high(fDC) then
+    SetLength(fDC, length(fDC) * 2);
   fDC[fDCIndex + 1] := fDC[fDCIndex];
   inc(fDCIndex);
 end;
@@ -3464,7 +3500,8 @@ begin
   else if (xf.eM22 = xf.eM11) and
           (xf.eM21 = -xf.eM12) then
   begin // Rotate
-    fCanvas.fAngle := ArcSin(xf.eM12) * c180divPI;
+    // ArcTan2, not ArcSin: a scaled rotation has |eM12| > 1
+    fCanvas.fAngle := ArcTan2(xf.eM12, xf.eM11) * c180divPI;
     fCanvas.fWorldOffsetCos := xf.eM11;
     fCanvas.fWorldOffsetSin := xf.eM12;
   end
@@ -3614,6 +3651,8 @@ var
   posi: TPoint;
   tmp: array of WideChar; // R.emrtext is not #0 terminated -> use tmp[]
   hasdx, clipped, isopaque: boolean;
+  n: integer; // the WideChars of tmp, or the glyphs
+  cp: cardinal;
   tmp2: array[0..1] of WideChar;
   clip: TPdfBox;
   back: TRect;
@@ -3664,8 +3703,40 @@ var
 begin
   if R.emrtext.nChars > 0 then
   begin
-    SetLength(tmp, R.emrtext.nChars + 1); // faster than WideString for our purpose
-    MoveFast(pointer(PtrUInt(@R) + R.emrtext.offString)^, tmp[0], R.emrtext.nChars * 2);
+    if (R.emr.iType = EMR_EXTTEXTOUTA) and
+       (R.emrtext.fOptions and ETO_GLYPH_INDEX = 0) then
+    begin
+      // bytes in the code page of the font's charset, as ExtTextOutA reads them
+      if not fDC[fDCIndex].Font.Selected then
+        cp := CP_ACP // the initial stock font, of the system charset
+      else
+        case fDC[fDCIndex].Font.LogFont.lfCharSet of
+          DEFAULT_CHARSET:
+            cp := CP_ACP;
+          OEM_CHARSET:
+            cp := CP_OEMCP;
+          SYMBOL_CHARSET:
+            cp := 42; // CP_SYMBOL: $20..$FF as U+F020..U+F0FF, as GDI records them
+          CHINESEBIG5_CHARSET:
+            cp := 950;
+        else
+          cp := CharSetToCodePage(fDC[fDCIndex].Font.LogFont.lfCharSet);
+        end;
+      n := MultiByteToWideChar(cp, 0,
+        pointer(PtrUInt(@R) + R.emrtext.offString), R.emrtext.nChars, nil, 0);
+      if n = 0 then
+        exit; // not text in that code page
+      SetLength(tmp, n + 1);
+      MultiByteToWideChar(cp, 0, pointer(PtrUInt(@R) + R.emrtext.offString),
+        R.emrtext.nChars, pointer(tmp), n);
+    end
+    else
+    begin
+      n := R.emrtext.nChars;
+      SetLength(tmp, n + 1); // faster than WideString for our purpose
+      MoveFast(pointer(PtrUInt(@R) + R.emrtext.offString)^, tmp[0], n * 2);
+    end;
+    tmp[n] := #0;
     sy := 1;
     sx := 1;
     if (fCanvas.fWorldFactorY) < 0 then
@@ -3697,7 +3768,7 @@ begin
         dest := TPdfDocumentAccess(fCanvas.fDoc).EmfDC;
         old := SelectObject(dest,
           HGDIOBJ(TPdfFontTrueTypeAccess(fnt).fFace.Handle));
-        if GetTextExtentPoint32W(dest, pointer(tmp), R.emrtext.nChars, siz) then
+        if GetTextExtentPoint32W(dest, pointer(tmp), n, siz) then
           ws := (siz.cX * fCanvas.fPage.FontSize) / 1000;
         SelectObject(dest, old);
       end;
@@ -3706,7 +3777,10 @@ begin
         ws := fCanvas.UnicodeTextWidth(pointer(tmp));
       mw := round(ws / fscaleX);
     end;
-    hasdx := R.emrtext.offDx > 0;
+    // an A record has one dx per byte: they fit the WideChars of a single-byte
+    // code page only
+    hasdx := (R.emrtext.offDx > 0) and
+             (cardinal(n) = R.emrtext.nChars);
     {$ifdef USE_UNISCRIBE}
     if fCanvas.fDoc.UseUniScribe then
       hasdx := hasdx and (R.emrtext.fOptions and ETO_GLYPH_INDEX <> 0);
@@ -3714,7 +3788,7 @@ begin
     if hasdx then
     begin
       dx := pointer(PtrUInt(@R) + R.emrtext.offDx);
-      w := DXTextWidth(dx, R.emrText.nChars);
+      w := DXTextWidth(dx, n);
       if w < trunc((R.rclBounds.Right - R.rclBounds.Left) / fCanvas.fFactorX) then
         dx := nil; // offDX=0 or within box
     end
@@ -3730,7 +3804,7 @@ begin
     hscale := 100;
     if mw <> 0 then
     begin
-      for i := 0 to R.emrtext.nChars - 1 do
+      for i := 0 to n - 1 do
         if tmp[i] = ' ' then
           inc(nspace);
       if (po = tpSetTextJustification) and
@@ -3869,12 +3943,16 @@ begin
             // a pure positive uniform scaling is no rotation: default branch below
             not ((fDC[fDCIndex].WorldTransform.eM12 = 0) and
                  (fDC[fDCIndex].WorldTransform.eM11 > 0)) and
-            not SameValue(ArcCos(fDC[fDCIndex].WorldTransform.eM11), 0, 0.0001) then
+            // the angle by ArcTan2: ArcCos(eM11) fails for a scaled rotation
+            not SameValue(ArcTan2(fDC[fDCIndex].WorldTransform.eM12,
+              fDC[fDCIndex].WorldTransform.eM11), 0, 0.0001) then
     begin
       xs := 0;
       ys := 0;
-      if SameValue(ArcCos(fDC[fDCIndex].WorldTransform.eM11), 0, 0.0001) or      // 0 grad
-         SameValue(ArcCos(fDC[fDCIndex].WorldTransform.eM11), cPI, 0.0001) then  // 180 grad
+      a := abs(ArcTan2(fDC[fDCIndex].WorldTransform.eM12,
+        fDC[fDCIndex].WorldTransform.eM11));
+      if SameValue(a, 0, 0.0001) or    // 0 grad
+         SameValue(a, cPI, 0.0001) then // 180 grad
         fCanvas.SetTextMatrix(fDC[fDCIndex].WorldTransform.eM11, fDC[fDCIndex].WorldTransform.eM12,
           fDC[fDCIndex].WorldTransform.eM21, fDC[fDCIndex].WorldTransform.eM22,
           fCanvas.S2X(posi.X * fDC[fDCIndex].WorldTransform.eM11 +
@@ -3905,7 +3983,7 @@ begin
       fCanvas.MoveTextPoint(fCanvas.S2X(xs), fCanvas.S2Y(ys));
     end;
     if (R.emrtext.fOptions and ETO_GLYPH_INDEX) <> 0 then
-      fCanvas.ShowGlyph(pointer(tmp), R.emrtext.nChars)
+      fCanvas.ShowGlyph(pointer(tmp), n)
     else if po = tpExactTextCharacterPositining then
     begin
       cur := 0;
@@ -3913,7 +3991,7 @@ begin
       repeat
         tmp2[0] := tmp[cur];
         fCanvas.ShowText(@tmp2, false);
-        if cur = R.emrtext.nChars - 1 then
+        if cur = n - 1 then
           break;
         xs := xs + dx^[cur];
         fCanvas.EndText;

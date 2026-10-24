@@ -76,6 +76,20 @@ type
     procedure MetaFileForm;
     procedure MetaFileFormState;
     procedure MetaFileWorldTransform;
+    /// EMR_ALPHABLEND draws its bitmap opaque: no colour key
+    procedure MetaFileAlphaBlend;
+    /// the polylines of EMR_POLYPOLYLINE/16 stay open
+    procedure MetaFilePolyPolyline;
+    /// EMR_RESTOREDC restores the state it names, however deep
+    procedure MetaFileRestoreDC;
+    /// a scaled rotation is drawn, without ArcSin/ArcCos of a value past 1
+    procedure MetaFileScaledRotation;
+    /// EMR_EXTTEXTOUTA reads bytes in the code page of the font
+    procedure MetaFileAnsiText;
+    /// EMR_STRETCHDIBITS under a flipped transform flips a copy of its header
+    procedure MetaFileDIBitsKept;
+    /// a printer resolution of 0 is asked again, not divided by
+    procedure MetaFilePrinterRes;
   end;
 
 {$endif PDF_HASVCLCANVAS}
@@ -1366,6 +1380,112 @@ end;
 // text of a metafile under world transforms: a pure uniform scale is no
 // rotation - the EMF TextOut took it for one and drew the text turned by 180
 // degrees, its text matrix negated (the trunk's a86d7e6fc)
+const
+  // the record types, by number: the windows unit of FPC lacks some names
+  R_POLYPOLYLINE = 7;
+  R_SAVEDC = 33;
+  R_RESTOREDC = 34;
+  R_STRETCHDIBITS = 81;
+  R_EXTTEXTOUTA = 83;
+  R_EXTTEXTOUTW = 84;
+  R_POLYPOLYLINE16 = 90;
+  R_POLYPOLYGON16 = 91;
+  R_ALPHABLEND = 114;
+
+type
+  // sets the printer resolution a metafile is rendered with
+  TPdfDocumentGdiAccess = class(TPdfDocumentGdi);
+
+// AlphaBlend under its gdi32 name: the windows unit of FPC lacks it
+function GdiAlphaBlend(Dest: HDC; X, Y, W, H: integer; Src: HDC;
+  XS, YS, WS, HS: integer; Blend: DWord): BOOL; stdcall; external 'gdi32.dll';
+
+// the bytes of a metafile, as GetEnhMetaFileBits gives them
+function EmfBytes(Mf: TMetaFile): RawByteString;
+var
+  n: cardinal;
+begin
+  n := GetEnhMetaFileBits(Mf.Handle, 0, nil);
+  SetLength(result, n);
+  if n > 0 then
+    GetEnhMetaFileBits(Mf.Handle, n, pointer(result));
+end;
+
+// the offsets of the records of type RecType in the bytes of a metafile
+function EmfRecords(const Bytes: RawByteString; RecType: cardinal): TIntegerDynArray;
+var
+  o, n: PtrInt;
+begin
+  result := nil;
+  o := 0;
+  while o + 8 <= length(Bytes) do
+  begin
+    if PCardinal(@PByteArray(Bytes)[o])^ = RecType then
+    begin
+      n := length(result);
+      SetLength(result, n + 1);
+      result[n] := o;
+    end;
+    n := PCardinal(@PByteArray(Bytes)[o + 4])^;
+    if n < 8 then
+      break;
+    inc(o, n);
+  end;
+end;
+
+// the metafile rendered into one page, the PDF normalized and inflated
+function RenderedEmf(Mf: TMetaFile; PxX: integer = 0; PxY: integer = 0): RawUtf8;
+var
+  doc: TPdfDocumentGdi;
+  ms: TMemoryStream;
+  pdf: RawByteString;
+  err: RawUtf8;
+begin
+  ms := TMemoryStream.Create;
+  doc := TPdfDocumentGdi.Create;
+  try
+    doc.Info.CreationDate := GOLDEN_DATE;
+    doc.EmbeddedTTF := false;
+    doc.StandardFontsReplace := true;
+    TPdfDocumentGdiAccess(doc).fPrinterPxPerInch.X := PxX;
+    TPdfDocumentGdiAccess(doc).fPrinterPxPerInch.Y := PxY;
+    doc.AddPage;
+    RenderMetaFile(doc.Canvas, Mf, 1, 1, 0, 0);
+    doc.SaveToStream(ms, GOLDEN_DATE);
+    FastSetRawByteString(pdf, ms.Memory, ms.Size);
+  finally
+    doc.Free;
+    ms.Free;
+  end;
+  result := InflatePdf(NormalizePdf(pdf, err));
+  if err <> '' then
+    result := '';
+end;
+
+// the operands of the last Op (' rg', ' Tm') before Marker in the content
+function OperandsBefore(const Txt, Marker, Op: RawUtf8): RawUtf8;
+var
+  p, i, j: PtrInt;
+begin
+  result := '';
+  p := PosEx(Marker, Txt);
+  i := 1;
+  repeat
+    j := PosEx(Op, Txt, i);
+    if (j = 0) or
+       (j > p) then
+      break;
+    i := j + length(Op);
+    result := '';
+    while (j > 1) and
+          not (Txt[j - 1] in [#10, #13]) do
+    begin
+      dec(j);
+      result := Txt[j] + result;
+    end;
+  until false;
+end;
+
 procedure TPdfImageGoldenTests.MetaFileWorldTransform;
 
   // how many text matrices of the content turn the text by 180 degrees
@@ -1454,6 +1574,408 @@ begin
   CheckGolden('emf_world', pdf);
 end;
 
+procedure TPdfImageGoldenTests.MetaFileAlphaBlend;
+var
+  mf: TMetaFile;
+  mc: TMetaFileCanvas;
+  mem: HDC;
+  bmp, old: HBITMAP;
+  bi: TBitmapInfo;
+  bits: PCardinalArray;
+  txt: RawUtf8;
+  i: integer;
+begin
+  { the BLENDFUNCTION of the record was taken as the transparent colour: the
+    usual AC_SRC_OVER with SourceConstantAlpha 255 is $00FF0000, blue }
+  mf := TMetaFile.Create;
+  try
+    mf.Width := 100;
+    mf.Height := 100;
+    mc := TMetaFileCanvas.Create(mf, 0);
+    try
+      // a 32-bit DIB of blue pixels, whatever the depth of the screen
+      FillChar(bi, SizeOf(bi), 0);
+      bi.bmiHeader.biSize := SizeOf(bi.bmiHeader);
+      bi.bmiHeader.biWidth := 8;
+      bi.bmiHeader.biHeight := 8;
+      bi.bmiHeader.biPlanes := 1;
+      bi.bmiHeader.biBitCount := 32;
+      mem := CreateCompatibleDC(0);
+      bmp := CreateDIBSection(mem, bi, DIB_RGB_COLORS, pointer(bits), 0, 0);
+      for i := 0 to 63 do
+        bits[i] := $000000ff; // BGRX: blue
+      old := SelectObject(mem, bmp);
+      GdiAlphaBlend(mc.Handle, 10, 10, 64, 64, mem, 0, 0, 8, 8, $00FF0000);
+      SelectObject(mem, old);
+      DeleteObject(bmp);
+      DeleteDC(mem);
+    finally
+      mc.Free;
+    end;
+    CheckEqual(length(EmfRecords(EmfBytes(mf), R_ALPHABLEND)), 1,
+      'recorded as EMR_ALPHABLEND');
+    txt := RenderedEmf(mf);
+  finally
+    mf.Free;
+  end;
+  CheckEqual(CountOccurrences('/Subtype/Image', txt), 1, 'the bitmap');
+  CheckEqual(CountOccurrences('/Mask', txt), 0, 'no colour key');
+end;
+
+procedure TPdfImageGoldenTests.MetaFilePolyPolyline;
+var
+  mf: TMetaFile;
+  mc: TMetaFileCanvas;
+  pts: array[0..5] of TPoint;
+  lines: array[0..1] of DWord;
+  polys: array[0..1] of integer;
+  bytes: RawByteString;
+  txt: RawUtf8;
+  i: integer;
+begin
+  { every polyline of EMR_POLYPOLYLINE/16 got a segment back to its first
+    point; a polygon keeps it }
+  mf := TMetaFile.Create;
+  try
+    mf.Width := 400;
+    mf.Height := 400;
+    mc := TMetaFileCanvas.Create(mf, 0);
+    try
+      lines[0] := 3;
+      lines[1] := 3;
+      polys[0] := 3;
+      polys[1] := 3;
+      for i := 0 to 5 do
+      begin
+        pts[i].X := 20 + i * 30;
+        pts[i].Y := 20 + (i and 1) * 40;
+      end;
+      PolyPolyline(mc.Handle, pts[0], lines[0], 2); // 16-bit coordinates
+      for i := 0 to 5 do
+        inc(pts[i].Y, 100);
+      PolyPolygon(mc.Handle, pts[0], polys[0], 2);
+      for i := 0 to 5 do
+        pts[i].X := 40000 + i * 30; // past 16 bits: the 32-bit record
+      PolyPolyline(mc.Handle, pts[0], lines[0], 2);
+    finally
+      mc.Free;
+    end;
+    bytes := EmfBytes(mf);
+    CheckEqual(length(EmfRecords(bytes, R_POLYPOLYLINE16)), 1, 'EMR_POLYPOLYLINE16');
+    CheckEqual(length(EmfRecords(bytes, R_POLYPOLYLINE)), 1, 'EMR_POLYPOLYLINE');
+    CheckEqual(length(EmfRecords(bytes, R_POLYPOLYGON16)), 1, 'EMR_POLYPOLYGON16');
+    txt := RenderedEmf(mf);
+  finally
+    mf.Free;
+  end;
+  // two open polylines of two segments in each record, two closed triangles
+  CheckEqual(CountOccurrences(' l'#10, txt), 2 * 2 + 2 * 2 + 2 * 3, 'line segments');
+end;
+
+procedure TPdfImageGoldenTests.MetaFileRestoreDC;
+var
+  mf: TMetaFile;
+  mc: TMetaFileCanvas;
+  bytes: RawByteString;
+  recs: TIntegerDynArray;
+  txt, rel: RawUtf8;
+  i: integer;
+
+  procedure Text(Y: integer; const Value: WideString);
+  begin
+    TextOutW(mc.Handle, 10, Y, pointer(Value), length(Value));
+  end;
+
+begin
+  { EMR_RESTOREDC popped one state whatever its iRelative, and the saved
+    states were an array of 32 guarded by Assert only }
+  mf := TMetaFile.Create;
+  try
+    mf.Width := 400;
+    mf.Height := 400;
+    mc := TMetaFileCanvas.Create(mf, 0);
+    try
+      SetTextColor(mc.Handle, RGB(255, 0, 0));
+      SaveDC(mc.Handle);
+      SetTextColor(mc.Handle, RGB(0, 255, 0));
+      SaveDC(mc.Handle);
+      SetTextColor(mc.Handle, RGB(0, 0, 255));
+      RestoreDC(mc.Handle, -2); // back to red
+      Text(10, 'Red');
+      for i := 1 to 40 do
+      begin
+        SetTextColor(mc.Handle, RGB(i * 6, 0, 0));
+        if i = 37 then
+          Text(40, 'Level');
+        SaveDC(mc.Handle);
+      end;
+      RestoreDC(mc.Handle, -4); // the state saved after Level
+      Text(70, 'Deep');
+    finally
+      mc.Free;
+    end;
+    bytes := EmfBytes(mf);
+    CheckEqual(length(EmfRecords(bytes, R_SAVEDC)), 42, 'the saves');
+    recs := EmfRecords(bytes, R_RESTOREDC); // the canvas adds one of its own
+    rel := '';
+    for i := 0 to high(recs) do
+      rel := rel + Int32ToUtf8(PInteger(@PByteArray(bytes)[recs[i] + 8])^) + ' ';
+    Check(PosEx('-2 -4 ', rel) = 1, 'the restores');
+    txt := RenderedEmf(mf);
+  finally
+    mf.Free;
+  end;
+  CheckEqual(OperandsBefore(txt, '(Red)', ' rg'), '1 0 0', 'RestoreDC(-2)');
+  Check(OperandsBefore(txt, '(Level)', ' rg') <> '', 'the colour of level 37');
+  CheckEqual(OperandsBefore(txt, '(Deep)', ' rg'),
+    OperandsBefore(txt, '(Level)', ' rg'), 'restored past 32 states');
+end;
+
+procedure TPdfImageGoldenTests.MetaFileScaledRotation;
+var
+  mf: TMetaFile;
+  mc: TMetaFileCanvas;
+  xf: TXForm;
+  txt, m: RawUtf8;
+  raised: boolean;
+begin
+  { ScaleMatrix took ArcSin(eM12) and TextOut ArcCos(eM11): with a rotation
+    scaled by 2 both get a value past 1 and raise (Delphi) or give NaN (FPC) }
+  mf := TMetaFile.Create;
+  try
+    mf.Width := 400;
+    mf.Height := 400;
+    mc := TMetaFileCanvas.Create(mf, 0);
+    try
+      mc.Font.Name := 'Arial';
+      mc.Font.Size := 10;
+      SetGraphicsMode(mc.Handle, GM_ADVANCED);
+      FillChar(xf, SizeOf(xf), 0);
+      xf.eM12 := 2; // 90 degrees, twice the size
+      xf.eM21 := -2;
+      xf.eDx := 200;
+      SetWorldTransform(mc.Handle, xf);
+      mc.TextOut(10, 10, 'Ninety');
+      xf.eM11 := -2; // 180 degrees, twice the size
+      xf.eM12 := 0;
+      xf.eM21 := 0;
+      xf.eM22 := -2;
+      xf.eDx := 300;
+      xf.eDy := 300;
+      SetWorldTransform(mc.Handle, xf);
+      mc.TextOut(10, 10, 'Turned');
+    finally
+      mc.Free;
+    end;
+    raised := false;
+    try
+      txt := RenderedEmf(mf);
+    except
+      raised := true;
+    end;
+  finally
+    mf.Free;
+  end;
+  Check(not raised, 'rendered');
+  Check(PosEx('(Ninety)', txt) > 0, 'the text at 90 degrees');
+  Check(PosEx('(Turned)', txt) > 0, 'the text at 180 degrees');
+  // FPC's ArcCos(-2) is NaN: the text took the negated matrix, drawn upright
+  m := OperandsBefore(txt, '(Turned)', ' Tm');
+  Check((m <> '') and (m[1] = '-'), 'turned by 180 degrees: ' + Utf8ToString(m));
+end;
+
+procedure TPdfImageGoldenTests.MetaFileAnsiText;
+var
+  mf: TMetaFile;
+  mc: TMetaFileCanvas;
+  bytes: RawByteString;
+  recs: TIntegerDynArray;
+  w, a: RawUtf8;
+  i: integer;
+
+  // draw Codes at Y in an Arial of CharSet
+  procedure Text(Y, CharSet: integer; const Codes: array of word);
+  var
+    lf: TLogFontW;
+    f, old: HFONT;
+    ws: WideString;
+    c: integer;
+  begin
+    FillChar(lf, SizeOf(lf), 0);
+    lf.lfHeight := -16;
+    lf.lfCharSet := CharSet;
+    Utf8ToWideChar(@lf.lfFaceName, 'Arial');
+    f := CreateFontIndirectW(lf);
+    old := SelectObject(mc.Handle, f);
+    SetLength(ws, length(Codes));
+    for c := 0 to high(Codes) do
+      ws[c + 1] := WideChar(Codes[c]);
+    TextOutW(mc.Handle, 10, Y, pointer(ws), length(ws));
+    SelectObject(mc.Handle, old);
+    DeleteObject(f);
+  end;
+
+  // the W record at o as an A record of Ansi, its UTF-16 zeroed past the bytes
+  procedure ToAnsi(o: integer; const Ansi: RawByteString);
+  var
+    str: PtrInt;
+  begin
+    PCardinal(@PByteArray(bytes)[o])^ := R_EXTTEXTOUTA;
+    // EMRTEXT.nChars at 44, offString at 48 of the record: room for 4 bytes
+    PCardinal(@PByteArray(bytes)[o + 44])^ := length(Ansi);
+    str := o + PInteger(@PByteArray(bytes)[o + 48])^;
+    FillChar(PByteArray(bytes)[str], 4, 0);
+    MoveFast(pointer(Ansi)^, PByteArray(bytes)[str], length(Ansi));
+  end;
+
+  // a dx of 100 per byte after the 4 bytes of the A record at o, which held
+  // the UTF-16 and the dx of 3 WideChars: wider than the text, so it is used
+  procedure WideDx(o: integer);
+  var
+    j, str: PtrInt;
+  begin
+    str := PInteger(@PByteArray(bytes)[o + 48])^;
+    PInteger(@PByteArray(bytes)[o + 72])^ := str + 4; // EMRTEXT.offDx
+    for j := 0 to 3 do
+      PInteger(@PByteArray(bytes)[o + str + 4 + j * 4])^ := 100;
+  end;
+
+begin
+  { EMR_EXTTEXTOUTA went through the Unicode path: its bytes were read as
+    WideChars, twice as many as the record holds. Windows records ExtTextOutA
+    as EMR_EXTTEXTOUTW, so the A records are made from W ones, in the ANSI
+    code page, in the one of a Greek font and in Shift-JIS, three characters
+    of four bytes. The W records lose their dx, which an A record has per
+    byte: the Shift-JIS one gets a dx of 4 entries, which cannot fit its 3
+    WideChars and is dropped - all draw by the measured text }
+  mf := TMetaFile.Create;
+  try
+    mf.Width := 400;
+    mf.Height := 400;
+    mc := TMetaFileCanvas.Create(mf, 0);
+    try
+      Text(10, ANSI_CHARSET, [ord('A'), ord('b')]);
+      Text(40, GREEK_CHARSET, [$03B1, $03B2]); // alpha beta
+      Text(70, SHIFTJIS_CHARSET, [ord('A'), $3042, ord('B')]); // hiragana a
+    finally
+      mc.Free;
+    end;
+    bytes := EmfBytes(mf);
+    recs := EmfRecords(bytes, R_EXTTEXTOUTW);
+    if CheckEqual(length(recs), 3, 'three W records') then
+    begin
+      for i := 0 to 2 do
+      begin
+        CheckEqual(PCardinal(@PByteArray(bytes)[recs[i] + 44])^, 2 + i shr 1,
+          'the characters');
+        PCardinal(@PByteArray(bytes)[recs[i] + 72])^ := 0; // EMRTEXT.offDx
+      end;
+      mf.Handle := SetEnhMetaFileBits(length(bytes), pointer(bytes));
+      w := RenderedEmf(mf);
+      ToAnsi(recs[0], 'Ab');
+      ToAnsi(recs[1], AnsiChar($E1) + AnsiChar($E2)); // code page 1253
+      ToAnsi(recs[2], 'A' + AnsiChar($82) + AnsiChar($A0) + 'B'); // code page 932
+      WideDx(recs[2]);
+      mf.Handle := SetEnhMetaFileBits(length(bytes), pointer(bytes));
+      a := RenderedEmf(mf);
+    end;
+  finally
+    mf.Free;
+  end;
+  Check(w <> '', 'the W metafile rendered');
+  CheckEqual(a, w, 'the A records draw as the W ones');
+end;
+
+procedure TPdfImageGoldenTests.MetaFileDIBitsKept;
+var
+  mf: TMetaFile;
+  mc: TMetaFileCanvas;
+  xf: TXForm;
+  bmi: TBitmapInfo;
+  pix: array[0..15] of cardinal;
+  before: RawByteString;
+  first, second: RawUtf8;
+  i: integer;
+begin
+  { with eM22 < 0, EMR_STRETCHDIBITS negated biHeight inside the record,
+    which EnumEnhMetaFile hands out read-only. Windows 11 gives each
+    enumeration its own copy, so the old code passed this too: it guards the
+    flip in a copy of the header, not a measured failure }
+  mf := TMetaFile.Create;
+  try
+    mf.Width := 200;
+    mf.Height := 200;
+    mc := TMetaFileCanvas.Create(mf, 0);
+    try
+      SetGraphicsMode(mc.Handle, GM_ADVANCED);
+      FillChar(xf, SizeOf(xf), 0);
+      xf.eM11 := 1;
+      xf.eM22 := -1;
+      xf.eDy := 150;
+      SetWorldTransform(mc.Handle, xf);
+      FillChar(bmi, SizeOf(bmi), 0);
+      bmi.bmiHeader.biSize := SizeOf(bmi.bmiHeader);
+      bmi.bmiHeader.biWidth := 4;
+      bmi.bmiHeader.biHeight := 4;
+      bmi.bmiHeader.biPlanes := 1;
+      bmi.bmiHeader.biBitCount := 32;
+      for i := 0 to high(pix) do
+        pix[i] := cardinal(i) * $00101010; // a top-bottom gradient
+      StretchDIBits(mc.Handle, 10, 10, 64, 64, 0, 0, 4, 4, @pix, bmi,
+        DIB_RGB_COLORS, SRCCOPY);
+    finally
+      mc.Free;
+    end;
+    before := EmfBytes(mf);
+    CheckEqual(length(EmfRecords(before, R_STRETCHDIBITS)), 1,
+      'recorded as EMR_STRETCHDIBITS');
+    first := RenderedEmf(mf);
+    second := RenderedEmf(mf);
+    Check(EmfBytes(mf) = before, 'the metafile unchanged');
+  finally
+    mf.Free;
+  end;
+  CheckEqual(CountOccurrences('/Subtype/Image', first), 1, 'the bitmap');
+  CheckEqual(second, first, 'drawn the same twice');
+end;
+
+procedure TPdfImageGoldenTests.MetaFilePrinterRes;
+var
+  mf: TMetaFile;
+  mc: TMetaFileCanvas;
+  auto, zero: RawUtf8;
+  raised: boolean;
+begin
+  { MM_ISOTROPIC divides by the printer resolution: one of 0 - a printer DC
+    that failed - was kept, as only its X was checked }
+  mf := TMetaFile.Create;
+  try
+    mf.Width := 400;
+    mf.Height := 400;
+    mc := TMetaFileCanvas.Create(mf, 0);
+    try
+      SetMapMode(mc.Handle, MM_ISOTROPIC);
+      SetWindowExtEx(mc.Handle, 1000, 1000, nil);
+      SetViewportExtEx(mc.Handle, 300, 300, nil);
+      Windows.Rectangle(mc.Handle, 100, 100, 600, 400);
+    finally
+      mc.Free;
+    end;
+    auto := RenderedEmf(mf); // the resolution asked from the printer
+    raised := false;
+    try
+      zero := RenderedEmf(mf, 300, 0);
+    except
+      raised := true;
+    end;
+  finally
+    mf.Free;
+  end;
+  Check(not raised, 'rendered with a resolution of 0');
+  Check(auto <> '', 'rendered');
+  CheckEqual(zero, auto, 'asked again');
+end;
+
 {$else}
 
 procedure TPdfImageGoldenTests.MetaFileCanvas;
@@ -1493,6 +2015,62 @@ var
   i: integer;
 begin
   for i := 1 to 8 do
+    Check(true, 'SKIP: metafiles are Windows only');
+end;
+
+procedure TPdfImageGoldenTests.MetaFileAlphaBlend;
+var
+  i: integer;
+begin
+  for i := 1 to 3 do
+    Check(true, 'SKIP: metafiles are Windows only');
+end;
+
+procedure TPdfImageGoldenTests.MetaFilePolyPolyline;
+var
+  i: integer;
+begin
+  for i := 1 to 4 do
+    Check(true, 'SKIP: metafiles are Windows only');
+end;
+
+procedure TPdfImageGoldenTests.MetaFileRestoreDC;
+var
+  i: integer;
+begin
+  for i := 1 to 5 do
+    Check(true, 'SKIP: metafiles are Windows only');
+end;
+
+procedure TPdfImageGoldenTests.MetaFileScaledRotation;
+var
+  i: integer;
+begin
+  for i := 1 to 4 do
+    Check(true, 'SKIP: metafiles are Windows only');
+end;
+
+procedure TPdfImageGoldenTests.MetaFileAnsiText;
+var
+  i: integer;
+begin
+  for i := 1 to 6 do
+    Check(true, 'SKIP: metafiles are Windows only');
+end;
+
+procedure TPdfImageGoldenTests.MetaFileDIBitsKept;
+var
+  i: integer;
+begin
+  for i := 1 to 4 do
+    Check(true, 'SKIP: metafiles are Windows only');
+end;
+
+procedure TPdfImageGoldenTests.MetaFilePrinterRes;
+var
+  i: integer;
+begin
+  for i := 1 to 3 do
     Check(true, 'SKIP: metafiles are Windows only');
 end;
 
