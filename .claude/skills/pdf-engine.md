@@ -497,7 +497,7 @@ BoxI(Rect, Normalize);   // TRect -> TPdfBox
 RectI(Rect, Normalize);  // TRect -> TPdfRect
 BoxInclI(Rect);          // EMR_RECTANGLE, EMR_ELLIPSE: + one device pixel
 BoxExclI(Rect);          // the fills of TPdfEnum.FillRectangle: as they are
-DevPixelX; DevPixelY;    // one device pixel in logical units: Win / View, signed
+DevPixelX; DevPixelY;    // one device pixel in logical units of the map mode: Win / View, signed
 ```
 
 How GDI records a box (measured, `MetaFileBoxes`): `Rectangle`, `Ellipse`
@@ -505,28 +505,58 @@ and `RoundRect(10, 10, 50, 50)` are stored as 10,10,49,49 - one **device**
 pixel inside, so 100,100,490,490 at 10 logical units per pixel
 (`MM_ANISOTROPIC`). With an axis mirrored (viewport extent -100) the box is
 recorded as 500,100,110,490: the recorded Right is the device-right edge, the
-smaller value. `BoxInclI` and `RoundRectI` add the signed pixel to the
-recorded Right/Bottom first and normalize after (`EMR_ROUNDRECT` passes the
-record as it is); #686 normalized first, which shifts a mirrored shape. A
+smaller value. Under `GM_ADVANCED` the box is recorded as called, 10..50,
+and GDI paints it with its right and bottom edges: 81 device pixels under a
+world scale of 2, 21 under 0.5 (measured on a memory DC, `MetaFileWorldBoxes`).
+Both ways the shape covers one device pixel more on the device's right and
+bottom: `BoxInclI` and `RoundRectI` map both corners, normalize, and add
+`fDevScaleX`/`fDevScaleY` - one device pixel in PDF points - to the device's
+right and bottom (`AddDevicePixel`): whatever the mapping, a mirrored map mode
+or the world scale, and on the page's left or top for a negative render
+scale of `RenderMetaFile`. A mirroring world transform - a scale with a
+negative factor, no shear - is a scale of the canvas too (`fWorldFactorX/Y`
+negative): shapes and positions are mirrored, the line width taken with
+`Abs`; a glyph is not mirrored but placed upright in the box GDI's mirrored
+one takes (`TextOut`: `w - ww` for X, the ascent and descent swapped for Y;
+its underline, strike-out and path frame start where the glyphs start and go
+along and across them turned by the font's angle, then times `sx` and `sy`,
+as the upright glyphs go on the device),
+and a bitmap only on Y (the DIB flip of `EMR_STRETCHDIBITS`) - this for one
+axis mirrored. Both factors negative, equal or not, turn the text by 180
+degrees: `TextOut` writes `-1 0 0 -1` from the aligned start, the size and
+the move coming from the canvas, and its lines turn with it (`sx`, `sy` stay
+1) (`MetaFileWorldReflection`). `I2X`/`I2Y`/`S2X`/`S2Y` apply the world scale
+and move before the window and viewport, as GDI maps world, page, device;
+they applied them after, wrong with a viewport origin or extent.
+They added a logical unit of the map mode per pixel, not divided by the world
+factor (82 and 20.5); #686 normalized before that, which shifted a mirrored
+shape. A
 `FillRect` (`EMR_BITBLT` with `PATCOPY`), `FillRgn` and the opaque rectangle
-of `ExtTextOut` are stored as called: `BoxExclI`. `BoxI` takes one logical
-unit off; the EMF renderer no longer uses it for shapes and fills, but still
-for `EMR_INTERSECTCLIPRECT` and the clip rectangle of `ExtTextOut`, which are
-exclusive too - one unit too narrow there (ROADMAP "Review Findings Not
-Fixed Yet", item 4). The corners of
-`RoundRectI` go through the mapping as the coordinates do. The pixel is one
-of the mapping `fWinSize`/`fViewSize`; the metric map modes set that mapping
-from `fPrinterPxPerInch` (`TPdfEnum.ScaleMatrix`), not from the reference DC,
-so there it is an approximation. Under a world scale the pixel is not
-divided by the world factor: the record holds integer logical units, what GDI
-rounds to is not measured yet (ROADMAP, item 5).
+of `ExtTextOut` are stored as called: `BoxExclI`, as are the exclusive
+rectangles of `EMR_INTERSECTCLIPRECT` and of an `ETO_CLIPPED` `ExtTextOut`
+(`MetaFileClipBoxes`). `BoxI` takes one logical unit off; the EMF renderer
+no longer uses it for shapes, fills and those two rectangles. The corners of
+`RoundRectI` go through the mapping as the coordinates do. The metric map
+modes set the viewport from `fPrinterPxPerInch` (`TPdfEnum.ScaleMatrix`), not
+from the reference DC, so there the device pixel is an approximation.
 
 The clip of `EMR_EXTSELECTCLIPRGN` is a `q ... W n` of the canvas: PDF can
 only narrow a clip, so a new one needs the `Q` of the one before. `TPdfEnum`
-keeps every region as PDF boxes (`fClipRegions`), each state names its own
+keeps every region as PDF boxes (`fClipRegions`; the rectangles of the
+record are device units, mapped by `DeviceBox` without window, viewport or
+world transform - as are the bounds of a record, `rclBounds`, with the right
+and bottom pixel included: `DeviceBoundsBox` for the meta region of
+`EMR_HEADER`, which clips a bitmap without a region, and the text clip of
+`tcClipExplicit`; `MetaFileBitmapBounds`), each state names its own
 (`ClipRegion`, saved and restored with the state), and `SelectClip` makes the
 canvas hold that one (`fClipActive`): from `ExtSelectClipRgn`, `RestoreDC`
-and, with 0, at the end of `RenderMetaFile`. `SetMetaRgn` keeps the `q` of the
+and, with 0, at the end of `RenderMetaFile`. `EMR_INTERSECTCLIPRECT` is such
+a region too (`IntersectClip`): each rectangle of the current region within
+the record's, or the record's alone without one, an empty box when nothing is
+left - GDI clips all output to it, shapes as well. The state's `ClipRgn` is
+the box around its region, which the text (`tcAlwaysClip`) and bitmaps clip
+to besides: it was never set for a region, so the text after
+`SelectClipRgn` clipped to an empty box. `SetMetaRgn` keeps the `q` of the
 clip as part of the meta region: a node of `fMetaClips` inside the ones kept
 before it, named by the state (`MetaClip`); a later clip opens its `q` inside,
 and `SelectClip` closes a node only when the state it restores lies outside.
@@ -571,9 +601,39 @@ in GDI. The painting
 record writes the text after its operator, in the render mode of its brush
 and pen (`PathTextPaint`, `Tr` 0, 1 or 2); a dropped path drops it. The text
 is painted after the other figures, not as one union with them, so the fill
-rule does not combine them (`MetaFileTextInPath`). A world rotation turns the
-text only: `ScaleMatrix` sets `fAngle`, which no coordinate reads, so every
-shape - the rectangles of text in a path too - is drawn unturned.
+rule does not combine them (`MetaFileTextInPath`). A world rotation turns
+the text only: the canvas maps a world scale alone (`fWorldFactorX/Y`,
+`fWorldOffsetX/Y` from `ScaleMatrix`), any other transform with factor 1 and
+offset 0, so every shape - the rectangles of text in a path too - is drawn
+unturned and unscaled, and only a rotation's text carries the transform in
+its own matrix, (eM11, -eM12, -eM21, eM22) as GDI's Y goes down and PDF's up;
+a shear is not applied at all, to text neither. They
+kept the scale and move of the transform before (`MetaFileWorldRotation`: the
+turned text of `emf_world` twice its size). A full transform of the geometry
+would map each point pair, as LibreOffice's emfio does: after the freeze.
+The path and its text are converted while recorded, as GDI keeps a path in
+device units: a world transform set before the painting record moves
+neither, only what follows (`MetaFileTransformAfterPath`). A layer comment
+(`GdiCommentBeginMarkContent`) within a path goes to the page, never to the
+path's streams: `EMR_GDICOMMENT` does not call `PathIn`. The path and its
+text are in the layer when its painting record is, as GDI paints them then
+(`MetaFileMarkedContentInPath`).
+
+A stock font (`GetStockObject`) is not recorded in the metafile:
+`SelectObjectFromIndex` takes its LOGFONT from this system (`GetObjectW`) and
+measures it on the reference DC as `CreateFont` does (`MeasureFont`), so its
+text does not keep the size and metrics of the font before; its size is of
+device pixels under any map mode, as in GDI, turned into logical units when
+selected and again when the map mode changes (`Font.StockFont`, from
+`ScaleMatrix`; the `SYSTEM_FONT` of `EMR_HEADER` too): `TFontSpec` holds
+them as `single`, as a fraction of a unit at 32 pixels per unit, with
+`height` for `abs(lfHeight)`, whose integer rounds to 0 there; `TextOut`
+sizes the positive `lfHeight` of a stock font by the cell, aligns by
+`height` and builds an opaque background in single precision. `EMR_HEADER`
+selects `SYSTEM_FONT`, the font of a new DC: text before any selection had
+size 0 (`MetaFileStockFontMetrics`). `DEFAULT_GUI_FONT` is recorded as a font
+of the metafile. An `EMR_EXTTEXTOUTA` decodes in the stock font's code page
+(`StockCodePage`, `MetaFileAnsiStockFont`).
 
 Records `TPdfEnum` reads through its own declarations: `EMR_CREATEBRUSHINDIRECT`
 and `EMR_EXTCREATEPEN` (`TEmrCreateBrushIndirect32`, `TEmrExtCreatePen32`).

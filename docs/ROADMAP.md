@@ -8,8 +8,9 @@ it produced in `.claude/skills/` — this file repeats neither.
 tagged output passes PAC 2024 with accepted hints only (W-1, W-2) and veraPDF
 `ua1`; PDF/A-3U with PDF/UA-1 is verified (R-17). Fonts are embedded and subset
 on all three platforms; tables carry `THead`/`TBody`/`TFoot` row groups.
-`test_runner` is green with 1615 assertions on Windows (FPC, Delphi 7,
-Delphi 2010 and Delphi 13), 1664 on macOS and 1631 on Linux (2026-10-29, pin `964874b88`). **Delphi:** layer
+`test_runner` is green with 1849 assertions on Windows (FPC, Delphi 7 and
+Delphi 13; Delphi 2010 is not measured on every change), 1898 on macOS and
+1865 on Linux (2026-10-31, pin `964874b88`). **Delphi:** layer
 1, the TCanvas bridge and the `TGDIPages` core build on Delphi 7 (R-19, R-20
 steps 1–6) and on Delphi 2010, a Unicode Delphi (R-25); all six console demos
 and the `--export` of the two GUI demos give the same PDF as FPC. Delphi 13
@@ -34,6 +35,36 @@ here until the post is written, then the list is emptied. It is the only such
 list: the CHANGELOG entry of the next release is written from it. Emptied for
 v0.10.0 (2026-09-30).
 
+- **Fixed (EMF):** a world transform that mirrors (`SetWorldTransform` with a
+  negative scale) was not applied: shapes and text stayed where they were.
+  They are mirrored now, with a positive line width; glyphs are not
+  mirrored, a text under both factors negative is turned by 180 degrees.
+  A world scale or move together with a viewport origin or extent placed
+  everything wrong: the world transform was applied after the viewport
+- **Fixed (EMF):** text under a world rotation other than 90, 180 or 270
+  degrees was turned the wrong way: at 30 degrees it was drawn at 150
+- **Fixed (EMF):** a world rotation or shear (`SetWorldTransform`) kept the
+  scale and the move of the transform before it: text and shapes drawn
+  under it were scaled and moved by that. Shapes are still drawn unturned
+- **Fixed (EMF):** a bitmap at the right or bottom edge of a metafile lost
+  its last two pixels, clipped to the bounds of the metafile less two; with
+  `tcClipExplicit` a text under a map mode other than `MM_TEXT` was clipped
+  to bounds in the wrong place and size
+- **Fixed (EMF):** a rectangle, ellipse or rounded rectangle under a world
+  scale (`SetWorldTransform`) was off by a fraction of a pixel, too small
+  below a scale of 1 and too large above it: GDI paints one device pixel
+  beyond the right and bottom edges, the renderer added one logical unit
+- **Fixed (EMF):** text in a stock font (`SelectObject` of
+  `GetStockObject(SYSTEM_FONT)` and the like) after a font of the metafile
+  was drawn in the size, face and position of that font, and text before
+  any font selection had size 0
+- **Fixed (EMF):** `IntersectClipRect` clipped nothing, and text after a
+  `SelectClipRgn` was clipped away. `IntersectClipRect` now clips all
+  output to the current clip within its rectangle, as GDI does: shapes,
+  text and bitmaps. The clip rectangles of `IntersectClipRect` and of
+  `ExtTextOut` with `ETO_CLIPPED` were one logical unit too narrow, and the
+  region of `SelectClipRgn`, in device pixels, was mapped as logical units:
+  wrong in place and size under any map mode but `MM_TEXT`
 - **Fixed (EMF):** text between `BeginPath` and `EndPath` was drawn at
   once, in the text colour, whatever became of the path. GDI adds it to
   the path: it is now painted with it, filled in the brush colour
@@ -765,8 +796,8 @@ agents, each claim verified again by Codex) found 28 bugs; the ones fixed
 then are in "To Announce" - in `mormot.pdf`, in the report and the bridge,
 and in the Uniscribe backend (`ReduceTtf`, the bidi levels) - and `{#}` and
 `{total}` in body text are documented behaviour. These wait, each with a
-test that fails before its fix. Items 1, 4 and 5 are also in the
-trunk's `mormot.ui.pdf`.
+test that fails before its fix. Item 1 is also in the trunk's
+`mormot.ui.pdf`.
 
 1. **Malformed fonts** (`mormot.pdf`): `TtfFontPostcriptName` reads the
    `name` records unchecked, `TPdfTtf.Create` and `GlyphHmtxWidth` the
@@ -781,17 +812,6 @@ trunk's `mormot.ui.pdf`.
    first column's paragraph in the tagged reading order (the renderer
    continues a block only from the command before): it needs the structure
    elements kept by block, decided with the tagging
-4. **EMF clip rectangles one unit too narrow** (`mormot.pdf.canvas`,
-   Windows): `EMR_INTERSECTCLIPRECT` and the clip rectangle of `ExtTextOut`
-   are exclusive, as GDI records them, but still go through `BoxI`, which
-   takes one logical unit off. Found with the boxes of #89; next: measure
-   them as the shapes were (`MetaFileBoxes`), then `BoxExclI` with a test
-5. **The device pixel of a box under a world scale** (`mormot.pdf.canvas`,
-   Windows): `DevPixelX`/`DevPixelY` (#89) are not divided by the world
-   factor, so a shape under a world scale grows by more than one device
-   pixel; the record holds integer logical units, so what GDI rounds to has
-   to be measured first. For the metric map modes the pixel comes from
-   `fPrinterPxPerInch`, not from the reference DC, an approximation too
 ### Underline and Strike-Out Are Not Drawn — bug, fix after R-28
 
 Found on 2026-10-10 in `invoice_demo` (branch `feature/invoice-demo`), whose
@@ -1249,8 +1269,9 @@ chart library's bitmap is to be built only when someone asks for it.
 
 ### EMF/MetaFile and GDI+ Gradients — no work planned
 
-Windows-only (`TPdfDocumentGdi`), not portable. Its known bugs wait in
-"Review Findings Not Fixed Yet", items 4 and 5.
+Windows-only (`TPdfDocumentGdi`), not portable. A known bug: a world
+rotation turns the text only, every shape is drawn unturned
+(`.claude/skills/pdf-engine.md`, text in a GDI path).
 
 ---
 

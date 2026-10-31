@@ -2213,6 +2213,8 @@ type
     function DevPixelY: single;
     // inclusive-inclusive GDI box (EMR_RECTANGLE, EMR_ELLIPSE)
     function BoxInclI(Box: TRect): TPdfBox;
+    // r normalized, one device pixel added on the device's right and bottom
+    procedure AddDevicePixel(var r: TPdfRect);
     // exclusive GDI box (FillRect = EMR_BITBLT PATCOPY)
     function BoxExclI(Box: TRect): TPdfBox;
     procedure DrawXObjectPrepare(const AXObjectName: PdfString);
@@ -12355,27 +12357,30 @@ begin
   result := ((Y - fWinOrg.Y) * fViewSize.cy / fWinSize.cy) + fViewOrg.Y
 end;
 
+// GDI maps world -> page -> device: the world scale and move first, then
+// the window and viewport (they were applied the other way round)
 function TPdfCanvas.I2X(X: integer): single;
 begin
-  result := fOffsetXDef + (fWorldOffsetX + ViewOffsetX(X) * fWorldFactorX) * fDevScaleX
+  result := fOffsetXDef +
+            ViewOffsetX(fWorldOffsetX + X * fWorldFactorX) * fDevScaleX
 end;
 
 function TPdfCanvas.I2Y(Y: integer): single;
 begin
   result := fPage.GetPageHeight - fOffsetYDef -
-            (fWorldOffsetY + ViewOffsetY(Y) * fWorldFactorY) * fDevScaleY
+            ViewOffsetY(fWorldOffsetY + Y * fWorldFactorY) * fDevScaleY
 end;
 
 function TPdfCanvas.S2X(X: single): single;
 begin
   result := fOffsetXDef +
-            (fWorldOffsetX + ViewOffsetX(X) * fWorldFactorX) * fDevScaleX;
+            ViewOffsetX(fWorldOffsetX + X * fWorldFactorX) * fDevScaleX;
 end;
 
 function TPdfCanvas.S2Y(Y: single): single;
 begin
   result := fPage.GetPageHeight - fOffsetYDef -
-            (fWorldOffsetY + ViewOffsetY(Y) * fWorldFactorY) * fDevScaleY;
+            ViewOffsetY(fWorldOffsetY + Y * fWorldFactorY) * fDevScaleY;
 end;
 
 procedure TPdfCanvas.LineToI(x, y: integer);
@@ -12409,13 +12414,12 @@ var
 begin
   // the corner size goes through the same window/viewport mapping as the
   // coordinates (MM_ANISOTROPIC metafiles), and the GDI box is
-  // inclusive-inclusive: one device pixel is added to the recorded
-  // right/bottom edges, before normalizing - see BoxInclI
+  // inclusive-inclusive - see BoxInclI
   r.Left   := I2X(x1);
-  r.Right  := S2X(x2 + DevPixelX);
+  r.Right  := I2X(x2);
   r.Top    := I2Y(y1);
-  r.Bottom := S2Y(y2 + DevPixelY);
-  NormalizeRect(r);
+  r.Bottom := I2Y(y2);
+  AddDevicePixel(r);
   RoundRect(r.Left, r.Bottom, r.Right, r.Top,
     Abs(I2X(x1 + cx) - I2X(x1)), -Abs(I2Y(y1 + cy) - I2Y(y1)));
 end;
@@ -12501,20 +12505,33 @@ begin
   result.Height := r.Bottom - r.Top;
 end;
 
-// GDI records the Right/Bottom of Rectangle/Ellipse one DEVICE pixel inside
-// the shape, i.e. several logical units with a screen reference DC: RectI()
-// removed one logical unit instead, and shapes were too small
-// - under a mirrored mapping the recorded Right is the smaller value (500,110
-// for 100..500 at -10 units per pixel): the signed pixel is added before the
-// box is normalized
+// GDI paints Rectangle/Ellipse with their right and bottom edges: one DEVICE
+// pixel more on the device's right and bottom, however the box was recorded
+// (one device pixel inside in GM_COMPATIBLE, as called in GM_ADVANCED) and
+// the map mode mirrored - a logical unit of the map mode was wrong under a
+// world scale; a negative render scale puts the device's right at the left
+procedure TPdfCanvas.AddDevicePixel(var r: TPdfRect);
+begin
+  NormalizeRect(r);
+  if fDevScaleX >= 0 then
+    r.Right := r.Right + fDevScaleX
+  else
+    r.Left := r.Left + fDevScaleX;
+  if fDevScaleY >= 0 then
+    r.Top := r.Top - fDevScaleY // PDF Y goes up: the device's bottom
+  else
+    r.Bottom := r.Bottom - fDevScaleY;
+end;
+
 function TPdfCanvas.BoxInclI(Box: TRect): TPdfBox;
 var
   r: TPdfRect;
 begin
   r.Left   := I2X(Box.Left);
-  r.Right  := S2X(Box.Right + DevPixelX);
+  r.Right  := I2X(Box.Right);
   r.Top    := I2Y(Box.Top);
-  r.Bottom := S2Y(Box.Bottom + DevPixelY);
+  r.Bottom := I2Y(Box.Bottom);
+  AddDevicePixel(r);
   result := PdfRectToBox(r);
 end;
 
