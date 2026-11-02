@@ -3371,14 +3371,21 @@ begin
           // the one of the font selected before
           fDC[fDCIndex].Font.Selected := false;
           fDC[fDCIndex].Font.StockCodePage := StockFontCodePage(iObject);
-          fDC[fDCIndex].Font.StockFont := iObject;
+          fDC[fDCIndex].Font.StockFont := 0;
           // the metafile does not record it: its LOGFONT on this system, or
           // the text kept the size, face and metrics of the font before
           if GetObjectW(GetStockObject(iObject), SizeOf(lf), @lf) <> 0 then
           begin
             MeasureFont(lf, fDC[fDCIndex].Font.LogFont, fDC[fDCIndex].Font.Spec);
-            // its size is of device pixels under any map mode, as in GDI;
-            // TextOut sizes its positive lfHeight by the cell
+            // a TrueType or vector face (DEFAULT_GUI_FONT) is sized in logical
+            // units, as a font of the metafile
+            if fDC[fDCIndex].Font.LogFont.lfPitchAndFamily and
+               (TMPF_TRUETYPE or TMPF_VECTOR) <> 0 then
+              exit;
+            // a raster face keeps its size of device pixels under any map
+            // mode, as in GDI: measured again when it changes; TextOut sizes
+            // its positive lfHeight by the cell
+            fDC[fDCIndex].Font.StockFont := iObject;
             px := Abs(fCanvas.DevPixelY);
             fDC[fDCIndex].Font.LogFont.lfHeight := round(lf.lfHeight * px);
             fDC[fDCIndex].Font.LogFont.lfWidth :=

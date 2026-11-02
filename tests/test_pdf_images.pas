@@ -1449,6 +1449,7 @@ const
   R_POLYPOLYLINE = 7;
   R_SAVEDC = 33;
   R_SELECTOBJECT = 37;
+  R_EXTCREATEFONTINDIRECTW = 82;
   R_RESTOREDC = 34;
   R_CREATEBRUSHINDIRECT = 39;
   R_STRETCHDIBITS = 81;
@@ -3038,14 +3039,18 @@ end;
 
 // text in the stock font Stock after a large Arial, or (Reference) in a font
 // created from the LOGFONT of that stock font; Mapped device pixels per
-// logical unit, 1 for MM_TEXT
+// logical unit, 1 for MM_TEXT; AsStock: selected by its stock index, as some
+// Windows builds record DEFAULT_GUI_FONT and others as a font of the metafile
 function StockFontEmf(Stock: integer; Reference: boolean;
-  Mapped: integer): RawUtf8;
+  Mapped: integer; AsStock: boolean = false): RawUtf8;
 var
   mf: TMetaFile;
   mc: TMetaFileCanvas;
   lf: TLogFontW;
   f, g: HFONT;
+  bytes: RawByteString;
+  fonts, sel: TIntegerDynArray;
+  i, j: PtrInt;
 begin
   FillChar(lf, SizeOf(lf), 0);
   lf.lfHeight := -40;
@@ -3075,6 +3080,22 @@ begin
       SelectObject(mc.Handle, GetStockObject(SYSTEM_FONT));
     finally
       mc.Free;
+    end;
+    if AsStock then
+    begin
+      // a font of the metafile of the stock font's face: selected by index
+      bytes := EmfBytes(mf);
+      fonts := EmfRecords(bytes, R_EXTCREATEFONTINDIRECTW);
+      sel := EmfRecords(bytes, R_SELECTOBJECT);
+      for i := 0 to high(fonts) do
+        if CompareMem(@PByteArray(bytes)[fonts[i] + 40], @lf.lfFaceName,
+             SizeOf(lf.lfFaceName)) then
+          for j := 0 to high(sel) do
+            if PCardinal(@PByteArray(bytes)[sel[j] + 8])^ =
+               PCardinal(@PByteArray(bytes)[fonts[i] + 8])^ then
+              PCardinal(@PByteArray(bytes)[sel[j] + 8])^ :=
+                $80000000 or cardinal(Stock);
+      mf.Handle := SetEnhMetaFileBits(length(bytes), pointer(bytes));
     end;
     result := RenderedEmf(mf);
   finally
@@ -3232,9 +3253,16 @@ begin
     begin
       mapped := StockFontEmf(STOCK[i], false, SCALES[m]);
       if STOCK[i] = DEFAULT_GUI_FONT then
+      begin
+        // a TrueType face: logical units, as a font of the metafile - and
+        // so selected by its stock index
         Check(Abs(LastFontSize(mapped, '(Stock) Tj') -
                   SCALES[m] * LastFontSize(txt, '(Stock) Tj')) < 0.02,
-          'a font of the metafile: of logical units')
+          'a font of the metafile: of logical units');
+        Check(Abs(LastFontSize(StockFontEmf(STOCK[i], false, SCALES[m], true),
+          '(Stock) Tj') - SCALES[m] * LastFontSize(txt, '(Stock) Tj')) < 0.02,
+          'by its stock index: of logical units');
+      end
       else
         Check(Abs(LastFontSize(mapped, '(Stock) Tj') -
                   LastFontSize(txt, '(Stock) Tj')) < 0.02,
@@ -4071,7 +4099,7 @@ begin
           (length(b) = 1) and
           SameBox(PathBox(a[0]), PathBox(b[0])), msg);
     CheckEqual(LastTextState(prior, '(Turned) Tj'),
-      LastTextState(fresh, '(Turned) Tj'), msg);
+      LastTextState(fresh, '(Turned) Tj'), StringToUtf8(msg));
     // the text matrix of a rotation: Y goes down in GDI, up in PDF
     if i < 2 then
       Check((Abs(OperandAt(fresh, ' Tm'#10, 0, 0) - M[i, 0]) < 0.01) and
@@ -4534,7 +4562,7 @@ procedure TPdfImageGoldenTests.MetaFileStockFontMetrics;
 var
   i: integer;
 begin
-  for i := 1 to 27 do
+  for i := 1 to 29 do
     Check(true, 'SKIP: metafiles are Windows only');
 end;
 

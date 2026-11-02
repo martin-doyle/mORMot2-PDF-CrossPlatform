@@ -622,8 +622,10 @@ text are in the layer when its painting record is, as GDI paints them then
 A stock font (`GetStockObject`) is not recorded in the metafile:
 `SelectObjectFromIndex` takes its LOGFONT from this system (`GetObjectW`) and
 measures it on the reference DC as `CreateFont` does (`MeasureFont`), so its
-text does not keep the size and metrics of the font before; its size is of
-device pixels under any map mode, as in GDI, turned into logical units when
+text does not keep the size and metrics of the font before. A raster face
+(`SYSTEM_FONT`, `ANSI_FIXED_FONT`: neither `TMPF_TRUETYPE` nor `TMPF_VECTOR`)
+keeps its size of device pixels under any map mode, as in GDI, turned into
+logical units when
 selected and again when the map mode changes (`Font.StockFont`, from
 `ScaleMatrix`; the `SYSTEM_FONT` of `EMR_HEADER` too): `TFontSpec` holds
 them as `single`, as a fraction of a unit at 32 pixels per unit, with
@@ -631,8 +633,12 @@ them as `single`, as a fraction of a unit at 32 pixels per unit, with
 sizes the positive `lfHeight` of a stock font by the cell, aligns by
 `height` and builds an opaque background in single precision. `EMR_HEADER`
 selects `SYSTEM_FONT`, the font of a new DC: text before any selection had
-size 0 (`MetaFileStockFontMetrics`). `DEFAULT_GUI_FONT` is recorded as a font
-of the metafile. An `EMR_EXTTEXTOUTA` decodes in the stock font's code page
+size 0 (`MetaFileStockFontMetrics`). A TrueType or vector face
+(`DEFAULT_GUI_FONT`) is sized in logical units, as a font of the metafile -
+measured on Windows 26300 from the bounds GDI records. That build
+records `DEFAULT_GUI_FONT` by its stock index (`0x80000011`), 26200 as a font
+of the metafile; the test takes both. An `EMR_EXTTEXTOUTA` decodes in the
+stock font's code page
 (`StockCodePage`, `MetaFileAnsiStockFont`).
 
 Records `TPdfEnum` reads through its own declarations: `EMR_CREATEBRUSHINDIRECT`
