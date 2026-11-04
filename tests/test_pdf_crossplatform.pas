@@ -28,6 +28,8 @@ type
   published
     procedure TestPlatformRegistration;
     procedure TestScreenLogPixels;
+    /// the integer coordinate methods map 1:1 before any metafile
+    procedure TestIntegerCoordinates;
     procedure TestFontEnumeration;
     procedure TestFontMetrics;
     procedure TestWinAnsiHighRangeWidths;
@@ -376,6 +378,33 @@ begin
   finally
     PDF.Free;
   end;
+end;
+
+procedure TPdfCrossPlatTests.TestIntegerCoordinates;
+var
+  doc: TPdfDocument;
+  ms: TMemoryStream;
+  pdf: RawByteString;
+begin
+  { the window, viewport and world factors were 0 until a metafile set
+    them: MoveToI and LineToI of a descendant wrote NaN (synopse/mORMot2#712) }
+  doc := TPdfDocument.Create;
+  ms := TMemoryStream.Create;
+  try
+    doc.CompressionMethod := cmNone;
+    doc.AddPage;
+    TPdfCanvasPeek(doc.Canvas).MoveToI(100, 100);
+    TPdfCanvasPeek(doc.Canvas).LineToI(200, 300);
+    doc.Canvas.Stroke;
+    doc.SaveToStream(ms);
+    FastSetRawByteString(pdf, ms.Memory, ms.Size);
+  finally
+    ms.Free;
+    doc.Free;
+  end;
+  Check(PosEx(#10'100 742 m'#10, pdf) > 0, 'MoveToI as MM_TEXT');
+  Check(PosEx(#10'200 542 l'#10, pdf) > 0, 'LineToI as MM_TEXT');
+  Check(PosEx('Nan', pdf) = 0, 'no NaN');
 end;
 
 procedure TPdfCrossPlatTests.TestFontEnumeration;
