@@ -10975,6 +10975,14 @@ begin
   fDevScaleX := 1;
   fDevScaleY := 1;
   fMappingMode := MM_TEXT;
+  // the identity of MM_TEXT until a metafile maps its own: the integer
+  // coordinate methods computed 0/0 before
+  fWinSize.cx := 1;
+  fWinSize.cy := 1;
+  fViewSize.cx := 1;
+  fViewSize.cy := 1;
+  fWorldFactorX := 1;
+  fWorldFactorY := 1;
   fUseMetaFileTextPositioning := tpSetTextJustification;
   fKerningHScaleBottom := 99.0;
   fKerningHScaleTop := 101.0;
