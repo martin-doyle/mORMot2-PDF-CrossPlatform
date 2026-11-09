@@ -35,6 +35,10 @@ here until the post is written, then the list is emptied. It is the only such
 list: the CHANGELOG entry of the next release is written from it. Emptied for
 v0.10.0 (2026-09-30).
 
+- **Changed (fonts):** a code of a format 4 cmap whose `idRangeOffset`
+  points into the table before the glyph array is drawn with the glyph word
+  found there, as GDI and the trunk's `mormot.ui.pdf` map it; since the
+  bounds of PR #90 it was glyph 0
 - **Fixed:** the integer coordinate methods of `TPdfCanvas` (`MoveToI`,
   `LineToI` and the like, protected) wrote `Nan` when a descendant called
   them before any metafile: the canvas starts with the identity of
