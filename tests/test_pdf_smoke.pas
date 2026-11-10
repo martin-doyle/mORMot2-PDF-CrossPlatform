@@ -125,6 +125,8 @@ type
     procedure TestJpegColorSpace;
     /// a glyph that advances by 0 measures 0
     procedure TestZeroAdvanceMeasured;
+    /// FileFormat never goes below what the document's features need
+    procedure TestFileFormatFloor;
   private
     procedure CheckNoSimpleCmap(const aFamily, aCmap: RawUtf8);
   end;
@@ -2948,6 +2950,91 @@ begin
   finally
     PDF.Free;
   end;
+end;
+
+// the header of PDF saved, after FileFormat was set to Lower
+function SavedHeader(PDF: TPdfDocument; Lower: TPdfFileFormat): RawUtf8;
+var
+  Stream: TMemoryStream;
+begin
+  Stream := TMemoryStream.Create;
+  try
+    PDF.FileFormat := Lower;
+    PDF.AddPage;
+    PDF.SaveToStream(Stream);
+    result := copy(StreamToRaw(Stream), 1, 8);
+  finally
+    Stream.Free;
+  end;
+end;
+
+procedure TPdfSmokeTests.TestFileFormatFloor;
+var
+  PDF: TPdfDocument;
+  {$ifndef NO_USE_PDFSECURITY}
+  Enc: TPdfEncryption;
+  {$endif NO_USE_PDFSECURITY}
+begin
+  { FileFormat was a plain field: a value set after PDF/A, Tagged or an
+    encryption wrote a header below what the file uses - TGDIPages.ExportPdf
+    set its default pdf13 after creating a PDF/A-3 document }
+  PDF := TPdfDocument.Create(false, 0, pdfa3U);
+  try
+    CheckEqual(SavedHeader(PDF, pdf13), '%PDF-1.7', 'PDF/A-3');
+    Check(PDF.FileFormat = pdf17, 'PDF/A-3: FileFormat reads the raised value');
+  finally
+    PDF.Free;
+  end;
+  PDF := TPdfDocument.Create;
+  try
+    PDF.Tagged := true;
+    CheckEqual(SavedHeader(PDF, pdf14), '%PDF-1.7', 'Tagged');
+  finally
+    PDF.Free;
+  end;
+  PDF := TPdfDocument.Create;
+  try
+    PDF.UseOptionalContent := true;
+    PDF.GeneratePdf15File := false;
+    Check(PDF.FileFormat = pdf15, 'optional content: GeneratePdf15File off');
+  finally
+    PDF.Free;
+  end;
+  // NewDoc rebuilds the floor: a level removed frees it, Tagged keeps it
+  PDF := TPdfDocument.Create(false, 0, pdfa3U);
+  try
+    PDF.PdfA := pdfaNone; // calls NewDoc
+    CheckEqual(SavedHeader(PDF, pdf14), '%PDF-1.4', 'PDF/A removed');
+  finally
+    PDF.Free;
+  end;
+  PDF := TPdfDocument.Create;
+  try
+    PDF.Tagged := true;
+    PDF.NewDoc;
+    CheckEqual(SavedHeader(PDF, pdf14), '%PDF-1.7', 'Tagged after NewDoc');
+  finally
+    PDF.Free;
+  end;
+  // a floor, not a freeze: a value the caller raised can be lowered again
+  PDF := TPdfDocument.Create;
+  try
+    PDF.FileFormat := pdf17;
+    CheckEqual(SavedHeader(PDF, pdf14), '%PDF-1.4', 'a plain document');
+  finally
+    PDF.Free;
+  end;
+  {$ifndef NO_USE_PDFSECURITY}
+  Enc := TPdfEncryption.New(elAES_256, 'user', 'owner', PDF_PERMISSION_NOMODIF);
+  PDF := TPdfDocument.Create(false, 0, pdfaNone, Enc);
+  try
+    CheckEqual(SavedHeader(PDF, pdf14), '%PDF-1.7', 'AES-256');
+  finally
+    PDF.Free;
+  end;
+  {$else}
+  Check(true, 'SKIP: no encryption');
+  {$endif NO_USE_PDFSECURITY}
 end;
 
 {$ifdef PDF_HASVCLCANVAS}

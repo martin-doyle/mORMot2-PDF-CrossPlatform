@@ -871,7 +871,8 @@ end;
 
 procedure TReportTests.TestExportPdfPageMode;
 
-  function MakePdf(Mode: TPdfPageMode; Level: TPdfALevel): RawUtf8;
+  function MakePdf(Mode: TPdfPageMode; Level: TPdfALevel;
+    Tagged: boolean = true): RawUtf8;
   var
     Report: TGDIPages;
     MS: TMemoryStream;
@@ -881,7 +882,8 @@ procedure TReportTests.TestExportPdfPageMode;
     MS := TMemoryStream.Create;
     try
       Report.ExportPdfLevel := Level;
-      Report.ExportPdfTagged := Level <> pdfaNone;
+      Report.ExportPdfTagged := Tagged and
+                                (Level <> pdfaNone);
       Report.NewPage;
       Report.DrawHeading(1, 'Invoice');
       Report.EndDoc;
@@ -911,6 +913,10 @@ begin
   s := MakePdf(pmUseAttachments, pdfa3U);
   Check(PosEx('/PageMode/UseAttachments', s) > 0, 'with PDF/A-3U as well');
   Check(PosEx('%PDF-1.7', s) = 1, 'PDF/A-3 stays at 1.7');
+  // without Tagged, which raised it again: the default ExportPdfFileFormat
+  // pdf13 was set after the PDF/A-3 document was created
+  s := MakePdf(pmUseNone, pdfa3U, false);
+  Check(PosEx('%PDF-1.7', s) = 1, 'PDF/A-3 untagged stays at 1.7');
   { PDF/A-1 is PDF 1.4: the mode is refused, even without any attachment }
   Report := TGDIPages.Create(nil);
   MS := TMemoryStream.Create;

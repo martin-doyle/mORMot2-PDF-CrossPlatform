@@ -415,7 +415,7 @@ Report.ExportPdfStandardFonts  := False;     // keep the TrueType faces (true: T
 Report.ExportPdfTagged         := True;      // before the first NewPage, else EPdfReport
 Report.ExportPdfLanguage       := 'en';      // /Lang of a tagged export
 Report.ExportPdfLevel          := pdfa3U;    // PDF/A level, pdfaNone (default) … pdfa3U
-Report.ExportPdfFileFormat     := pdf17;     // PDF version header (default: pdf13)
+Report.ExportPdfFileFormat     := pdf17;     // PDF version header (default: pdf13), never below what the level and Tagged need
 Report.ExportPdfAuthor         := 'Company'; // empty = Author
 Report.ExportPdfSubject        := 'Report';  // empty = Subject
 Report.ExportPdfCreator        := 'My App';  // /Creator; empty = executable name

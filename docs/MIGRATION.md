@@ -169,7 +169,7 @@ millimetres.
 | `ExportPdfStream(Stream, RaiseException)` | the same |
 | `ExportPdfEmbeddedTTF` (default false) | the same, default true |
 | - (the trunk never replaced fonts) | `ExportPdfStandardFonts`, default **true**: Arial, Times New Roman and Courier New become the unembedded Helvetica, Times and Courier, with their metrics and WinAnsi only. Set it to false before the first `NewPage` to keep the TrueType faces (`ExportPdfTagged` does that itself) |
-| `ExportPdfGeneratePdf15File` (false: PDF 1.4) | `ExportPdfFileFormat`, default `pdf13`: `pdf14` or `pdf15` for the trunk's output |
+| `ExportPdfGeneratePdf15File` (false: PDF 1.4) | `ExportPdfFileFormat`, default `pdf13`: `pdf14` or `pdf15` for the trunk's output; raised to what `ExportPdfLevel` and `ExportPdfTagged` need |
 | `ExportPdfApplication` (`/Creator`, the application title when empty) | `ExportPdfCreator` (the executable's name when empty) |
 | `ShowPreviewForm(Buttons)` | `ShowReportPreview(Report)`: modal, navigation and zoom, LCL only |
 | `PrintPages(From, To)` - 1-based, (0, 0) all, negative a dialog | `PrintReport(Report, From, To)` - 0-based, all by default, the current printer settings, no dialog |
