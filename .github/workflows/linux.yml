@@ -24,9 +24,9 @@ concurrency:
 env:
   # the pinned commit (docs/REFACTORING.md, Phase 0 step 3): during the
   # refactoring a commit of the font-layer branch of landrix/mORMot2, which
-  # is the trunk (merged in, last on 2026-10-26) plus the new mormot.lib.* units
+  # is the trunk (merged in, last on 2026-11-10) plus the new mormot.lib.* units
   MORMOT2_REPO: landrix/mORMot2
-  MORMOT2_COMMIT: 964874b888759b0ff1947c22167faa99e2777812
+  MORMOT2_COMMIT: 6fab7e59fbb1c3959f63f9d0a460b79c2c5053cd
   TARGET: x86_64-linux
   # the official image of the veraPDF project
   VERAPDF_IMAGE: verapdf/cli:v1.30.2

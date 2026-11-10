@@ -202,7 +202,8 @@ checked against that record:
 
    **Pinned:** `d60cc6e80` (2026-10-02); from Phase 1 on a commit of the
    `pdf-font-layer` branch of `landrix/mORMot2`, which is the trunk - since
-   `964874b88` the trunk of 2026-10-26, from `287ef426f` that of 2026-10-18,
+   `6fab7e59f` the trunk of 2026-11-09, from `964874b88` that of 2026-10-26,
+   from `287ef426f` that of 2026-10-18,
    before it `d60cc6e80` - plus the new
    `mormot.lib.*` units (see Phase 1, "Where the code lives"):
    `89d652a77` (2026-10-04, `mormot.lib.core` added, no other change), then
@@ -261,7 +262,18 @@ checked against that record:
    golden files recorded on the old pin unchanged, the 45 demo PDFs of
    `2026-10-26_pr91` identical to `2026-10-25_pr86` after normalizing,
    veraPDF `ua1` and `3u` and Mustang pass; FPC 3.2.2 Win32 has the 11
-   failures of the old pin; the Linux CI pin moves with it).
+   failures of the old pin; the Linux CI pin moves with it), then
+   `6fab7e59f` (2026-11-10, the trunk up to `751c1a03a` of 2026-11-09 merged
+   in - 238 commits, among them synopse/mORMot2#688, #690 (AES-256 and PDF
+   2.0), #695, #696, #700, #702, #710, #713 and #714 - `mormot.ui.pdf`
+   and its tests, which the engine does not use - and changes in `core`
+   (RTTI thread safety, `WinVerifyExeSignature`), `crypt`, `net`, `db` and
+   `rest`; the one conflict in the Lazarus package, where both sides added
+   three units; checked: `test_runner` 1854/1854 on Windows (FPC 3.3.1
+   aarch64, FPC 3.2.2 Win64, Delphi 7, Delphi 13 Win32/Win64), 1870/1870 on
+   Linux aarch64, 1903/1903 on macOS aarch64, the golden files recorded on
+   the old pin unchanged; FPC 3.2.2 Win32 has the 11 failures of the old
+   pin; the Linux CI pin moves with it).
    **Checked:** against `d60cc6e80`, today's `main`,
    `test_runner` 259/259 on Windows (FPC Win64, Delphi 7, Delphi 2010),
    298/298 on Linux, 317/317 on macOS (fpcupdeluxe, FPC 3.2.3). Against
