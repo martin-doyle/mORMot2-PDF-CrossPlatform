@@ -6667,13 +6667,18 @@ begin
 end;
 
 function TPdfTtf.GlyphIndex(Index: PtrInt): integer;
+var
+  p: PtrUInt;
 begin
-  // within the table read: a broken cmap is no glyph, not a GPF
-  if (Index < 0) or
-     (PtrUInt(@glyphIndexArray[Index]) + 2 > PtrUInt(fcmap) + fcmapSize) then
+  // within the table read: a broken cmap is no glyph, not a GPF - a word
+  // before the glyph array is read, as GDI maps such a code (the formula
+  // never points before idRangeOffset[i]: the lower bound is a guard)
+  p := PtrUInt(PtrInt(glyphIndexArray) + Index * 2);
+  if (p < PtrUInt(fcmap)) or
+     (p + 2 > PtrUInt(fcmap) + fcmapSize) then
     result := 0
   else
-    result := glyphIndexArray[Index];
+    result := PWord(p)^;
 end;
 
 constructor TPdfTtf.CreateCmap(const aFace: IFontFace);

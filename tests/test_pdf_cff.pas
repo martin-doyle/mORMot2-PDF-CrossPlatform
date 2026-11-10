@@ -1781,12 +1781,13 @@ begin
     [$100, $101, 2 - $100, 0, $ffff, $ffff, 1, 0], [], 200)])),
     'arrays past the table');
   // U+0100 reads glyphIndexArray[-2] - idRangeOffset[1] - in the table,
-  // before the glyph array; U+0101 its glyphIndexArray[0]
+  // before the glyph array: the word there, 4, as GDI maps it (it was 0);
+  // U+0101 its glyphIndexArray[0]
   sub := Format4Subtable([$100, $100, 0, 2, $101, $101, 0, 4,
     $ffff, $ffff, 1, 0], [5]);
   ttf := CmapOf(CmapTable([3, 1, 0], [sub]));
   try
-    CheckEqual(ttf.GlyphOf($100), 0, 'GlyphOf: before the glyph array');
+    CheckEqual(ttf.GlyphOf($100), 4, 'GlyphOf: before the glyph array');
     CheckEqual(ttf.GlyphOf($101), 5, 'GlyphOf: in the glyph array');
   finally
     ttf.Free;
@@ -1802,7 +1803,7 @@ begin
   end;
   s := FakeFacePdf(FakeFaceOfCmap(CmapTable([3, 1, 0], [sub])), TWO_CHARS);
   Check(PosEx('<0005>', s) > 0, 'U+0101 drawn');
-  Check(PosEx('<00040005>', s) = 0, 'U+0100 not drawn by idRangeOffset[1]');
+  Check(PosEx('<00040005>', s) > 0, 'U+0100 drawn by idRangeOffset[1]');
   // a segment U+0160..U+0150: no code, not a count of -15
   sub := Format4Subtable([$100, $101, 2 - $100, 0, $160, $150, 0, 0,
     $ffff, $ffff, 1, 0], []);
