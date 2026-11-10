@@ -8,9 +8,9 @@ it produced in `.claude/skills/` — this file repeats neither.
 tagged output passes PAC 2024 with accepted hints only (W-1, W-2) and veraPDF
 `ua1`; PDF/A-3U with PDF/UA-1 is verified (R-17). Fonts are embedded and subset
 on all three platforms; tables carry `THead`/`TBody`/`TFoot` row groups.
-`test_runner` is green with 1854 assertions on Windows (FPC, Delphi 7 and
-Delphi 13; Delphi 2010 is not measured on every change), 1903 on macOS and
-1870 on Linux (2026-11-04, pin `964874b88`). **Delphi:** layer
+`test_runner` is green with 1856 assertions on Windows (FPC, Delphi 7 and
+Delphi 13; Delphi 2010 is not measured on every change), 1905 on macOS and
+1872 on Linux (2026-11-10, pin `964874b88`). **Delphi:** layer
 1, the TCanvas bridge and the `TGDIPages` core build on Delphi 7 (R-19, R-20
 steps 1–6) and on Delphi 2010, a Unicode Delphi (R-25); all six console demos
 and the `--export` of the two GUI demos give the same PDF as FPC. Delphi 13
@@ -35,6 +35,9 @@ here until the post is written, then the list is emptied. It is the only such
 list: the CHANGELOG entry of the next release is written from it. Emptied for
 v0.10.0 (2026-09-30).
 
+- **Fixed (EMF):** `SelectClipRgn` of an empty region wrote a clip without a
+  path (`n h W n`), which a viewer may take as no clip: what followed, a
+  bitmap for one, could stay visible. It clips everything now, as in GDI
 - **Fixed:** the integer coordinate methods of `TPdfCanvas` (`MoveToI`,
   `LineToI` and the like, protected) wrote `Nan` when a descendant called
   them before any metafile: the canvas starts with the identity of
