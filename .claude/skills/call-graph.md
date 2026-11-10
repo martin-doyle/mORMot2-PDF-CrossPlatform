@@ -271,7 +271,8 @@ TGDIPages.ExportPdfStream(aDest: TStream; aRaiseException = false): boolean
   │  Doc := TPdfDocumentVcl.Create(UseOutlines, 0, ExportPdfLevel)
   │  Doc.Info: Title (tagged without one: the first H1), Creator
   │    (ExportPdfCreator or the program name), Author, Subject
-  │  Doc.FileFormat            := ExportPdfFileFormat   (default pdf13; set pdf17 for ISO 32000-1)
+  │  Doc.FileFormat            := ExportPdfFileFormat   (default pdf13; set pdf17 for ISO 32000-1;
+  │                               SetFileFormat keeps the floor of the PDF/A level)
   │  if ExportPdfTagged:
   │    Doc.Tagged  := True          ← raises FileFormat to pdf17 AND picks the
   │                                   PDF/UA font mode (see Path 10)
@@ -779,7 +780,7 @@ TPdfEncryption.New(elAES_128, userPw, ownerPw, perms)
       inherits TPdfEncryption.Create: stores passwords, permissions
 
 TPdfEncryptionAES128.AttachDocument(aDoc)   ← from NewDoc, after the /ID
-  aDoc.fFileFormat raised to pdf16 if lower
+  aDoc.NeedFileFormat(pdf16): FileFormat and its floor
   Key derivation (same as RC4-128 / Algorithm 3.2):
     Pad(user) → usr[32];  Pad(owner) → own[32]
     MD5(own) × 50 iterations → ownerKeyMD5[16]
@@ -810,7 +811,7 @@ AES-256 (`elAES_256`, ISO 32000-2 R=6) has no per-object key:
 
 ```
 TPdfEncryptionAES256.AttachDocument(aDoc)   ← from NewDoc
-  aDoc.fFileFormat raised to pdf17 if lower
+  aDoc.NeedFileFormat(pdf17): FileFormat and its floor
   TAesPrng → fFileKey[32]; fAes := TAesCbc.Create(fFileKey, 256)
   Wrap(user UTF-8, no user key) → /U = Hash2B(validation salt) + 2 salts,
     /UE = AES-256-CBC(Hash2B(key salt), IV 0) of fFileKey
@@ -869,7 +870,7 @@ TPdfDocument.SetTagged(true)
   raises ESynException if fRawPages.Count > 0   ← too late: the pages were
                                                   measured with another face
   fTagged := true
-  fFileFormat raised to pdf17
+  NeedFileFormat(pdf17): FileFormat and its floor
   PDF/UA font mode: fStandardFontsReplace := false; fEmbeddedTtf := true;
                     fEmbeddedWholeTtf := not PdfCanSubsetRetainingGids
                     ← both subsetters keep the glyph IDs, so /ToUnicode stays

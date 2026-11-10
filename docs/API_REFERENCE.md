@@ -84,7 +84,7 @@ Doc.SetStrokeAlpha(0.8);  // stroke opacity 0..1
 | `EmbeddedTtf` | boolean | Embed TrueType fonts |
 | `StandardFontsReplace` | boolean | Use Type1 fonts instead of TTF |
 | `PdfA` | `TPdfALevel` | pdfaNone, pdfa1A, pdfa1B, pdfa2A, pdfa2B, pdfa3A, pdfa3B, pdfa3U — pass it to the constructor: the setter calls `NewDoc` |
-| `FileFormat` | `TPdfFileFormat` | pdf13 (default) … pdf17; auto-raised by PdfA / Tagged |
+| `FileFormat` | `TPdfFileFormat` | pdf13 (default) … pdf17; auto-raised by PdfA / Tagged / encryption / optional content, and never set below what they need |
 | `Tagged` | boolean | Enable Tagged PDF (ISO 32000-1 §14); auto-raises `FileFormat` to pdf17 |
 | `DefaultLanguage` | string | BCP-47 language tag for `/Lang` (default `'en'`) |
 | `Info.Title` | string | PDF metadata |

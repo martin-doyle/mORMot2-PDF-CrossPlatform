@@ -1571,6 +1571,8 @@ type
     fMissingBookmarks: TRawUtf8List;
     fLastOutline: TPdfOutlineEntry; // used by CreateOutline
     fFileFormat: TPdfFileFormat;
+    // the version the document's features need: FileFormat never goes below
+    fFileFormatMin: TPdfFileFormat;
     fHeaderFileFormat: TPdfFileFormat;
     fPdfA: TPdfALevel;
     fTagged: boolean;
@@ -1589,6 +1591,9 @@ type
     fFileID: THash128;
     function GetGeneratePdf15File: boolean;
     procedure SetGeneratePdf15File(Value: boolean);
+    procedure SetFileFormat(Value: TPdfFileFormat);
+    // a feature needs at least Value: raises FileFormat and its floor
+    procedure NeedFileFormat(Value: TPdfFileFormat);
     procedure SetTagged(Value: boolean);
     function GetInfo: TPdfInfo;
       {$ifdef HASINLINE}inline;{$endif}
@@ -2018,8 +2023,10 @@ type
     /// select the PDF version written to the file header (%PDF-1.x)
     // - default is pdf13; pdf17 = ISO 32000-1 (2008)
     // - PDF/A levels auto-raise this value (pdfa1x -> pdf14, pdfa2x/3x -> pdf17)
+    // - a value below what the document's features already need (PDF/A,
+    // Tagged, encryption, optional content...) is raised to it
     property FileFormat: TPdfFileFormat
-      read fFileFormat write fFileFormat;
+      read fFileFormat write SetFileFormat;
     /// enable Tagged PDF (ISO 32000-1 14) accessibility structure tags
     // - adds /MarkInfo, /Lang and /StructTreeRoot to the document catalog
     // - must be set before the first AddPage call
@@ -8965,6 +8972,11 @@ begin
   fBookMarks.Clear;
   fMissingBookmarks.Clear;
   FreeDoc;
+  // the floor of FileFormat is rebuilt from what this document keeps:
+  // PDF/A, optional content and encryption below, Tagged here
+  fFileFormatMin := pdf13;
+  if fTagged then
+    NeedFileFormat(pdf17);
   // freed with the objects above: a later test of them must see nil
   fMetaData := nil;
   fOutputIntents := nil;
@@ -9013,8 +9025,7 @@ begin
   needFileID := false;
   if fUseOptionalContent then
   begin
-    if fFileFormat < pdf15 then
-      fFileFormat := pdf15;
+    NeedFileFormat(pdf15);
     dic := TPdfDictionary.Create(fXRef);
     dicD := TPdfDictionary.Create(fXRef);
     dicD.AddItem('BaseState', 'ON');  // must be ON in default configuration
@@ -9035,11 +9046,10 @@ begin
   begin
     if fPdfA >= pdfa2A then
     begin // PDF/A-2 is a subtype of 1.7 (ISO 32000-1:2008)
-      if fFileFormat < pdf17 then
-        fFileFormat := pdf17;
+      NeedFileFormat(pdf17);
     end
-    else if fFileFormat < pdf14 then
-      fFileFormat := pdf14;
+    else
+      NeedFileFormat(pdf14);
     {$ifdef USE_PDFSECURITY}
     if fEncryption <> nil then
       raise EPdfInvalidOperation.Create(
@@ -9141,8 +9151,7 @@ begin
     if fStructTree = nil then
     begin
       // lazy catalog setup: add MarkInfo, Lang, StructTreeRoot on first AddPage
-      if fFileFormat < pdf14 then
-        fFileFormat := pdf14;
+      NeedFileFormat(pdf14);
       fRoot.Data.AddItem('MarkInfo', TPdfRawText.Create('<</Marked true>>'));
       // PDF/UA-1 7.1: the viewer has to show the title, not the file name
       fRoot.ViewerPreference := fRoot.ViewerPreference + [vpDisplayDocTitle];
@@ -9360,8 +9369,8 @@ begin
     if fPdfA in [pdfa1A, pdfa1B] then
       raise EPdfInvalidOperation.Create(
         'PageMode UseAttachments not allowed with PDF/A-1')
-    else if fFileFormat < pdf16 then
-      fFileFormat := pdf16;
+    else
+      NeedFileFormat(pdf16);
   // the font programs known so far, before the version is written
   for i := 0 to fFontList.Count - 1 do
     if TPdfFont(fFontList.List[i]).fTrueTypeFontsIndex <> 0 then
@@ -10065,10 +10074,7 @@ begin
     raise EPdfInvalidOperation.CreateUtf8('PDF/A-1 cannot embed %: a CFF ' +
       'face without CIDs needs an OpenType font file (PDF 1.6)', [aFont.Name]);
   if fSaveToStreamWriter = nil then
-  begin
-    if fFileFormat < pdf16 then
-      fFileFormat := pdf16;
-  end
+    NeedFileFormat(pdf16)
   else if fHeaderFileFormat < pdf16 then
   begin
     // the header is written (TPdfDocumentGdi, TGDIPages stream from the
@@ -10754,9 +10760,26 @@ procedure TPdfDocument.SetGeneratePdf15File(Value: boolean);
 begin
   if fFileFormat < pdf16 then
     if Value then
-      fFileFormat := pdf15
+      SetFileFormat(pdf15)
     else
-      fFileFormat := pdf14;
+      SetFileFormat(pdf14);
+end;
+
+procedure TPdfDocument.SetFileFormat(Value: TPdfFileFormat);
+begin
+  // FileFormat := pdf13 after PDF/A, Tagged or AES-256 wrote a header below
+  // what the file uses (TGDIPages.ExportPdf did it for a PDF/A-3)
+  if Value < fFileFormatMin then
+    Value := fFileFormatMin;
+  fFileFormat := Value;
+end;
+
+procedure TPdfDocument.NeedFileFormat(Value: TPdfFileFormat);
+begin
+  if fFileFormatMin < Value then
+    fFileFormatMin := Value;
+  if fFileFormat < Value then
+    fFileFormat := Value;
 end;
 
 procedure TPdfDocument.SetTagged(Value: boolean);
@@ -10780,8 +10803,7 @@ begin
   fTagged := Value;
   if not fTagged then
     exit;
-  if fFileFormat < pdf17 then
-    fFileFormat := pdf17;
+  NeedFileFormat(pdf17);
   // PDF/UA requires every glyph to map back to Unicode, which the viewer's own
   // non-embedded base-14 Type1 faces cannot provide
   fStandardFontsReplace := false;
@@ -13081,9 +13103,8 @@ begin
     if vpEnforcePrintScaling in Value then
     begin
       d.AddItem('Enforce', TPdfArray.CreateNames(Data.ObjectMgr, ['PrintScaling']));
-      if (fOwner <> nil) and
-         (fOwner.fFileFormat < pdf16) then
-        fOwner.fFileFormat := pdf16;
+      if fOwner <> nil then
+        fOwner.NeedFileFormat(pdf16);
     end
     else
       d.RemoveItem('Enforce');
@@ -13420,8 +13441,7 @@ begin
   for f := low(f) to high(f) do
     if f in fPermissions then
       fFlags := fFlags or (1 shl PDF_FLAGBIT[f]);
-  if fDoc.fFileFormat < pdf14 then
-    fDoc.fFileFormat := pdf14;
+  fDoc.NeedFileFormat(pdf14);
   // calc fOwnerPass key (Algorithm 3.3 in PDF reference doc)
   Pad(fUserPassword, usr);
   Pad(fOwnerPassword, own);
@@ -13566,8 +13586,7 @@ begin
   for f := low(f) to high(f) do
     if f in fPermissions then
       fFlags := fFlags or (1 shl PDF_FLAGBIT[f]);
-  if aDoc.fFileFormat < pdf16 then
-    aDoc.fFileFormat := pdf16; // AES-128 requires PDF 1.6+
+  aDoc.NeedFileFormat(pdf16); // AES-128 requires PDF 1.6+
   // derive owner key (Algorithm 3.3, step 1-3 identical for all R>=2)
   Pad(fUserPassword, usr);
   Pad(fOwnerPassword, own);
@@ -13819,8 +13838,7 @@ begin
   for f := low(f) to high(f) do
     if f in fPermissions then
       fFlags := fFlags or (1 shl PDF_FLAGBIT[f]);
-  if aDoc.fFileFormat < pdf17 then
-    aDoc.fFileFormat := pdf17;
+  aDoc.NeedFileFormat(pdf17);
   TAesPrng.Main.FillRandom(fFileKey);
   FreeAndNil(fAes); // a second NewDoc gets a new key
   fAes := TAesCbc.Create(fFileKey, 256);
