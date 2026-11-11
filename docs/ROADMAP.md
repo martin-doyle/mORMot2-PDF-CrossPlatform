@@ -8,9 +8,9 @@ it produced in `.claude/skills/` — this file repeats neither.
 tagged output passes PAC 2024 with accepted hints only (W-1, W-2) and veraPDF
 `ua1`; PDF/A-3U with PDF/UA-1 is verified (R-17). Fonts are embedded and subset
 on all three platforms; tables carry `THead`/`TBody`/`TFoot` row groups.
-`test_runner` is green with 1864 assertions on Windows (FPC, Delphi 7 and
-Delphi 13; Delphi 2010 is not measured on every change), 1913 on macOS and
-1880 on Linux (2026-11-10, pin `964874b88`). **Delphi:** layer
+`test_runner` is green with 1866 assertions on Windows (FPC, Delphi 7 and
+Delphi 13; Delphi 2010 is not measured on every change), 1915 on macOS and
+1882 on Linux (2026-11-11, pin `6fab7e59f`). **Delphi:** layer
 1, the TCanvas bridge and the `TGDIPages` core build on Delphi 7 (R-19, R-20
 steps 1–6) and on Delphi 2010, a Unicode Delphi (R-25); all six console demos
 and the `--export` of the two GUI demos give the same PDF as FPC. Delphi 13
