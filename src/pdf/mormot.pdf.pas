@@ -2026,6 +2026,8 @@ type
     // - PDF/A levels auto-raise this value (pdfa1x -> pdf14, pdfa2x/3x -> pdf17)
     // - a value below what the document's features already need (PDF/A,
     // Tagged, encryption, optional content...) is raised to it
+    // - once the header is streamed, the file follows HeaderFileFormat: a
+    // feature needing more sets the catalog's /Version
     property FileFormat: TPdfFileFormat
       read fFileFormat write SetFileFormat;
     /// enable Tagged PDF (ISO 32000-1 14) accessibility structure tags
