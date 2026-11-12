@@ -127,6 +127,8 @@ type
     procedure TestZeroAdvanceMeasured;
     /// FileFormat never goes below what the document's features need
     procedure TestFileFormatFloor;
+    /// a version needed after the header is written goes to the catalog
+    procedure TestFileFormatAfterHeader;
   private
     procedure CheckNoSimpleCmap(const aFamily, aCmap: RawUtf8);
   end;
@@ -3035,6 +3037,64 @@ begin
   {$else}
   Check(true, 'SKIP: no encryption');
   {$endif NO_USE_PDFSECURITY}
+end;
+
+// a document streamed from a Header, a page flushed: then on page 2 either
+// vpEnforcePrintScaling, or FileFormat set to pdf15
+function StreamedAfterHeader(Header: TPdfFileFormat; PrintScaling: boolean): RawUtf8;
+var
+  PDF: TPdfDocument;
+  Stream: TMemoryStream;
+begin
+  Stream := TMemoryStream.Create;
+  try
+    PDF := TPdfDocument.Create;
+    try
+      PDF.CompressionMethod := cmNone;
+      PDF.FileFormat := Header;
+      PDF.SaveToStreamDirectBegin(Stream);
+      PDF.AddPage;
+      PDF.SaveToStreamDirectPageFlush;
+      PDF.AddPage;
+      if PrintScaling then
+        PDF.Root.ViewerPreference := [vpEnforcePrintScaling]
+      else
+        PDF.FileFormat := pdf15;
+      PDF.SaveToStreamDirectPageFlush;
+      PDF.SaveToStreamDirectEnd;
+    finally
+      PDF.Free;
+    end;
+    result := StreamToRaw(Stream);
+  finally
+    Stream.Free;
+  end;
+end;
+
+procedure TPdfSmokeTests.TestFileFormatAfterHeader;
+var
+  s: RawUtf8;
+begin
+  { vpEnforcePrintScaling set once the header was written raised FileFormat
+    to 1.6: the file ended with a cross-reference stream (PDF 1.5) under a
+    1.4 header; the catalog's /Version says 1.6 now, as for a late CFF face,
+    the catalog being written last - after a page flushed too }
+  s := StreamedAfterHeader(pdf14, true);
+  CheckEqual(copy(s, 1, 8), '%PDF-1.4', 'print scaling: the header written');
+  Check(PosEx('/Enforce', s) > 0, 'print scaling: /Enforce');
+  Check(PosEx('/Version/1.6', s) > 0, 'print scaling: the catalog /Version');
+  Check((PosEx('/XRef', s) = 0) and
+        (PosEx(#10'xref'#10, s) > 0), 'print scaling: an xref table');
+  // a 1.5 header keeps its cross-reference stream
+  s := StreamedAfterHeader(pdf15, true);
+  Check((PosEx('/Version/1.6', s) > 0) and
+        (PosEx('/XRef', s) > 0), 'print scaling: 1.5, an xref stream');
+  // FileFormat set after the header: the file follows the header written
+  s := StreamedAfterHeader(pdf14, false);
+  Check((copy(s, 1, 8) = '%PDF-1.4') and
+        (PosEx('/Version', s) = 0), 'FileFormat late: no version changed');
+  Check((PosEx('/XRef', s) = 0) and
+        (PosEx(#10'xref'#10, s) > 0), 'FileFormat late: an xref table');
 end;
 
 {$ifdef PDF_HASVCLCANVAS}

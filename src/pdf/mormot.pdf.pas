@@ -1592,7 +1592,8 @@ type
     function GetGeneratePdf15File: boolean;
     procedure SetGeneratePdf15File(Value: boolean);
     procedure SetFileFormat(Value: TPdfFileFormat);
-    // a feature needs at least Value: raises FileFormat and its floor
+    // a feature needs at least Value: raises FileFormat and its floor, or
+    // the catalog's /Version once a lower header was written
     procedure NeedFileFormat(Value: TPdfFileFormat);
     procedure SetTagged(Value: boolean);
     function GetInfo: TPdfInfo;
@@ -2025,6 +2026,8 @@ type
     // - PDF/A levels auto-raise this value (pdfa1x -> pdf14, pdfa2x/3x -> pdf17)
     // - a value below what the document's features already need (PDF/A,
     // Tagged, encryption, optional content...) is raised to it
+    // - once the header is streamed, the file follows HeaderFileFormat: a
+    // feature needing more sets the catalog's /Version
     property FileFormat: TPdfFileFormat
       read fFileFormat write SetFileFormat;
     /// enable Tagged PDF (ISO 32000-1 14) accessibility structure tags
@@ -9533,8 +9536,9 @@ begin
       SerializeStructTree;
       WriteTaggedMetadata;
     end;
-    // write pending objects
-    if fFileFormat >= pdf15 then
+    // write pending objects - the cross-reference as the header allows:
+    // FileFormat may have been raised after it
+    if fHeaderFileFormat >= pdf15 then
       fTrailer.ToCrossReference(self);
     for i := 1 to fXRef.ItemCount - 1 do
     begin
@@ -9550,7 +9554,7 @@ begin
     if Assigned(fTrailer.fCrossReference) and
       (fTrailer.fCrossReference.ObjectNumber > 0) then
       fXRef.Items[fTrailer.fCrossReference.ObjectNumber].fByteOffset := fTrailer.XrefAddress;
-    if fFileFormat < pdf15 then
+    if fHeaderFileFormat < pdf15 then
       fXRef.WriteTo(fSaveToStreamWriter);
     fTrailer.Attributes.PdfNumberByName('Size').Value := fXRef.ItemCount;
     fTrailer.WriteTo(fSaveToStreamWriter);
@@ -10061,8 +10065,6 @@ begin
 end;
 
 procedure TPdfDocument.CheckFontProgram(aFont: TPdfFontTrueType);
-var
-  v: TPdfObject;
 begin
   // a CFF face without CIDs (name-keyed, or one the reader refused) is
   // embedded as an OpenType font file (ISO 32000-1 table 126: PDF 1.6)
@@ -10073,17 +10075,7 @@ begin
   if fPdfA in [pdfa1A, pdfa1B] then
     raise EPdfInvalidOperation.CreateUtf8('PDF/A-1 cannot embed %: a CFF ' +
       'face without CIDs needs an OpenType font file (PDF 1.6)', [aFont.Name]);
-  if fSaveToStreamWriter = nil then
-    NeedFileFormat(pdf16)
-  else if fHeaderFileFormat < pdf16 then
-  begin
-    // the header is written (TPdfDocumentGdi, TGDIPages stream from the
-    // start): the catalog, written last, overrides its version (7.5.2)
-    v := fRoot.Data.ValueByName('Version');
-    if not (v is TPdfName) or
-       (TPdfName(v).Value < '1.6') then // never lower a version set before
-      fRoot.Data.AddItem('Version', '1.6');
-  end;
+  NeedFileFormat(pdf16);
 end;
 
 procedure TPdfDocument.PrepareFontSubsets;
@@ -10775,11 +10767,24 @@ begin
 end;
 
 procedure TPdfDocument.NeedFileFormat(Value: TPdfFileFormat);
+var
+  v: TPdfObject;
+  ver: PdfString;
 begin
   if fFileFormatMin < Value then
     fFileFormatMin := Value;
   if fFileFormat < Value then
     fFileFormat := Value;
+  if (fSaveToStreamWriter = nil) or
+     (fHeaderFileFormat >= Value) then
+    exit;
+  // the header is written (TPdfDocumentGdi, TGDIPages stream from the
+  // start): the catalog, written last, overrides its version (7.5.2)
+  ver := FormatUtf8('1.%', [PDF_HEADER[Value]]);
+  v := fRoot.Data.ValueByName('Version');
+  if not (v is TPdfName) or
+     (TPdfName(v).Value < ver) then // never lower a version set before
+    fRoot.Data.AddItem('Version', ver);
 end;
 
 procedure TPdfDocument.SetTagged(Value: boolean);
