@@ -200,7 +200,7 @@ and the rejections on tables built in code.
   name-keyed - the OpenType font file, `/Subtype /OpenType`, PDF 1.6:
   `CheckFontProgram` raises `FileFormat` before the header; after it
   (`HeaderFileFormat` - `TPdfDocumentGdi` and `TGDIPages` stream from the
-  start) it sets `/Version /1.6` in the catalog, which is written last
+  start) `NeedFileFormat` sets `/Version /1.6` in the catalog, which is written last
   (7.5.2, as iText does); rechecked before the program is written, as
   `EmbeddedTTF` may change; PDF/A-1 refuses. The descendant is a
   `CIDFontType0` for every CFF face, read from the face - subset, whole or

@@ -81,8 +81,9 @@ Application
        writes its XMP packet here
      SaveToStreamDirectEnd: outlines, fonts (Path 4d), struct tree (Path 10),
        pending objects, xref
-     FileFormat >= pdf15: TPdfTrailer.ToCrossReference → xref stream + object
-       streams
+     HeaderFileFormat >= pdf15 (the version the header was written with, not
+       a FileFormat raised after it): TPdfTrailer.ToCrossReference → xref
+       stream + object streams
      Compression (TPdfStream.InternalWriteTo): cmFlateDecode → CompressMem
        level 7; a stream under 100 bytes is not compressed
      Encryption (USE_PDFSECURITY), per stream after compression:
