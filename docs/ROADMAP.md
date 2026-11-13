@@ -8,9 +8,9 @@ it produced in `.claude/skills/` — this file repeats neither.
 tagged output passes PAC 2024 with accepted hints only (W-1, W-2) and veraPDF
 `ua1`; PDF/A-3U with PDF/UA-1 is verified (R-17). Fonts are embedded and subset
 on all three platforms; tables carry `THead`/`TBody`/`TFoot` row groups.
-`test_runner` is green with 1873 assertions on Windows (FPC, Delphi 7 and
-Delphi 13; Delphi 2010 is not measured on every change), 1922 on macOS and
-1889 on Linux (2026-11-12, pin `6fab7e59f`). **Delphi:** layer
+`test_runner` is green with 1878 assertions on Windows (FPC, Delphi 7 and
+Delphi 13; Delphi 2010 is not measured on every change), 1927 on macOS and
+1894 on Linux (2026-11-13, pin `6fab7e59f`). **Delphi:** layer
 1, the TCanvas bridge and the `TGDIPages` core build on Delphi 7 (R-19, R-20
 steps 1–6) and on Delphi 2010, a Unicode Delphi (R-25); all six console demos
 and the `--export` of the two GUI demos give the same PDF as FPC. Delphi 13
@@ -35,6 +35,10 @@ here until the post is written, then the list is emptied. It is the only such
 list: the CHANGELOG entry of the next release is written from it. Emptied for
 v0.10.0 (2026-09-30).
 
+- **Fixed:** PDF/A-1 files with a version of 1.5 or more - every tagged
+  PDF/A-1a (1.7), `vpEnforcePrintScaling` or `FileFormat` `pdf15` under
+  PDF/A-1 - were written with a cross-reference stream and object streams,
+  which PDF/A-1 forbids (veraPDF 6.1.4-3). They get an xref table now
 - **Fixed:** `vpEnforcePrintScaling` set after `SaveToStreamDirectBegin`
   wrote a 1.3 or 1.4 header ended the file in a cross-reference stream,
   which needs PDF 1.5. The catalog's `/Version` gives the 1.6 it needs now,
@@ -1055,9 +1059,11 @@ A-3B with it, verified on all three platforms with veraPDF, Mustang and PAC.
 What is left:
 
 - **A-1B**, the commonest level overall, was to be pulled along and is not
-  verified; nor are A-1A, A-2A and A-2B. Object streams, xref streams and
-  transparency (R-2, R-3, R-7) are forbidden under A-1 — the first thing to
-  check there.
+  verified; nor are A-1A, A-2A and A-2B. Object streams and xref streams
+  (R-2, R-3) are no longer written under A-1 (2026-11-13: a tagged A-1a
+  and a 1b with print scaling pass veraPDF); transparency (R-7) and
+  optional content are forbidden there and not refused yet — the next to
+  check.
 - **The CJK peer with a `glyf` face** on Linux or Windows — see the peer entry
   below.
 - **`CreateFileAttachment` accepts any file at any level**, although A-1

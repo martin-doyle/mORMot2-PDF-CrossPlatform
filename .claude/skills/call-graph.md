@@ -82,8 +82,8 @@ Application
      SaveToStreamDirectEnd: outlines, fonts (Path 4d), struct tree (Path 10),
        pending objects, xref
      HeaderFileFormat >= pdf15 (the version the header was written with, not
-       a FileFormat raised after it): TPdfTrailer.ToCrossReference → xref
-       stream + object streams
+       a FileFormat raised after it) and not PDF/A-1 (6.1.4 forbids them):
+       TPdfTrailer.ToCrossReference → xref stream + object streams
      Compression (TPdfStream.InternalWriteTo): cmFlateDecode → CompressMem
        level 7; a stream under 100 bytes is not compressed
      Encryption (USE_PDFSECURITY), per stream after compression:
