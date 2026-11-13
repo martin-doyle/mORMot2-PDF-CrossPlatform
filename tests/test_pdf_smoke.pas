@@ -129,6 +129,8 @@ type
     procedure TestFileFormatFloor;
     /// a version needed after the header is written goes to the catalog
     procedure TestFileFormatAfterHeader;
+    /// PDF/A-1 gets an xref table, whatever version the features ask for
+    procedure TestPdfA1XrefTable;
   private
     procedure CheckNoSimpleCmap(const aFamily, aCmap: RawUtf8);
   end;
@@ -3041,14 +3043,15 @@ end;
 
 // a document streamed from a Header, a page flushed: then on page 2 either
 // vpEnforcePrintScaling, or FileFormat set to pdf15
-function StreamedAfterHeader(Header: TPdfFileFormat; PrintScaling: boolean): RawUtf8;
+function StreamedAfterHeader(Header: TPdfFileFormat; PrintScaling: boolean;
+  Level: TPdfALevel = pdfaNone): RawUtf8;
 var
   PDF: TPdfDocument;
   Stream: TMemoryStream;
 begin
   Stream := TMemoryStream.Create;
   try
-    PDF := TPdfDocument.Create;
+    PDF := TPdfDocument.Create(false, 0, Level);
     try
       PDF.CompressionMethod := cmNone;
       PDF.FileFormat := Header;
@@ -3095,6 +3098,68 @@ begin
         (PosEx('/Version', s) = 0), 'FileFormat late: no version changed');
   Check((PosEx('/XRef', s) = 0) and
         (PosEx(#10'xref'#10, s) > 0), 'FileFormat late: an xref table');
+end;
+
+// one empty page saved at Level: Tagged, with vpEnforcePrintScaling, or
+// with FileFormat pdf15 - each asks for a version above 1.4
+function SavedAtLevel(Level: TPdfALevel; Tagged, PrintScaling: boolean): RawUtf8;
+var
+  PDF: TPdfDocument;
+  Stream: TMemoryStream;
+begin
+  Stream := TMemoryStream.Create;
+  try
+    PDF := TPdfDocument.Create(false, 0, Level);
+    try
+      PDF.CompressionMethod := cmNone;
+      PDF.Tagged := Tagged;
+      if PrintScaling then
+        PDF.Root.ViewerPreference := [vpEnforcePrintScaling]
+      else if not Tagged then
+        PDF.FileFormat := pdf15;
+      PDF.AddPage;
+      PDF.SaveToStream(Stream);
+    finally
+      PDF.Free;
+    end;
+    result := StreamToRaw(Stream);
+  finally
+    Stream.Free;
+  end;
+end;
+
+function HasXrefTable(const s: RawUtf8): boolean;
+begin
+  result := (PosEx('/XRef', s) = 0) and
+            (PosEx('/ObjStm', s) = 0) and
+            (PosEx(#10'xref'#10, s) > 0) and
+            (PosEx('trailer', s) > 0);
+end;
+
+procedure TPdfSmokeTests.TestPdfA1XrefTable;
+var
+  s: RawUtf8;
+begin
+  // PDF/A-1 forbids an xref stream (veraPDF 6.1.4-3), whatever the header
+  s := SavedAtLevel(pdfa1A, true, false);
+  Check((copy(s, 1, 8) = '%PDF-1.7') and
+        HasXrefTable(s), 'PDF/A-1a tagged: an xref table');
+  s := SavedAtLevel(pdfa1B, false, true);
+  Check((copy(s, 1, 8) = '%PDF-1.6') and
+        (PosEx('/Enforce', s) > 0) and
+        HasXrefTable(s), 'PDF/A-1b print scaling: an xref table');
+  s := SavedAtLevel(pdfa1B, false, false);
+  Check((copy(s, 1, 8) = '%PDF-1.5') and
+        HasXrefTable(s), 'PDF/A-1b FileFormat pdf15: an xref table');
+  s := StreamedAfterHeader(pdf14, true, pdfa1B);
+  Check((copy(s, 1, 8) = '%PDF-1.4') and
+        (PosEx('/Version/1.6', s) > 0) and
+        HasXrefTable(s), 'PDF/A-1b streamed print scaling: an xref table');
+  // the other levels keep their streams
+  s := SavedAtLevel(pdfa3U, true, false);
+  Check(PosEx('/XRef', s) > 0, 'PDF/A-3u tagged: an xref stream');
+  s := SavedAtLevel(pdfaNone, false, false);
+  Check(PosEx('/XRef', s) > 0, 'pdf15: an xref stream');
 end;
 
 {$ifdef PDF_HASVCLCANVAS}
