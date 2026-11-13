@@ -2019,6 +2019,7 @@ type
     property PdfAMetadaExtension: RawUtf8
       read fPdfAMetadaExtension write fPdfAMetadaExtension;
     /// set to true to force PDF 1.5 format, which may produce smaller files
+    // - under PDF/A-1 only the header changes: see FileFormat
     property GeneratePdf15File: boolean
       read GetGeneratePdf15File write SetGeneratePdf15File;
     /// select the PDF version written to the file header (%PDF-1.x)
@@ -2030,8 +2031,8 @@ type
     // feature needing more sets the catalog's /Version, and a value assigned
     // then no longer changes the output
     // - pdf15 and up write an xref stream (with object streams, unless
-    // encrypted), except under PDF/A-1, which forbids them: an xref table
-    // there, whatever the header
+    // encrypted), except under PDF/A-1, which forbids an xref stream: an
+    // xref table there, whatever the header
     property FileFormat: TPdfFileFormat
       read fFileFormat write SetFileFormat;
     /// enable Tagged PDF (ISO 32000-1 14) accessibility structure tags
@@ -9542,8 +9543,8 @@ begin
       WriteTaggedMetadata;
     end;
     // write pending objects - the cross-reference as the header allows:
-    // FileFormat may have been raised after it; PDF/A-1 forbids xref and
-    // object streams (6.1.4), whatever the header (Tagged writes 1.7)
+    // FileFormat may have been raised after it; PDF/A-1 forbids an xref
+    // stream (6.1.4), and with it object streams, whatever the header
     xrefstream := (fHeaderFileFormat >= pdf15) and
                   not (fPdfA in [pdfa1A, pdfa1B]);
     if xrefstream then

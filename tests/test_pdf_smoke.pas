@@ -3043,14 +3043,15 @@ end;
 
 // a document streamed from a Header, a page flushed: then on page 2 either
 // vpEnforcePrintScaling, or FileFormat set to pdf15
-function StreamedAfterHeader(Header: TPdfFileFormat; PrintScaling: boolean): RawUtf8;
+function StreamedAfterHeader(Header: TPdfFileFormat; PrintScaling: boolean;
+  Level: TPdfALevel = pdfaNone): RawUtf8;
 var
   PDF: TPdfDocument;
   Stream: TMemoryStream;
 begin
   Stream := TMemoryStream.Create;
   try
-    PDF := TPdfDocument.Create;
+    PDF := TPdfDocument.Create(false, 0, Level);
     try
       PDF.CompressionMethod := cmNone;
       PDF.FileFormat := Header;
@@ -3131,16 +3132,15 @@ function HasXrefTable(const s: RawUtf8): boolean;
 begin
   result := (PosEx('/XRef', s) = 0) and
             (PosEx('/ObjStm', s) = 0) and
-            (PosEx(#10'xref'#10, s) > 0);
+            (PosEx(#10'xref'#10, s) > 0) and
+            (PosEx('trailer', s) > 0);
 end;
 
 procedure TPdfSmokeTests.TestPdfA1XrefTable;
 var
   s: RawUtf8;
 begin
-  { PDF/A-1 forbids cross-reference and object streams (veraPDF 6.1.4-3),
-    but a version of 1.5 or more wrote them: every tagged PDF/A-1a (1.7),
-    vpEnforcePrintScaling (1.6), FileFormat pdf15 - an xref table now }
+  // PDF/A-1 forbids an xref stream (veraPDF 6.1.4-3), whatever the header
   s := SavedAtLevel(pdfa1A, true, false);
   Check((copy(s, 1, 8) = '%PDF-1.7') and
         HasXrefTable(s), 'PDF/A-1a tagged: an xref table');
@@ -3151,6 +3151,10 @@ begin
   s := SavedAtLevel(pdfa1B, false, false);
   Check((copy(s, 1, 8) = '%PDF-1.5') and
         HasXrefTable(s), 'PDF/A-1b FileFormat pdf15: an xref table');
+  s := StreamedAfterHeader(pdf14, true, pdfa1B);
+  Check((copy(s, 1, 8) = '%PDF-1.4') and
+        (PosEx('/Version/1.6', s) > 0) and
+        HasXrefTable(s), 'PDF/A-1b streamed print scaling: an xref table');
   // the other levels keep their streams
   s := SavedAtLevel(pdfa3U, true, false);
   Check(PosEx('/XRef', s) > 0, 'PDF/A-3u tagged: an xref stream');
